@@ -5,11 +5,8 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 import requests
 import threading
-try:
-    from flask import Flask
-    HAS_FLASK=True
-except:
-    HAS_FLASK=False
+import asyncio
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 
@@ -274,20 +271,18 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 # --- Health Server fuer Render Free Web Service ---
-# Render Free braucht einen Web-Port, sonst denkt es der Bot ist tot.
-# Deswegen lassen wir nebenbei einen winzigen Webserver laufen.
+# Winziger eingebauter Webserver, kein Flask - klaut dem Bot keinen Event-Loop.
 def _run_health_server():
-    if not HAS_FLASK:
-        return
-    app_web = Flask(__name__)
-    @app_web.route("/")
-    def home():
-        return "USA Sport Radar laeuft! 🇺🇸📡"
-    @app_web.route("/health")
-    def health():
-        return "OK"
+    class H(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200); self.send_header("Content-Type","text/plain"); self.end_headers()
+            self.wfile.write(b"USA Sport Radar laeuft!")
+        def log_message(self, *a): pass
     port = int(os.getenv("PORT", "10000"))
-    app_web.run(host="0.0.0.0", port=port)
+    try:
+        ThreadingHTTPServer(("0.0.0.0", port), H).serve_forever()
+    except Exception as e:
+        print("Health server:", e)
 
 def main():
     if not TOKEN:
@@ -295,6 +290,11 @@ def main():
         return
     # Health-Server im Hintergrund starten (fuer Render Free)
     threading.Thread(target=_run_health_server, daemon=True).start()
+    # Event-Loop fix fuer Python 3.14 + PTB 22
+    try:
+        asyncio.get_event_loop()
+    except RuntimeError:
+        asyncio.set_event_loop(asyncio.new_event_loop())
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
