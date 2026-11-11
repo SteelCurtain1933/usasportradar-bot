@@ -1,6 +1,7 @@
 services:
-  - type: worker
+  - type: web
     name: usasportradar-bot
     env: python
+    plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: python USSPORTSRADARFINAL.py
+    startCommand: python USSPORTSRADARFINAL_FREE.py
