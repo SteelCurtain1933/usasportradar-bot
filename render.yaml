@@ -1,0 +1,6 @@
+services:
+  - type: worker
+    name: usasportradar-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python USSPORTSRADARFINAL.py
