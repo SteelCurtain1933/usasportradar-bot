@@ -2293,7 +2293,8 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.message.reply_text("Bitte Teamnamen eingeben:")
     elif data=="fav_list":
         favs=favs_for(update.effective_user.id)
-        await q.message.reply_text("⭐ Deine Favoriten:\n" + ("\n".join([f"• {f}" for f in favs]) if favs else "Noch keine."), reply_markup=main_kb())
+        _kb=InlineKeyboardMarkup([[InlineKeyboardButton("➕ Favorit hinzufügen", callback_data="fav_add")],[InlineKeyboardButton("🗑️ Favorit entfernen", callback_data="fav_remove")],[InlineKeyboardButton("🗑️ Alle Favoriten löschen", callback_data="fav_clear")],[InlineKeyboardButton("⬅️ Zurück", callback_data="back")]])
+        await q.message.reply_text("⭐ Deine Favoriten:\n" + ("\n".join([f"• {f}" for f in favs]) if favs else "Noch keine."), reply_markup=_kb)
     elif data=="fav_clear":
         favs=load_favs(); favs[str(update.effective_user.id)]=[]; save_favs(favs)
         await q.message.reply_text("🗑️ Alle Favoriten gelöscht.", reply_markup=main_kb())
