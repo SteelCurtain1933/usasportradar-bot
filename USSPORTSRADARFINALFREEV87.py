@@ -2327,10 +2327,12 @@ def main():
         return
     # Health-Server im Hintergrund starten (fuer Render Free)
     threading.Thread(target=_run_health_server, daemon=True).start()
-    # V87-FIX (Render-Crash): KEIN manueller Event-Loop mehr!
-    # Der alte get_event_loop()-Hack hat PTB 22 den Updater zerschossen:
-    # "Updater object has no attribute _Updater__polling_cleanup_cb".
-    # PTB baut seinen eigenen Loop in run_polling() - wir lassen ihn in Ruhe.
+    # V87-FIX2: Loop MUSS gesetzt sein! PTB ruft intern get_event_loop() auf.
+    # Python 3.14 macht KEINEN Default-Loop mehr -> sonst RuntimeError in MainThread.
+    try:
+        asyncio.set_event_loop(asyncio.new_event_loop())
+    except Exception as e:
+        print("Loop-Fix:", e)
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
@@ -2343,14 +2345,12 @@ def main():
     app.add_handler(CommandHandler("live", live_cmd))
     app.add_handler(CommandHandler("ergebnisse", results_cmd))
     app.add_handler(CommandHandler("remind", remind_cmd))
-    # V67: Reminder-Job alle 15 Min - nur wenn JobQueue (APScheduler) da ist!
-    # Ohne [job-queue]-Extra ist app.job_queue None - Bot muss trotzdem starten!
     try:
         _jq = getattr(app, "job_queue", None)
         if _jq is not None:
             _jq.run_repeating(reminder_job, interval=900, first=10)
         else:
-            print("JobQueue: kein APScheduler - Reminder-Job aus, Bot laeuft trotzdem.")
+            print("JobQueue: kein APScheduler - Reminder aus, Bot laeuft trotzdem.")
     except Exception as e:
         print("JobQueue:", e)
     app.add_handler(CallbackQueryHandler(on_cb))
