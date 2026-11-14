@@ -1,10 +1,6 @@
 services:
-  - type: web
+  - type: worker
     name: usasportradar-bot
     env: python
-    plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: python USSPORTSRADARFINALFREEV87.py
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.12.0
+    startCommand: python usa_sport_bot_V29_FINAL.py
