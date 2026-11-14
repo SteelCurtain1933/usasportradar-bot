@@ -4,4 +4,4 @@ services:
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: python USSPORTSRADARFINALFREEV86.py
+    startCommand: python USSPORTSRADARFINALFREEV87.py
