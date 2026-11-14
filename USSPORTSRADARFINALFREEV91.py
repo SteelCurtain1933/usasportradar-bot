@@ -1,0 +1,2528 @@
+# USA Sport Radar - V91 FINAL - V90 notif Bugfix - V89 FIXED-3 + neuer Name gegen Cache
+# Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
+import os, json, logging
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+import requests
+import threading
+import asyncio
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# TOKEN: Auf Render kommt der Token aus der geheimen Variable BOT_TOKEN (auf der Render-Website eintragen).
+# In dieser Datei steht KEIN echter Token - so ist sie sicher fuer GitHub.
+TOKEN = os.getenv("BOT_TOKEN") or "DEIN_TOKEN_HIER_EINTRAGEN"
+BERLIN = ZoneInfo("Europe/Berlin")
+FAV_FILE = "favorites.json"
+
+# --- Champions - NUR HIER EDITIEREN ---
+# V81: Alle Champions auf 2026 aktualisiert! Wir haben November 2026, nicht mehr 2024/2025!
+# NFL: Super Bowl LX (Feb 2026, Saison 2025) - Seahawks 29-13 gegen Patriots!
+# NCAAF: CFP Finale (Jan 2026, Saison 2025) - Indiana 27-21 gegen Miami, 16-0 ungeschlagen!
+# MLB: World Series 2026 - Brewers 4-1 gegen Rays, erster Titel ever!
+# NHL: Stanley Cup 2026 - Hurricanes 4-2 gegen Golden Knights!
+# NBA: NBA Finals 2026 - Knicks 4-1 gegen Spurs, erster Titel seit 1973!
+# V84: Champions-Jahr = Jahr vom FINALE, nicht Saison-Start! Wir sind in Season 2026!
+# NFL: Super Bowl LX Feb 2026 -> zeigt 2026, nicht 2025! NCAAF: CFP Finale Jan 2026 -> zeigt 2026!
+# Sonst denkt man "2025 = alt"! Alle Champions zeigen jetzt 2026!
+CHAMPIONS = {
+    "NFL": {"team": "Seattle Seahawks", "year": "2026", "result": "Super Bowl LX: Seahawks 29 - Patriots 13", "note": "2. Titel, erster seit Super Bowl XLVIII (2014)!"},
+    "NCAAF": {"team": "Indiana Hoosiers", "year": "2026", "result": "CFP Finale: Indiana 27 - Miami 21 (16-0)", "note": "Erster Titel ever! 16-0 ungeschlagen!"},
+    "MLB": {"team": "Milwaukee Brewers", "year": "2026", "result": "World Series: Brewers 4 - Rays 1", "note": "Erster Titel ever!"},
+    "NHL": {"team": "Carolina Hurricanes", "year": "2026", "result": "Stanley Cup: Hurricanes 4 - Golden Knights 2", "note": "2. Titel, erster seit 2006!"},
+    "NBA": {"team": "New York Knicks", "year": "2026", "result": "NBA Finals: Knicks 4 - Spurs 1", "note": "Erster Titel seit 1973!"},
+}
+
+LEAGUES = {
+    "NFL": {"espn": "nfl", "emoji": "🏈", "season": "Sep-Feb"},
+    "NCAAF": {"espn": "college-football", "emoji": "🎓🏈", "season": "Aug-Jan"},
+    "MLB": {"espn": "mlb", "emoji": "⚾", "season": "Mrz-Okt"},
+    "NHL": {"espn": "nhl", "emoji": "🏒", "season": "Okt-Jun"},
+    "NBA": {"espn": "nba", "emoji": "🏀", "season": "Okt-Jun"},
+}
+
+# Kurznamen -> ESPN Team
+ALIASES = {
+    "steelers": ("NFL", "Pittsburgh Steelers"), "panthers": ("NCAAF", "Pittsburgh Panthers"),
+    "pirates": ("MLB", "Pittsburgh Pirates"), "penguins": ("NHL", "Pittsburgh Penguins"),
+    "eagles": ("NFL", "Philadelphia Eagles"), "chiefs": ("NFL", "Kansas City Chiefs"),
+    "cowboys": ("NFL", "Dallas Cowboys"), "packers": ("NFL", "Green Bay Packers"),
+    "dodgers": ("MLB", "Los Angeles Dodgers"), "yankees": ("MLB", "New York Yankees"),
+    "lakers": ("NBA", "Los Angeles Lakers"), "celtics": ("NBA", "Boston Celtics"),
+}
+
+
+# ===== KOMPLETTE TEAM-DATENBANK - ALLE LIGEN, ALLE TEAMS =====
+# Wenn du ein Team hinzufuegen willst, nur hier eintragen. Der Bot baut daraus automatisch:
+# - Kurznamen (z.B. "Steelers" -> Pittsburgh Steelers)
+# - Stadt-Suche (z.B. "Texas" -> alle Texas-Teams)
+# - Mehrdeutigkeits-Check (z.B. "Panthers" -> fragt nach)
+TEAMS = {
+ "NFL": ["Arizona Cardinals","Atlanta Falcons","Baltimore Ravens","Buffalo Bills","Carolina Panthers","Chicago Bears","Cincinnati Bengals","Cleveland Browns","Dallas Cowboys","Denver Broncos","Detroit Lions","Green Bay Packers","Houston Texans","Indianapolis Colts","Jacksonville Jaguars","Kansas City Chiefs","Las Vegas Raiders","Los Angeles Chargers","Los Angeles Rams","Miami Dolphins","Minnesota Vikings","New England Patriots","New Orleans Saints","New York Giants","New York Jets","Philadelphia Eagles","Pittsburgh Steelers","San Francisco 49ers","Seattle Seahawks","Tampa Bay Buccaneers","Tennessee Titans","Washington Commanders"],
+ "NBA": ["Atlanta Hawks","Boston Celtics","Brooklyn Nets","Charlotte Hornets","Chicago Bulls","Cleveland Cavaliers","Dallas Mavericks","Denver Nuggets","Detroit Pistons","Golden State Warriors","Houston Rockets","Indiana Pacers","Los Angeles Clippers","Los Angeles Lakers","Memphis Grizzlies","Miami Heat","Milwaukee Bucks","Minnesota Timberwolves","New Orleans Pelicans","New York Knicks","Oklahoma City Thunder","Orlando Magic","Philadelphia 76ers","Phoenix Suns","Portland Trail Blazers","Sacramento Kings","San Antonio Spurs","Toronto Raptors","Utah Jazz","Washington Wizards"],
+ "MLB": ["Arizona Diamondbacks","Atlanta Braves","Baltimore Orioles","Boston Red Sox","Chicago Cubs","Chicago White Sox","Cincinnati Reds","Cleveland Guardians","Colorado Rockies","Detroit Tigers","Houston Astros","Kansas City Royals","Los Angeles Angels","Los Angeles Dodgers","Miami Marlins","Milwaukee Brewers","Minnesota Twins","New York Mets","New York Yankees","Oakland Athletics","Philadelphia Phillies","Pittsburgh Pirates","San Diego Padres","San Francisco Giants","Seattle Mariners","St. Louis Cardinals","Tampa Bay Rays","Texas Rangers","Toronto Blue Jays","Washington Nationals"],
+ "NHL": ["Anaheim Ducks","Arizona Coyotes","Boston Bruins","Buffalo Sabres","Calgary Flames","Carolina Hurricanes","Chicago Blackhawks","Colorado Avalanche","Columbus Blue Jackets","Dallas Stars","Detroit Red Wings","Edmonton Oilers","Florida Panthers","Los Angeles Kings","Minnesota Wild","Montreal Canadiens","Nashville Predators","New Jersey Devils","New York Islanders","New York Rangers","Ottawa Senators","Philadelphia Flyers","Pittsburgh Penguins","San Jose Sharks","Seattle Kraken","St. Louis Blues","Tampa Bay Lightning","Toronto Maple Leafs","Utah Mammoth", "Utah Hockey Club","Vancouver Canucks","Vegas Golden Knights","Washington Capitals","Winnipeg Jets"],
+  "NCAAF": ["Air Force Falcons","Akron Zips","Alabama Crimson Tide","Appalachian State Mountaineers","Arizona Wildcats","Arizona State Sun Devils","Arkansas Razorbacks","Arkansas State Red Wolves","Army Black Knights","Auburn Tigers","Ball State Cardinals","Baylor Bears","Boise State Broncos","Boston College Eagles","Bowling Green Falcons","Buffalo Bulls","BYU Cougars","California Bears","Central Michigan Chippewas","Charlotte 49ers","Cincinnati Bearcats","Clemson Tigers","Coastal Carolina Chanticleers","Colorado Buffaloes","Colorado State Rams","Delaware Blue Hens","Duke Blue Devils","East Carolina Pirates","Eastern Michigan Eagles","FIU Panthers","Florida Gators","Florida Atlantic Owls","Florida State Seminoles","Fresno State Bulldogs","Georgia Bulldogs","Georgia Southern Eagles","Georgia State Panthers","Georgia Tech Yellow Jackets","Hawaii Rainbow Warriors","Houston Cougars","Illinois Fighting Illini","Indiana Hoosiers","Iowa Hawkeyes","Iowa State Cyclones","Jacksonville State Gamecocks","James Madison Dukes","Kansas Jayhawks","Kansas State Wildcats","Kennesaw State Owls","Kent State Golden Flashes","Kentucky Wildcats","Liberty Flames","Louisiana Ragin' Cajuns","Louisiana Tech Bulldogs","Louisville Cardinals","LSU Tigers","Marshall Thundering Herd","Maryland Terrapins","Massachusetts Minutemen","Memphis Tigers","Miami Hurricanes","Miami (OH) RedHawks","Michigan Wolverines","Michigan State Spartans","Middle Tennessee Blue Raiders","Minnesota Golden Gophers","Mississippi State Bulldogs","Missouri Tigers","Missouri State Bears","Navy Midshipmen","NC State Wolfpack","Nebraska Cornhuskers","Nevada Wolf Pack","New Mexico Lobos","New Mexico State Aggies","North Carolina Tar Heels","North Dakota State Bison","North Texas Mean Green","Northern Illinois Huskies","Northwestern Wildcats","Notre Dame Fighting Irish","Ohio Bobcats","Ohio State Buckeyes","Oklahoma Sooners","Oklahoma State Cowboys","Old Dominion Monarchs","Ole Miss Rebels","Oregon Ducks","Oregon State Beavers","Penn State Nittany Lions","Pittsburgh Panthers","Purdue Boilermakers","Rice Owls","Rutgers Scarlet Knights","Sacramento State Hornets","Sam Houston Bearkats","San Diego State Aztecs","San Jose State Spartans","SMU Mustangs","South Alabama Jaguars","South Carolina Gamecocks","South Florida Bulls","Southern Miss Golden Eagles","Stanford Cardinal","Syracuse Orange","TCU Horned Frogs","Temple Owls","Tennessee Volunteers","Texas A&M Aggies","Texas Longhorns","Texas State Bobcats","Texas Tech Red Raiders","Toledo Rockets","Troy Trojans","Tulane Green Wave","Tulsa Golden Hurricane","UAB Blazers","UCF Knights","UCLA Bruins","UConn Huskies","UL Monroe Warhawks","UNLV Rebels","USC Trojans","Utah State Aggies","Utah Utes","UTEP Miners","UTSA Roadrunners","Vanderbilt Commodores","Virginia Cavaliers","Virginia Tech Hokies","Wake Forest Demon Deacons","Washington Huskies","Washington State Cougars","West Virginia Mountaineers","Western Kentucky Hilltoppers","Western Michigan Broncos","Wisconsin Badgers","Wyoming Cowboys"],
+}
+# Automatisch: Spitzname -> alle Teams mit diesem Spitznamen (z.B. Panthers -> 3 Teams)
+def _build_nickname_map():
+    m={}
+    for lg, lst in TEAMS.items():
+        for full in lst:
+            # Spitzname = letztes Wort (Steelers, Panthers...) bzw. letzte 2 Woerter bei "Crimson Tide" etc.
+            parts = full.split()
+            nick = parts[-1]
+            # Sonderfaelle: 2-Wort-Spitznamen
+            for two in ["Crimson Tide","Fighting Irish","Golden Knights","Blue Jays","White Sox","Red Sox","Red Wings","Maple Leafs","Blue Jackets","Golden State","Trail Blazers"]:
+                if full.endswith(two): nick = two
+            key = nick.lower()
+            m.setdefault(key, [])
+            if f"{full} ({lg})" not in m[key]:
+                m[key].append(f"{full} ({lg})")
+    return m
+NICKNAME_MAP = _build_nickname_map()
+# Automatisch: Stadt / Bundesstaat -> Teams (z.B. Texas -> alle Texas-Teams, New York -> alle NY-Teams)
+def _find_by_city_or_state(q):
+    q=q.lower()
+    res=[]
+    for lg, lst in TEAMS.items():
+        for full in lst:
+            fl = full.lower()
+            # Stadt = alle Woerter ausser Spitzname
+            city_part = " ".join(fl.split()[:-1])
+            if q in fl or q in city_part or (q=="texas" and ("texas" in fl or "houston" in fl or "dallas" in fl or "austin" in fl)) or (q=="new york" and "new york" in fl) or (q=="los angeles" and "los angeles" in fl):
+                res.append(f"{full} ({lg})")
+    # Deduplizieren, Reihenfolge behalten
+    seen=set(); out=[]
+    for r in res:
+        if r not in seen: seen.add(r); out.append(r)
+    return out
+
+# --- Favoriten: dauerhaft in Upstash Redis (bleibt auch nach Render-Neustart), sonst lokale Datei als Fallback ---
+UPSTASH_URL = os.getenv("UPSTASH_REDIS_REST_URL", "").rstrip("/")
+UPSTASH_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN", "")
+def _redis_get(key):
+    if not UPSTASH_URL or not UPSTASH_TOKEN: return None
+    try:
+        r = requests.get(f"{UPSTASH_URL}/get/{key}", headers={"Authorization": f"Bearer {UPSTASH_TOKEN}"}, timeout=8)
+        j = r.json()
+        v = j.get("result")
+        return json.loads(v) if v else None
+    except Exception as e:
+        logger.warning(f"Redis get fail: {e}"); return None
+def _redis_set(key, val):
+    if not UPSTASH_URL or not UPSTASH_TOKEN: return False
+    try:
+        r = requests.post(f"{UPSTASH_URL}/set/{key}", data=json.dumps(val), headers={"Authorization": f"Bearer {UPSTASH_TOKEN}", "Content-Type": "application/json"}, timeout=8)
+        return r.status_code==200
+    except Exception as e:
+        logger.warning(f"Redis set fail: {e}"); return False
+
+
+def load_favs():
+    # Versuche Redis zuerst
+    d = _redis_get("favs_all")
+    if isinstance(d, dict): return d
+    try:
+        with open(FAV_FILE, encoding="utf-8") as f: return json.load(f)
+    except: return {}
+def save_favs(d):
+    # In Redis speichern (dauerhaft) + lokal als Backup
+    _redis_set("favs_all", d)
+    try:
+        with open(FAV_FILE, "w", encoding="utf-8") as f: json.dump(d, f, ensure_ascii=False, indent=2)
+    except: pass
+
+def favs_for(user_id): return load_favs().get(str(user_id), [])
+# V67: Einstellungen pro User (Reminder-Zeit) - in Redis, wie Favoriten!
+def load_settings():
+    d = _redis_get("settings_all")
+    if isinstance(d, dict): return d
+    try:
+        with open("settings.json", encoding="utf-8") as f: return json.load(f)
+    except: return {}
+def save_settings(d):
+    _redis_set("settings_all", d)
+    try:
+        with open("settings.json", "w", encoding="utf-8") as f: json.dump(d, f, ensure_ascii=False, indent=2)
+    except: pass
+def get_reminder_minutes(user_id):
+    # None = aus, sonst 180/120/60/30. Default: 60 (wie bisher 1h)!
+    try:
+        v = load_settings().get(str(user_id), {}).get("reminder_minutes", 60)
+        return v
+    except: return 60
+def set_reminder_minutes(user_id, minutes):
+    s = load_settings(); s.setdefault(str(user_id), {})["reminder_minutes"] = minutes; save_settings(s)
+def fmt_reminder(minutes):
+    if minutes is None: return "Aus"
+    if minutes>=60: return f"{minutes//60}h vorher" if minutes%60==0 else f"{minutes} Min vorher"
+    return f"{minutes} Min vorher"
+
+# --- V89: Live-Scores Benachrichtigungen - nur Favoriten, pro Team individuell! ---
+def _live_cfg(uid):
+    try:
+        return load_settings().get(str(uid), {}).get("live", {})
+    except: return {}
+def get_live_master(uid):
+    return bool(_live_cfg(uid).get("master", False))
+def set_live_master(uid, val):
+    s = load_settings(); s.setdefault(str(uid), {}); s[str(uid)].setdefault("live", {})["master"] = bool(val); save_settings(s)
+def get_live_team(uid, team_full):
+    d = _live_cfg(uid).get("teams", {}).get(team_full, {})
+    return {"score": bool(d.get("score", False)), "period": bool(d.get("period", False)), "final": bool(d.get("final", False))}
+def set_live_team_toggle(uid, team_full, kind):
+    s = load_settings(); s.setdefault(str(uid), {}); s[str(uid)].setdefault("live", {}).setdefault("teams", {}).setdefault(team_full, {})
+    cur = bool(s[str(uid)]["live"]["teams"][team_full].get(kind, False))
+    s[str(uid)]["live"]["teams"][team_full][kind] = not cur; save_settings(s); return not cur
+def live_period_label(league, period):
+    try: per = int(period)
+    except: return f"Abschnitt {period}"
+    if league in ("NFL","NCAAF","NBA"): return f"{per}. Quarter" if per<=4 else "Overtime"
+    if league=="NHL": return f"{per}. Drittel" if per<=3 else "Overtime"
+    if league=="MLB": return f"{per}. Inning"
+    return f"Abschnitt {per}"
+
+
+def fmt_dt(iso):
+    try:
+        dt = datetime.fromisoformat(iso.replace("Z","+00:00")).astimezone(BERLIN)
+        return dt.strftime("%d.%m. %H:%M"), dt
+    except: return iso, None
+
+def espn_scoreboard(league, days=7, dates=None):
+    key = LEAGUES[league]["espn"]
+    url = f"https://site.api.espn.com/apis/site/v2/sports/{'football' if league in ('NFL','NCAAF') else 'baseball' if league=='MLB' else 'hockey' if league=='NHL' else 'basketball'}/{key}/scoreboard"
+    try:
+        params={"limit": 100}
+        if dates: params["dates"]=dates
+        r = requests.get(url, params=params, timeout=12)
+        return r.json().get("events", [])
+    except Exception as e:
+        logger.warning(e); return []
+
+def espn_injuries(league):
+    if league == "NCAAF": return []
+    _sport = "football" if league in ("NFL",) else "baseball" if league == "MLB" else "hockey" if league == "NHL" else "basketball"
+    _key = LEAGUES[league]["espn"]
+    try:
+        r = requests.get(f"https://site.api.espn.com/apis/site/v2/sports/{_sport}/{_key}/injuries", timeout=12)
+        j = r.json()
+        return j.get("injuries", []) or []
+    except Exception:
+        return []
+def _team_injuries(league, team_full):
+    if league == "NCAAF": return []
+    try:
+        _tl = (team_full or "").lower()
+        out = []
+        for _entry in espn_injuries(league):
+            _team = ((_entry.get("team", {}) or {}).get("displayName", "") or "").lower()
+            if not _team or _tl not in _team and _team not in _tl:
+                _nick = _tl.split()[-1] if _tl else ""
+                if not _nick or _nick not in _team: continue
+            for _inj in (_entry.get("injuries", []) or [])[:6]:
+                _ath = _inj.get("athlete", {}) or {}
+                _name = _ath.get("displayName", "") or _ath.get("fullName", "") or ""
+                _pos = (_ath.get("position", {}) or {}).get("abbreviation", "") or ""
+                _status = _inj.get("status", "") or _inj.get("type", "") or ""
+                _det = ((_inj.get("details", {}) or {}).get("type", "") or _inj.get("details", "") or "")
+                if isinstance(_det, dict): _det = _det.get("type", "") or ""
+                _label = _name
+                if _pos: _label += f" ({_pos})"
+                if _det: _label += f" - {_det}"
+                if _status: _label += f" — {_status}"
+                out.append(_label)
+            if out: break
+        return out[:6]
+    except Exception:
+        return []
+NFL_ABBR = {"Arizona Cardinals":"ARI","Atlanta Falcons":"ATL","Baltimore Ravens":"BAL","Buffalo Bills":"BUF","Carolina Panthers":"CAR","Chicago Bears":"CHI","Cincinnati Bengals":"CIN","Cleveland Browns":"CLE","Dallas Cowboys":"DAL","Denver Broncos":"DEN","Detroit Lions":"DET","Green Bay Packers":"GB","Houston Texans":"HOU","Indianapolis Colts":"IND","Jacksonville Jaguars":"JAX","Kansas City Chiefs":"KC","Las Vegas Raiders":"LV","Los Angeles Chargers":"LAC","Los Angeles Rams":"LAR","Miami Dolphins":"MIA","Minnesota Vikings":"MIN","New England Patriots":"NE","New Orleans Saints":"NO","New York Giants":"NYG","New York Jets":"NYJ","Philadelphia Eagles":"PHI","Pittsburgh Steelers":"PIT","San Francisco 49ers":"SF","Seattle Seahawks":"SEA","Tampa Bay Buccaneers":"TB","Tennessee Titans":"TEN","Washington Commanders":"WAS"}
+_SLEEPER_CACHE = {"ts": 0, "data": None}
+def _sleeper_players():
+    # V89: Sleeper NFL-Spielerliste, nur noch 15 Min cachen (war 60 Min)!
+    # Damit Harmon-Aktivierung & Co. max. 15 Min spaeter im Bot sind!
+    import time as _time
+    try:
+        if _SLEEPER_CACHE["data"] is not None and (_time.time() - _SLEEPER_CACHE["ts"]) < 900:
+            return _SLEEPER_CACHE["data"]
+        r = requests.get("https://api.sleeper.app/v1/players/nfl", timeout=20)
+        d = r.json()
+        _SLEEPER_CACHE["data"] = d; _SLEEPER_CACHE["ts"] = _time.time()
+        return d
+    except Exception:
+        return _SLEEPER_CACHE.get("data") or {}
+LEAGUE_SEASON = {"NFL": (9, 2), "NBA": (10, 6), "NHL": (10, 6), "MLB": (3, 10), "NCAAF": (8, 1)}
+LEAGUE_NEXT = {"NFL": "Preseason ab August!", "NBA": "Nächste Saison ab Oktober!", "NHL": "Nächste Saison ab Oktober!", "MLB": "Spring Training ab Februar!", "NCAAF": "Nächste Saison ab August!"}
+def _league_in_season(league):
+    from datetime import date as _d
+    _m = _d.today().month; _s, _e = LEAGUE_SEASON.get(league, (1, 12))
+    if _s <= _e: return _s <= _m <= _e
+    return _m >= _s or _m <= _e
+def _sleeper_team_injuries(team_full):
+    # V86: (Liste, hat_Daten) - Sleeper liefert injury_status + body_part!
+    try:
+        _abbr = NFL_ABBR.get((team_full or "").strip(), "")
+        if not _abbr: return [], False
+        _players = _sleeper_players()
+        if not _players: return [], False
+        out = []
+        for _p in _players.values():
+            if not isinstance(_p, dict): continue
+            if (_p.get("team") or "") != _abbr: continue
+            _st = (_p.get("injury_status") or "").strip()
+            if not _st or _st in ("Healthy", "NA", "N/A"): continue
+            if _st not in ("Questionable", "Doubtful", "Out", "IR", "PUP", "DNP", "Suspended"): continue
+            _name = _p.get("full_name") or ((_p.get("first_name","")+" "+_p.get("last_name","")).strip())
+            _pos = _p.get("position") or ""
+            _body = _p.get("injury_body_part") or ""
+            _label = _name
+            if _pos: _label += f" ({_pos})"
+            if _body: _label += f" - {_body}"
+            _label += f" — {_st}"
+            out.append(_label)
+        # Sortieren: Out/IR zuerst, dann Doubtful, dann Questionable!
+        _order = {"Out": 0, "IR": 0, "PUP": 1, "Doubtful": 2, "Questionable": 3}
+        out.sort(key=lambda x: _order.get(x.split(" — ")[-1].strip(), 9))
+        return out[:8], True
+    except Exception:
+        return [], False
+def _sleeper_split(team_full):
+    try:
+        _abbr = NFL_ABBR.get((team_full or "").strip(), "")
+        if not _abbr: return [], [], False
+        _players = _sleeper_players()
+        if not _players: return [], [], False
+        _game, _ir, _seen = [], [], set()
+        for _p in _players.values():
+            if not isinstance(_p, dict): continue
+            _tm = (_p.get("team") or "")
+            _meta_tm = ((_p.get("metadata") or {}).get("team") or _tm)
+            if _tm != _abbr or (_meta_tm and _meta_tm != _abbr): continue
+            if _p.get("active") is False: continue
+            _st = (_p.get("injury_status") or "").strip()
+            if not _st or _st in ("Healthy", "NA", "N/A"): continue
+            _name = _p.get("full_name") or ((_p.get("first_name","")+" "+_p.get("last_name","")).strip())
+            if not _name or _name in _seen: continue
+            _seen.add(_name)
+            _pos = _p.get("position") or ""; _body = _p.get("injury_body_part") or ""
+            _label = _name
+            if _pos: _label += f" ({_pos})"
+            if _body: _label += f" - {_body}"
+            _label += f" — {_st}"
+            if _st in ("Questionable", "Doubtful", "Out"): _game.append(_label)
+            elif _st in ("IR", "PUP"): _ir.append(_label)
+        _order = {"Out": 0, "Doubtful": 1, "Questionable": 2}
+        _game.sort(key=lambda x: _order.get(x.split(" — ")[-1].strip(), 9))
+        return _game[:8], _ir, True
+    except Exception:
+        return [], [], False
+def _team_injuries_with_status(league, team_full):
+    # V86: (Liste, hat_Daten) - NFL=Sleeper, Rest=ESPN!
+    if league == "NCAAF": return [], True
+    if league == "NFL":
+        _g, _ir, _has = _sleeper_split(team_full)
+        return _g, _has
+    try:
+        _inj = _team_injuries(league, team_full)
+        # ESPN: Wenn espn_injuries leer ist, wissen wir nicht ob "keine Verletzten" oder "keine Daten"!
+        # Deswegen: ESPN-Rohdaten checken - wenn komplett leer, dann keine Daten!
+        _raw = espn_injuries(league)
+        if not _raw: return [], False
+        return _inj, True
+    except Exception:
+        return [], False
+def event_teams(ev):
+    comps = ev.get("competitions", [{}])[0]
+    out=[]
+    for c in comps.get("competitors", []):
+        out.append((c.get("team",{}).get("displayName",""), c.get("homeAway",""), c.get("score")))
+    return out, comps
+
+def is_prime_time(dt):
+    if not dt: return False
+    # US Prime Time: Sunday/Monday/Thursday Night in den USA!
+    # Berlin 01:00-05:00 (Mo 02:20 = So 20:20 ET = Sunday Night Football!) ist US Primetime!
+    # Berlin 19-23 ist auch gut (US Nachmittag, aber bei uns beste Zeit).
+    # Also: Berlin 01-05 Uhr (US Abend) ODER Berlin 19-23 Uhr (DE Abend) = Primetime
+    hour = dt.hour
+    # US Night Games: Berlin 01-05 Uhr, egal welcher Wochentag (Mo 02:20 = So Night, Di 02:20 = Mo Night, Fr 02:20 = Do Night)
+    if 1 <= hour <= 5:
+        return True
+    # DE Abend: 19-23 Uhr
+    if 19 <= hour <= 23:
+        return True
+    return False
+
+def rank_game(ev, league):
+    teams, comp = event_teams(ev)
+    names = " ".join([x[0] for x in teams]).lower()
+    big_teams = ["steelers","eagles","chiefs","cowboys","dodgers","yankees","lakers","celtics","panthers","penguins","pirates","patriots","packers","ravens","49ers","bills","lions","texans","georgia","alabama","ohio state","michigan","notre dame","texas","oregon","bengals","browns","vikings","seahawks","rams","dolphins","jets"]
+    big_count = sum(1 for b in big_teams if b in names)
+    tabelle = 2.0 + min(1.5, big_count*0.7)
+    # ALLE großen Rivalitäten! Bengals-Steelers fehlte! Das ist AFC North, Battle of Ohio, Riesen-Rivalität!
+    rival_pairs = [
+        # NFL - AFC North (die härteste Division!)
+        ("steelers","ravens"),("steelers","bengals"),("steelers","browns"),
+        ("bengals","ravens"),("bengals","browns"),("ravens","browns"),
+        # NFL - NFC North / East / West
+        ("cowboys","49ers"),("cowboys","eagles"),("cowboys","giants"),("eagles","giants"),
+        ("packers","bears"),("packers","vikings"),("bears","vikings"),("lions","packers"),
+        ("chiefs","bills"),("chiefs","raiders"),("chiefs","broncos"),("chiefs","chargers"),
+        ("patriots","bills"),("patriots","jets"),("patriots","dolphins"),
+        ("49ers","seahawks"),("49ers","rams"),("rams","seahawks"),
+        ("saints","falcons"),("saints","buccaneers"),("colts","titans"),("texans","colts"),
+        # NBA / MLB / NHL
+        ("lakers","celtics"),("lakers","clippers"),("knicks","celtics"),("bulls","pistons"),
+        ("yankees","red sox"),("dodgers","giants"),("dodgers","padres"),("cubs","cardinals"),
+        ("penguins","capitals"),("penguins","flyers"),("rangers","islanders"),("bruins","canadiens"),("blackhawks","red wings"),
+        # College
+        ("michigan","ohio state"),("alabama","auburn"),("georgia","florida"),("texas","oklahoma"),("notre dame","usc"),
+        ("texas","texas a&m"),("army","navy"),("florida","florida state"),("ohio state","penn state"),
+    ]
+    rival = 0.5
+    for a,b in rival_pairs:
+        if a in names and b in names: rival = 2.8; break
+    else:
+        if big_count>=2: rival = 1.5
+    stars = 1.0 + min(1.8, big_count*0.6)
+    _, dt = fmt_dt(ev.get("date",""))
+    # Primetime: US Night Game (Berlin 01-05) ist das wichtigste! Sunday Night Football = +1.8!
+    # Sender-Check: Wenn NBC/ESPN/Amazon Prime und Nacht, dann sicher Primetime!
+    bc_name = broadcast_line(ev).lower()
+    is_us_night = dt and 1 <= dt.hour <= 5
+    is_night_broadcast = any(x in bc_name for x in ["nbc", "espn", "amazon", "prime video", "netflix"])
+    if is_us_night and is_night_broadcast:
+        prime = 1.8
+    elif dt and is_prime_time(dt):
+        prime = 1.2
+    else:
+        prime = 0.3
+    if dt and dt.weekday()>=5: prime += 0.3
+    h = sum(ord(c) for c in names) % 10
+    var = h / 20.0
+    total = round(min(9.9, max(3.0, tabelle + rival + stars + prime + var)), 1)
+    breakdown = {"tabelle": round(tabelle,1), "rival": round(rival,1), "stars": round(stars,1), "prime": round(prime,1), "var": round(var,1), "total": total}
+    return total, breakdown
+
+def live_clock(ev, league):
+    # Holt die aktuelle Spielzeit aus ESPN, z.B. "17:04 P3" bei NHL, "08:12 Q4" bei NBA/NFL, "Top 7th" bei MLB
+    st = ev.get("status", {}) or {}
+    clock = st.get("displayClock") or ""
+    period = st.get("period")
+    detail = st.get("type", {}).get("detail", "") or st.get("type", {}).get("shortDetail", "") or ""
+    # ESPN gibt manchmal schon "17:04 - 3rd Period" als detail - dann direkt nehmen
+    if detail and ("Period" in detail or "Quarter" in detail or "Inning" in detail):
+        # "17:04 - 3rd Period" -> "17:04 P3"
+        try:
+            c = detail.split(" - ")[0].strip()
+            if "3rd Period" in detail: return f"{c} P3"
+            if "2nd Period" in detail: return f"{c} P2"
+            if "1st Period" in detail: return f"{c} P1"
+            if "OT" in detail: return f"{c} OT"
+            if "4th Quarter" in detail: return f"{c} Q4"
+            if "3rd Quarter" in detail: return f"{c} Q3"
+            if "2nd Quarter" in detail: return f"{c} Q2"
+            if "1st Quarter" in detail: return f"{c} Q1"
+            return detail
+        except: pass
+    if clock and period:
+        if league=="NHL":
+            if period==4: return f"{clock} OT"
+            if period==5: return f"{clock} SO"
+            return f"{clock} P{period}"
+        if league=="MLB":
+            return detail or clock
+        # NFL / NBA / NCAAF
+        if period==5: return f"{clock} OT"
+        return f"{clock} Q{period}"
+    if clock: return clock
+    if detail: return detail
+    return ""
+
+def last_scorer(ev, league):
+    # Holt den letzten Torschützen / Scorer aus den ESPN-Spieldetails
+    # ESPN legt in competitions[0].details die Scoring-Plays ab, z.B. Goal, Touchdown, Home Run
+    try:
+        comp = ev.get("competitions", [{}])[0]
+        details = comp.get("details", []) or []
+        # Nur Scoring-Plays, letztes zuerst
+        for d in reversed(details):
+            dtype = (d.get("type", {}) or {}).get("text", "") or d.get("type", {}).get("shortText", "") or ""
+            # NHL: Goal, NFL: Touchdown / Field Goal, NBA: 3PT / Dunk / Layup, MLB: Home Run / Single
+            if any(k in dtype for k in ["Goal", "Touchdown", "Field Goal", "Home Run", "Three Point", "Two Point", "Dunk", "Layup", "Single", "Double", "Triple"]):
+                # Spielername aus participants / athletes
+                scorer = ""
+                for p in d.get("participants", []) or d.get("athletesInvolved", []) or []:
+                    ath = p.get("athlete", {}) or p
+                    if ath.get("displayName"):
+                        scorer = ath.get("displayName"); break
+                if not scorer:
+                    # Fallback: im Text steht oft "Sidney Crosby Goal"
+                    txt = d.get("text", "") or dtype
+                    scorer = txt
+                team = (d.get("team", {}) or {}).get("shortDisplayName", "") or (d.get("team", {}) or {}).get("displayName", "")
+                clock = (d.get("clock", {}) or {}).get("displayValue", "") or ""
+                period = d.get("period", "")
+                # Emoji je nach Liga
+                emo = "🏒" if league=="NHL" else "🏈" if league in ("NFL","NCAAF") else "⚾" if league=="MLB" else "🏀"
+                label = "Letztes Tor" if league=="NHL" else "Letzter Score" if league=="MLB" else "Letzter Touchdown" if dtype=="Touchdown" else "Letzter Score"
+                extra = f" • {clock} P{period}" if league=="NHL" and clock else ""
+                if scorer:
+                    return f"   {emo} {label}: {scorer} ({team}){extra}" if team else f"   {emo} {label}: {scorer}{extra}"
+        return ""
+    except Exception:
+        return ""
+
+
+def espn_summary_details(ev, league):
+    # Holt die Play-by-Play Details aus der ESPN Summary-API, wenn das Scoreboard keine SO-Versuche hat
+    # Scoreboard hat oft keine einzelnen SO-Versuche, Summary schon: "Ben Kindel Goal", "Ivar Stenberg Miss"
+    try:
+        eid = ev.get("id")
+        if not eid: return []
+        key = LEAGUES[league]["espn"]
+        sport = 'hockey' if league=='NHL' else 'basketball' if league in ('NBA',) else 'football' if league in ('NFL','NCAAF') else 'baseball'
+        url = f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{key}/summary"
+        r = requests.get(url, params={"event": eid}, timeout=10)
+        data = r.json()
+        # Details stecken in details oder keyEvents
+        dets = []
+        for k in ["details", "keyEvents"]:
+            if k in data and isinstance(data[k], list): dets.extend(data[k])
+        # Auch in gameInfo / competitors?
+        if not dets:
+            for comp in data.get("gameInfo", {}).get("competitions", []) if isinstance(data.get("gameInfo"), dict) else []:
+                dets.extend(comp.get("details", []) or [])
+        return dets
+    except Exception:
+        return []
+def shootout_lines(ev, league):
+    # Nur NHL Shootout: zeigt jeden Versuch mit ✅ / ❌, wie bei ESPN: "Ben Kindel ✅, Ivar Stenberg ❌"
+    if league!="NHL": return []
+    try:
+        comp = ev.get("competitions", [{}])[0]
+        details = list(comp.get("details", []) or [])
+        # Wenn im Scoreboard keine SO-Details, Summary nachladen
+        has_so = any((d.get("period")==5 or "Shootout" in str(d.get("type",{})) or "SO" in str(d.get("type",{}))) for d in details)
+        if not has_so:
+            details = espn_summary_details(ev, league) or details
+        so_plays=[]
+        for d in details:
+            per = d.get("period")
+            dtype = (d.get("type",{}) or {}).get("text","") or (d.get("type",{}) or {}).get("shortText","") or d.get("text","") or ""
+            txt_all = (dtype + " " + (d.get("text","") or "")).lower()
+            # Shootout-Versuche: period 5 oder "shootout" im Text oder "SO" als Perioden-Label
+            is_so = (per==5 or "shootout" in txt_all or d.get("periodType")=="shootout" or "so -" in txt_all)
+            if not is_so: continue
+            # Spielername
+            scorer=""
+            for p in d.get("participants", []) or d.get("athletesInvolved", []) or []:
+                ath = p.get("athlete",{}) or p
+                if ath.get("displayName"): scorer=ath.get("displayName"); break
+            if not scorer:
+                # Text wie "Ben Kindel Goal Wrist Shot" -> Name ist alles vor "Goal"/"Shot"/"Miss"
+                raw = d.get("text","") or dtype
+                for cut in [" Goal", " Miss", " Shot", " Save"]:
+                    if cut in raw: scorer=raw.split(cut)[0].strip(); break
+                if not scorer: scorer=raw
+            team = (d.get("team",{}) or {}).get("shortDisplayName","") or (d.get("team",{}) or {}).get("displayName","") or ""
+            is_goal = ("goal" in txt_all and "above" not in txt_all and "wide" not in txt_all and "miss" not in txt_all and "save" not in txt_all and "crossbar" not in txt_all and "post" not in txt_all)
+            mark = "✅" if is_goal else "❌"
+            so_plays.append(f"{scorer} {mark} ({team})" if team else f"{scorer} {mark}")
+        if not so_plays: return []
+        # Shootout-Stand aus ✅ zählen: z.B. PIT 1-0 SJS
+        out=[]
+        out.append(f"   🥅 Shootout:")
+        for p in so_plays:
+            out.append(f"      {p}")
+        return out
+    except Exception:
+        return []
+
+def venue_line(ev):
+    # Holt Stadion + Ort aus ESPN: z.B. "🏟️ PPG Paints Arena, Pittsburgh" oder "🏟️ Acrisure Stadium, Pittsburgh"
+    try:
+        comp = ev.get("competitions", [{}])[0]
+        v = comp.get("venue", {}) or {}
+        name = v.get("fullName", "") or v.get("name", "")
+        addr = v.get("address", {}) or {}
+        city = addr.get("city", "") or ""
+        state = addr.get("state", "") or ""
+        if name and city:
+            return f"   🏟️ {name}, {city}" + (f", {state}" if state else "")
+        if name: return f"   🏟️ {name}"
+        if city: return f"   🏟️ {city}"
+        return ""
+    except Exception:
+        return ""
+def is_neutral_or_international(ev, home_name):
+    # NUR echtes International: Stadion liegt außerhalb der USA!
+    # Stadt-Vergleich geht NICHT: Giants spielen in East Rutherford (nicht NYC), Pacers in Indianapolis (nicht "Indiana"),
+    # Vegas Golden Knights -> "Vegas Golden" vs "Las Vegas" - alles normale US-Spiele, kein International!
+    # Deswegen: Nur wenn Land != USA oder Stadt in [London, Berlin, München, Madrid, Dublin, Sao Paulo, Mexico City]!
+    try:
+        comp = ev.get("competitions", [{}])[0]
+        v = comp.get("venue", {}) or {}
+        addr = v.get("address", {}) or {}
+        vcity = (addr.get("city","") or "").strip()
+        vcity_low = vcity.lower()
+        country = (addr.get("country","") or v.get("country","") or "").strip().lower()
+        # 1) Land-Check: Wenn ESPN ein Land liefert und es nicht USA ist -> International
+        if country and country not in ("us", "usa", "united states", "united states of america"):
+            # Aber Kanada ist bei NHL/NBA normal (Toronto, Montreal, Vancouver) - kein International!
+            if country not in ("ca", "canada"):
+                vname = v.get("fullName","") or v.get("name","")
+                label = f"📍 {vname}, {vcity}" if vname and vcity else f"📍 {vcity or vname}"
+                return True, label
+            return False, ""
+        # 2) Stadt-Check: Nur echte International-Städte, egal was im Teamnamen steht
+        intl_cities = ["london", "berlin", "munich", "münchen", "madrid", "dublin", "sao paulo", "são paulo", "mexico city", "mexiko", "paris", "tokyo", "rio de janeiro"]
+        if vcity_low in intl_cities:
+            vname = v.get("fullName","") or v.get("name","")
+            label = f"📍 {vname}, {vcity}" if vname and vcity else f"📍 {vcity or vname}"
+            return True, label
+        # 3) Stadion-Name-Check: Wembley, Tottenham, Allianz Arena, Aviva, Bernabeu etc. = International
+        vname_low = (v.get("fullName","") or v.get("name","") or "").lower()
+        intl_stadiums = ["wembley", "tottenham", "allianz arena", "olympiastadion berlin", "aviva", "croke park", "bernabeu", "santiago bernabeu", "azteca", "corinthians", "allianz parque", "maracana"]
+        if any(s in vname_low for s in intl_stadiums):
+            vname = v.get("fullName","") or v.get("name","")
+            label = f"📍 {vname}, {vcity}" if vname and vcity else f"📍 {vcity or vname}"
+            return True, label
+        return False, ""
+    except Exception:
+        return False, ""
+def broadcast_line(ev):
+    # Holt den Original-Sender aus ESPN: z.B. "CBS", "FOX", "SportsNet Pittsburgh", "ESPN+", "TNT"
+    try:
+        comp = ev.get("competitions", [{}])[0]
+        bcs = comp.get("broadcasts", []) or []
+        if not bcs: return ""
+        for b in bcs:
+            names = b.get("names") or []
+            name = names[0] if names else b.get("name","") or b.get("shortName","")
+            if not name and isinstance(b.get("media"), dict):
+                name = b.get("media",{}).get("shortName","")
+            if name and str(name).strip():
+                return str(name).strip()
+        return ""
+    except Exception:
+        return ""
+def game_line(ev, league, show_venue=False, compact_home_first=True, show_broadcast=False):
+    teams, comp = event_teams(ev)
+    date_s, dt = fmt_dt(ev.get("date",""))
+    state = ev.get("status",{}).get("type",{}).get("state","")
+    # Status-Label: Live / Final / Anpfiff - damit fertige Spiele nicht mehr als Live aussehen
+    if state=="in":
+        clock = live_clock(ev, league)
+        label = f"🔴 LIVE • {clock}" if clock else "🔴 LIVE"
+    elif state=="post":
+        # NHL/NBA/NFL: War es OT oder SO? z.B. "✅ Final/SO" wie bei ESPN "FINAL/SO"
+        per = ev.get("status",{}).get("period") or 0
+        det = (ev.get("status",{}).get("type",{}) or {}).get("detail","") or ""
+        if league=="NHL":
+            if per==5 or "/SO" in det or "Shootout" in det: label = "✅ Final/SO"
+            elif per==4 or "/OT" in det or "Overtime" in det: label = "✅ Final/OT"
+            else: label = "✅ Final"
+        elif league in ("NBA","NFL","NCAAF"):
+            if per and per>4 or "/OT" in det or "Overtime" in det: label = "✅ Final/OT"
+            else: label = "✅ Final"
+        elif league=="MLB":
+            if per and per>9: label = f"✅ Final/{per} Inn."
+            else: label = "✅ Final"
+        else: label = "✅ Final"
+    else:
+        label = f"⏰ {date_s} Uhr"
+    if len(teams)>=2:
+        # V69-FIX: Heim/Gast via homeAway-Feld, nicht via ESPN-Reihenfolge!
+        home_t = next((x for x in teams if (x[1] or "").lower()=="home"), None)
+        away_t = next((x for x in teams if (x[1] or "").lower()=="away"), None)
+        if home_t is None or away_t is None:
+            away_t, home_t = teams[0], teams[1]
+        # V70-FIX: Bei kommenden Spielen KEIN Score! ESPN liefert vor Anpfiff "0" -> "Penguins 0 @ Senators 0" verwirrt!
+        # Nur bei Live (in) und Final (post) Score zeigen, sonst nur Team-Namen!
+        if state in ("in", "post"):
+            a = f"{away_t[0]} {away_t[2] or '' }".strip()
+            h = f"{home_t[0]} {home_t[2] or '' }".strip()
+        else:
+            a = away_t[0].strip()
+            h = home_t[0].strip()
+        is_intl, intl_label = is_neutral_or_international(ev, home_t[0])
+        ven = f"\n   {intl_label}" if is_intl else ""
+        bc = broadcast_line(ev)
+        bc_suf = f" • 📺 {bc}" if (show_broadcast and bc) else ""
+        # V69: UEBERALL Gast @ Heim! Erstes Team = Auswaertsteam! (US-Standard!)
+        if state=="post":
+            return f"{a} @ {h}  •  {label} • {date_s}{ven}{bc_suf}"
+        if state=="in":
+            return f"{a} @ {h}  •  {label}{ven}{bc_suf}"
+        return f"{a} @ {h}  •  {label}{ven}{bc_suf}"
+    return f"{ev.get('name','Spiel')}  •  {label}"
+
+def main_kb():
+    # V67: Aufgeraeumt! Heute/Morgen + Reminder raus aus Hauptmenue - jetzt in Next Games Hub / Einstellungen!
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("➕ Favorit hinzufügen", callback_data="fav_add")],
+        [InlineKeyboardButton("⭐ Meine Favoriten", callback_data="fav_list")],
+        [InlineKeyboardButton("⏭️ Next Games", callback_data="next"),
+         InlineKeyboardButton("🏆 Top 10", callback_data="top10")],
+        [InlineKeyboardButton("🔴 Live", callback_data="live"),
+         InlineKeyboardButton("📊 Tabellen", callback_data="tables")],
+        [InlineKeyboardButton("✅ Ergebnisse", callback_data="results"),
+         InlineKeyboardButton("⚙️ Einstellungen", callback_data="settings")],
+        [InlineKeyboardButton("❓ Hilfe", callback_data="help")],
+    ])
+
+START_TEXT = """Willkommen beim USA Sport Radar 🇺🇸📡
+
+Dein Guide für US-Sport - alles an einem Ort, ohne dass du 100 Spiele durchgucken musst!
+
+Ligen: NFL 🏈 | NCAAF 🎓🏈 | MLB ⚾ | NHL 🏒 | NBA 🏀
+
+⭐ Stell deine Favoriten ein
+🔴 Schau live rein, was gerade läuft
+⏭️ Schau, was als Nächstes kommt - heute, morgen oder nur deine Favoriten
+📊 Schau in die Tabellen - alle Ligen oder nur deine Favoriten
+✅ Schau dir an, wie die letzten Spiele ausgingen
+🏆 Find die Top 10 Spiele, die sich wirklich lohnen
+⏰ Lass dich erinnern, wann du willst - 3h, 2h, 1h oder 30 Min vorher!\n🔔 Stell Live-Scores ein - nur deine Favoriten, pro Team: Jeder Score / Perioden-Ende / Endstand!
+
+Einfach auf die Knöpfe drücken - kein @, kein Befehl nötig."""
+
+HELP_TEXT = """❓ Hilfe - So liest du den Bot
+
+**Gast @ Heim**
+Erstes Team = Auswärtsteam, zweites Team = Heimteam!
+Z.B. Vikings @ Packers = Vikings spielt bei den Packers in Green Bay!
+
+**⭐ = Dein Team**
+Das ist einer deiner Favoriten!
+
+**📺 = US-Sender**
+Auf dem Sender läuft das Spiel in den USA (CBS / FOX / ESPN ...).
+Deutsche Sender zeigen wir nicht, weil die Rechte sich ständig ändern!
+
+**📍 / 🏟️ = Stadion / Ort**
+Wo das Spiel stattfindet! Im Top 10 Detail steht das Stadion immer dabei!
+
+**🔴 LIVE / ✅ Final / ⏰ Uhrzeit**
+Live = läuft gerade, Final = fertig, Uhrzeit = Anpfiff!
+
+**🏆 Top 10**
+Tippe eine Zahl (1-10) in den Chat für Rating + Warum so bewertet?
+In der Übersicht steht kein Rating - nur Platz 1-10!
+Das genaue Rating (z.B. ⭐ 9,9/10) steht nur im Detail!
+
+**⭐ 9,9/10 = Rating**
+So gut ist das Spiel bewertet - nur im Detail!
+
+**📊 Tabellen - NHL**
+W-L-OTL = Siege - Niederlagen - Overtime-Niederlagen
+OT1 = Letztes Spiel in Overtime verloren (1 Punkt!)
+Sieg = 2 Punkte, Overtime-Niederlage = 1 Punkt, Niederlage = 0 Punkte
+Bei NHL-Tabellen steht unten immer eine kurze Legende + ein Button für die ausführliche Erklärung!
+
+**🏥 Verletzungen - Wichtig!**
+Daten von Sleeper (NFL) / ESPN (NBA, NHL, MLB).
+Offizielle Team-Apps koennen bis zu 15 Min schneller sein als Sleeper - der Bot holt Sleeper alle 15 Min neu!
+
+**🔔 Benachrichtigungen**
+In ⚙️ Einstellungen -> 🔔 Benachrichtigungen: Reminder + Live-Scores!
+Live-Scores nur fuer deine Favoriten, pro Team einzeln: Jeder Score / Perioden-Ende / Endstand. Alles aus = kein Spam!
+
+**⏰ Reminder**
+In ⚙️ Einstellungen stellst du ein, wann du erinnert werden willst (3h / 2h / 1h / 30 Min / Aus).
+Spielen 2 deiner Favoriten gleichzeitig, kriegst du 1 Nachricht für beide - mit Sender!
+
+Einfach auf die Knöpfe drücken - kein @, kein Befehl nötig."""
+
+NHL_HELP_TEXT = """❓ NHL-Tabelle erklärt
+
+So liest du die Tabelle:
+15-3-2 = 15 Siege - 3 Niederlagen - 2 Overtime-Niederlagen
+
+Streak (in Klammern):
+W3 = 3 Siege in Folge
+L1 = 1 Niederlage in Folge (in 60 Minuten, 0 Punkte)
+OT1 = 1 Spiel in Folge in Overtime / Shootout verloren (1 Punkt!)
+
+Punkte (PTS):
+Sieg = 2 Punkte
+Overtime-Niederlage = 1 Punkt
+Niederlage in 60 Minuten = 0 Punkte
+
+Beispiel: Sabres 8-7-4 (OT1 • 20 PTS)
+= 8 Siege, 7 Niederlagen, 4 Overtime-Niederlagen
+= Letztes Spiel in Overtime verloren
+= 8x2 + 4x1 = 20 Punkte!
+
+Sortiert wird nach Punkten, nicht nach Siegen!"""
+
+NHL_LEGEND_SHORT = "💡 W-L-OTL = Siege - Niederlagen - Overtime-Niederlagen • PTS = Punkte"
+async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(START_TEXT, reply_markup=main_kb())
+async def help_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(HELP_TEXT, reply_markup=main_kb())
+
+async def fav_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    favs = favs_for(update.effective_user.id)
+    txt = "⭐ Deine Favoriten:\n" + ("\n".join([f"• {f}" for f in favs]) if favs else "Noch keine Favoriten.")
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("➕ Favorit hinzufügen", callback_data="fav_add")],
+        [InlineKeyboardButton("🗑️ Favorit entfernen", callback_data="fav_remove")],
+        [InlineKeyboardButton("🗑️ Alle Favoriten löschen", callback_data="fav_clear")],
+        [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+    ])
+    await update.message.reply_text(txt + "\n\nBitte Teamnamen eingeben:", reply_markup=kb)
+    ctx.user_data["awaiting_fav"] = True
+
+async def top10_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    target = update.message or update.callback_query.message
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🏈 NFL", callback_data="top10_league:NFL"),
+         InlineKeyboardButton("🎓 NCAAF", callback_data="top10_league:NCAAF")],
+        [InlineKeyboardButton("🏒 NHL", callback_data="top10_league:NHL"),
+         InlineKeyboardButton("🏀 NBA", callback_data="top10_league:NBA")],
+        [InlineKeyboardButton("⚾ MLB", callback_data="top10_league:MLB"),
+         InlineKeyboardButton("🌎 Alle Ligen", callback_data="top10_league:ALL")],
+        [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+    ])
+    await target.reply_text("🏆 Top 10 Spiele der Woche\n\nWelche Liga?", reply_markup=kb)
+async def top10_league_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, league: str):
+    target = update.message or update.callback_query.message
+    await target.reply_text("🏆 Ich suche die Top 10... einen Moment ⏳")
+    leagues = list(LEAGUES.keys()) if league=="ALL" else [league]
+    from datetime import date as _date
+    today = _date.today()
+    all_games=[]; seen=set()
+    for lg in leagues:
+        for offset in range(0, 8):
+            d = today + timedelta(days=offset)
+            ds = d.strftime("%Y%m%d")
+            for ev in espn_scoreboard(lg, dates=ds):
+                eid = ev.get("id")
+                if eid in seen: continue
+                seen.add(eid)
+                state = ev.get("status",{}).get("type",{}).get("state","")
+                if state=="post": continue
+                score, bd = rank_game(ev, lg)
+                all_games.append((score, lg, ev, bd))
+    all_games.sort(key=lambda x: x[0], reverse=True)
+    top = all_games[:10]
+    ctx.user_data["top10_list"] = [(s, lg, ev, bd) for s, lg, ev, bd in top]
+    title = "Alle Ligen" if league=="ALL" else league
+    lines=[f"🏆 Top 10 - {title}\n💡 Zahl tippen für Rating + Details!\n"]
+    if not top:
+        lines.append("Keine kommenden Spiele in den nächsten 7 Tagen gefunden.")
+        await target.reply_text("\n".join(lines), reply_markup=main_kb()); return
+    # V53: KEINE Datum-Gruppierung mehr bei Top 10! Strikt 1-10 nach Rating!
+    # Sonst: "20.11. -> 4. Texans-Colts" obwohl oben schon 10 Spiele waren - total verwirrend!
+    # Ranking ist hier wichtiger als Datum: Platz 1 ist das beste Spiel, egal ob Montag Nacht oder Sonntag!
+    for rank, (score, lg, ev, bd) in enumerate(top, 1):
+        teams,_ = event_teams(ev)
+        # V70: Kurzname via homeAway, nicht via Reihenfolge! Auswärts zuerst!
+        def _short_by_homeaway(want):
+            try:
+                comp = ev.get("competitions", [{}])[0]
+                for c in comp.get("competitors", []):
+                    if (c.get("homeAway","") or "").lower()==want:
+                        tm = c.get("team", {}) or {}
+                        return tm.get("shortDisplayName","") or tm.get("displayName","")
+                return ""
+            except: return ""
+        a_name = _short_by_homeaway("away") or (teams[0][0] if teams else "")
+        h_name = _short_by_homeaway("home") or (teams[1][0] if len(teams)>1 else "")
+        date_s2, dt2 = fmt_dt(ev.get("date",""))
+        # Datum bei jedem Spiel dabei: "16.11. 02:20" - damit man weiß, wann es ist, ohne Gruppierung!
+        time_s = dt2.strftime("%d.%m. %H:%M") if dt2 else date_s2
+        bc = broadcast_line(ev)
+        bc_suf = f" • 📺 {bc}" if bc else ""
+        # V72: 2 Zeilen pro Spiel statt 1 gequetschte! Viel uebersichtlicher!
+        # Zeile 1: Nur das Spiel! Zeile 2: Alle Infos dazu!
+        # Vorher: "1. Vikings @ Packers • 🏈 NFL • 15.11. 19:00 • 📺 Fox • ⭐ 9.9/10" -> bricht doof um!
+        # Jetzt: "1. Vikings @ Packers" + darunter "   🏈 NFL • 15.11. 19:00 • 📺 Fox • ⭐ 9.9/10"
+        # Bei einzelner Liga ohne Liga-Tag (steht schon oben!):
+        # V73: Rating RAUS aus der Uebersicht! Die meisten gucken nur "Ah, Platz 1/2/3!" - fertig!
+        # Nur die "Nerds" wollen das genaue Rating (9,7 / 6,3) wissen - die tippen eh die Zahl ein und sehen es im Detail!
+        if league=="ALL":
+            lines.append(f"{rank}. {a_name} @ {h_name}\n   {LEAGUES[lg]['emoji']} {lg} • {time_s}{bc_suf}")
+        else:
+            lines.append(f"{rank}. {a_name} @ {h_name}\n   {time_s}{bc_suf}")
+    # V53: KEINE Zahlen-Buttons mehr! Die haben nur reingekloppt und 2 Reihen weggenommen!
+    # Nur noch Andere Liga + Zurück - Zahl tippen geht schneller!
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🏆 Andere Liga", callback_data="top10")],
+        [InlineKeyboardButton("❓ Hilfe", callback_data="help")],
+        [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+    ])
+    await target.reply_text("\n".join(lines), reply_markup=kb)
+def _standings_row_for(lg, team_full):
+    # Findet ein Team in espn_standings(lg): -> (div_short, rank_in_div, W, L, T, leader_row)
+    try:
+        divs = espn_standings(lg)
+        if not divs: return None
+        tl = (team_full or "").lower()
+        for div, rows in divs.items():
+            for i, (disp, short, abbr, W, L, T, streak) in enumerate(rows, 1):
+                dl = disp.lower()
+                if tl in dl or dl in tl or short.lower() in tl or tl in short.lower():
+                    div_s = div.replace("American Football Conference", "AFC").replace("National Football Conference", "NFC").replace("American Football", "AFC").replace("National Football", "NFC").strip()
+                    return (div_s, i, W, L, T, rows)
+        return None
+    except Exception:
+        return None
+def _playoff_mode(lg):
+    # V75: Playoff-Logik nur SPAET in der Saison! Schaltet sich von alleine an!
+    # NFL ab 12 Spielen (Woche 13+), NCAAF ab 10 Spielen, NHL/NBA ab 60 Spielen, MLB ab 140 Spielen!
+    try:
+        divs = espn_standings(lg)
+        if not divs: return False
+        max_games = 0
+        for rows in divs.values():
+            for (disp, short, abbr, W, L, T, streak) in rows:
+                max_games = max(max_games, W + L + (T or 0))
+        thr = {"NFL": 12, "NCAAF": 10, "NHL": 60, "NBA": 60, "MLB": 140}.get(lg, 999)
+        return max_games >= thr
+    except Exception:
+        return False
+def _slot_label(dt):
+    if not dt: return "Slot"
+    h = dt.hour
+    if 18 <= h <= 20: return "Früh-Slot (19:00)"
+    if 21 <= h <= 23: return "Spät-Slot (22:25)"
+    if 0 <= h <= 5: return "Nacht-Slot (02:15)"
+    if 12 <= h <= 17: return "Nachmittags-Slot"
+    return "Slot"
+async def top10_detail_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, idx: int):
+    target = update.message or update.callback_query.message
+    lst = ctx.user_data.get("top10_list", [])
+    if not lst or idx<1 or idx>len(lst):
+        await target.reply_text("Tippe erst auf 🏆 Top 10 und wähle eine Liga, dann die Zahl!", reply_markup=main_kb()); return
+    score, lg, ev, bd = lst[idx-1]
+    teams,_ = event_teams(ev)
+    # V71: Detail auch Gast @ Heim via homeAway + Liga-Tag!
+    def _short_hw(want):
+        try:
+            comp = ev.get("competitions", [{}])[0]
+            for c in comp.get("competitors", []):
+                if (c.get("homeAway","") or "").lower()==want:
+                    tm = c.get("team", {}) or {}
+                    return tm.get("shortDisplayName","") or tm.get("displayName","")
+            return ""
+        except: return ""
+    a_name = _short_hw("away") or (teams[0][0] if teams else "")
+    h_name = _short_hw("home") or (teams[1][0] if len(teams)>1 else "")
+    date_s, dt = fmt_dt(ev.get("date",""))
+    time_s = dt.strftime("%d.%m. %H:%M") if dt else date_s
+    bc = broadcast_line(ev)
+    bc_suf = f" • 📺 {bc}" if bc else ""
+    # V75: Fazit NEU! Nicht mehr "Wenn du nur 1 Spiel guckst..." - doof, wenn um 19:00 4 Spiele laufen!
+    # Jetzt: Nach Rating gestaffelt + Uhrzeit-Hinweis!
+    if score>=9.5: fazit_base = "🔥 Absoluter Top-Kracher der Woche! Wenn du ein Spiel guckst, dann das hier!"
+    elif score>=9.0: fazit_base = "Richtig starkes Spiel - lohnt sich auf jeden Fall reinzugucken!"
+    elif score>=8.0: fazit_base = "Solides Spiel - vor allem für Fans der Teams interessant!"
+    else: fazit_base = "Kein Kracher, aber für Fans der Teams interessant."
+    # Uhrzeit-Hinweis: 19:00 okay, 22:25 spät, 02:15 Nachtschicht!
+    _h = dt.hour if dt else 19
+    if 18 <= _h <= 20: _time_hint = "Perfekte Zeit - direkt nach Feierabend!"
+    elif 21 <= _h <= 23: _time_hint = "Spätspiel - eher was für Nachtschwärmer!"
+    elif 0 <= _h <= 5: _time_hint = "Nachtschicht - nur für harte Nerds oder Aufnahme!"
+    elif 12 <= _h <= 17: _time_hint = "Nachmittags-Spiel - gut für Sonntag Nachmittag!"
+    else: _time_hint = ""
+    fazit = f"{fazit_base} {_time_hint}".strip()
+    _ven = venue_line(ev).strip()
+    _ven_line = f"\n{_ven}" if _ven else ""
+    # V75: Standings + Slot-Top + Playoff (einfach gedacht, kein Tiebreaker-Kram!)
+    # Standings: Vollnamen aus event_teams (teams[0]/teams[1] sind Vollnamen!)
+    _full_away = ""; _full_home = ""
+    try:
+        for _nm, _ha, _sc in teams:
+            if (_ha or "").lower()=="away": _full_away = _nm
+            if (_ha or "").lower()=="home": _full_home = _nm
+        if not _full_away: _full_away = teams[0][0]
+        if not _full_home: _full_home = teams[1][0] if len(teams)>1 else ""
+    except Exception:
+        _full_away, _full_home = a_name, h_name
+    _row_a = _standings_row_for(lg, _full_away)
+    _row_h = _standings_row_for(lg, _full_home)
+    _stand_lines = []
+    if _row_a and _row_h:
+        _div_a, _rank_a, _wa, _la, _ta, _rows_a = _row_a
+        _div_h, _rank_h, _wh, _lh, _th, _rows_h = _row_h
+        _rec_a = f"{_wa}-{_la}" + (f"-{_ta}" if _ta else "")
+        _rec_h = f"{_wh}-{_lh}" + (f"-{_th}" if _th else "")
+        # V78: "Um nix mehr" NUR wenn's rechnerisch wirklich nicht mehr geht!
+        # Nicht einfach "Platz 3+ = um nix mehr"! Wer Letzter ist, kann noch jedes Spiel gewinnen und hoch kommen!
+        # Rechnung: Verbleibende Spiele = Gesamt - schon gespielt! Gesamt: NFL 17, NCAAF 12, NHL/NBA 82, MLB 162!
+        # Wenn W + verbleibend < Siege von Platz 2 -> selbst mit nur Siegen nicht mehr auf Platz 2 zu holen -> DANN erst "um nix mehr"!
+        _TOTAL_GAMES = {"NFL": 17, "NCAAF": 12, "NHL": 82, "NBA": 82, "MLB": 162}.get(lg, 17)
+        def _can_still_top2(_rank, _w, _l, _t, _rows):
+            if _rank <= 2: return True
+            if len(_rows) < 2: return True
+            _w2 = _rows[1][3]  # Siege von Platz 2 in der Division!
+            _remaining = max(0, _TOTAL_GAMES - (_w + _l + (_t or 0)))
+            # Selbst wenn alle verbleibenden Spiele gewonnen werden: W + verbleibend >= W2? Dann noch möglich!
+            return (_w + _remaining) >= _w2
+        _can_a = _can_still_top2(_rank_a, _wa, _la, _ta, _rows_a)
+        _can_h = _can_still_top2(_rank_h, _wh, _lh, _th, _rows_h)
+        _top_a = _rank_a <= 2
+        _top_h = _rank_h <= 2
+        if _can_a or _can_h:
+            _stand_lines.append(f"\n📊 **Standings:**")
+            _stand_lines.append(f"Die {a_name} sind Platz {_rank_a} in {_div_a} ({_rec_a})")
+            _stand_lines.append(f"Die {h_name} sind Platz {_rank_h} in {_div_h} ({_rec_h})")
+            if _top_a and _top_h and _div_a == _div_h:
+                _stand_lines.append(f"Direktes Duell um Platz 1 in der {_div_a}! Der Sieger ist Platz 1!")
+            elif _top_a and not _top_h:
+                # Unten, aber noch möglich! Nicht "um nix mehr", sondern "Noch alles möglich!"
+                _stand_lines.append(f"Die {a_name} wollen Platz {_rank_a} verteidigen, die {h_name} können noch hoch kommen - noch alles möglich, wenn die jetzt jedes Spiel gewinnen!")
+            elif _top_h and not _top_a:
+                _stand_lines.append(f"Die {h_name} wollen Platz {_rank_h} verteidigen, die {a_name} können noch hoch kommen - noch alles möglich, wenn die jetzt jedes Spiel gewinnen!")
+            elif _div_a == _div_h:
+                _stand_lines.append(f"Direktes Duell in der {_div_a}! Der Sieger bleibt oben dran, der Verlierer rutscht ab!")
+            else:
+                _stand_lines.append(f"Der Sieger bleibt oben dran, der Verlierer rutscht ab!")
+        else:
+            # BEIDE können Platz 2 rechnerisch nicht mehr holen -> DANN erst "um nix mehr"!
+            _stand_lines.append(f"\n📊 **Standings:** Da geht's in der Tabelle um nix mehr - eher um Ehre! 😂")
+    # Slot-Top: Ist das das beste Spiel im gleichen Slot (gleicher Tag + gleiche Slot-Zeit)?
+    _slot = _slot_label(dt)
+    _slot_line = ""
+    try:
+        _lst = ctx.user_data.get("top10_list", [])
+        _same_slot = []
+        for _s, _lg2, _ev2, _bd2 in _lst:
+            _, _dt2 = fmt_dt(_ev2.get("date",""))
+            if _dt2 and dt and _dt2.date()==dt.date() and _slot_label(_dt2)==_slot:
+                _same_slot.append((_s, _ev2))
+        if len(_same_slot) > 1:
+            _best = max(_same_slot, key=lambda x: x[0])[0]
+            if score >= _best - 0.01:
+                _slot_line = f"\n🏆 **Top-Spiel für den {_slot}!**"
+            else:
+                _slot_line = f"\nEs laufen {len(_same_slot)} Spiele im {_slot} - das hier ist nicht das Top-Spiel im Slot, aber trotzdem stark!"
+    except Exception:
+        pass
+    # Playoff: Nur SPAET in der Saison! Einfach gedacht: Beide im Rennen, kein Tiebreaker!
+    _playoff_lines = []
+    if _playoff_mode(lg):
+        _playoff_lines.append(f"\n🔥 **Playoff-Rennen:**")
+        _playoff_lines.append(f"Beide Teams sind im Playoff-Rennen! Mit Sieg: Bleiben oben dran! Mit Niederlage: Rutschen ab - da ist jedes Spiel wichtig!")
+    lines=[f"🏆 {a_name} @ {h_name} • {LEAGUES[lg]['emoji']} {lg} • ⭐ {score:.1f}/10\n📅 {time_s}{bc_suf}{_ven_line}{_slot_line}\n\n**Warum {score:.1f}/10?**\n",
+        f"📊 **Tabelle:** +{bd['tabelle']:.1f} - Beide Teams sind stark / Top-Teams in ihrer Liga, das Duell hat viel Gewicht für die Tabelle.",
+        f"🔥 **Rivalität:** +{bd['rival']:.1f} - " + ("Historische Rivalität! Die beiden haben sich schon oft in großen Spielen getroffen." if bd['rival']>=2.5 else "Division-Duell / zwei starke Teams - da ist Feuer drin." if bd['rival']>=1.5 else "Kein großes Rivalitäts-Spiel, aber beide wollen gewinnen."),
+        f"⭐ **Stars:** +{bd['stars']:.1f} - Viele bekannte Stars auf dem Feld, die das Spiel entscheiden können.",
+        f"📺 **Primetime:** +{bd['prime']:.1f} - " + ("Primetime-Spiel! Läuft zur besten Zeit, wo alle zugucken." if bd['prime']>=1.0 else "Kein Primetime-Spiel, läuft neben anderen Spielen."),
+        f"\n**Fazit:** {fazit}"]
+    # Standings + Playoff nach den Warum-Zeilen, vor Fazit? Nein: Nach Warum, vor Fazit ist unübersichtlich - wir hängen sie vor Fazit an!
+    # Einfach: Wir fügen sie als eigene Zeilen nach der Warum-Liste ein, Fazit bleibt letzte Zeile!
+    # Dafür: Fazit-Zeile rausnehmen, Standings+Playoff einfügen, Fazit wieder dran!
+    if _stand_lines or _playoff_lines:
+        _fazit_line = lines.pop()
+        lines.extend(_stand_lines)
+        lines.extend(_playoff_lines)
+        lines.append(_fazit_line)
+    # V53: Keine Zahlen-Buttons mehr, nur Zahl in den Chat schreiben!
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🏆 Top 10", callback_data="top10")],
+        [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+    ])
+    lines.append("\n💡 Schreib eine andere Zahl (z.B. 5) in den Chat für ein anderes Spiel!")
+    await target.reply_text("\n".join(lines), reply_markup=kb)
+
+
+# --- Tabellen / Standings via ESPN ---
+STANDINGS_URL = {
+    "NFL": "https://site.api.espn.com/apis/site/v2/sports/football/nfl/standings",
+    "NCAAF": "https://site.api.espn.com/apis/site/v2/sports/football/college-football/standings",
+    "NBA": "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/standings",
+    "NHL": "https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/standings",
+    "MLB": "https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/standings",
+}
+_STANDINGS_DEBUG = {"last_keys": "", "last_status": 0, "last_url": ""}
+def _season_year(league):
+    # V63-FIX: Saison war fest auf 2025 -> im Nov 2026 zeigte der Bot letzte Saison (Steelers 10-7)!
+    # Jetzt dynamisch: NFL/NCAAF ab Sept = aktuelles Jahr, NBA/NHL ab Okt = aktuelles Jahr, MLB = aktuelles Jahr
+    from datetime import datetime as _dt
+    now=_dt.now(); y=now.year; m=now.month
+    if league in ("NFL","NCAAF"):
+        return y if m>=8 else y-1
+    if league in ("NBA","NHL"):
+        # V64-FIX: NBA/NHL zählen Saison nach END-Jahr! 2026 = Saison 2025-26 (alt)!
+        # Aktuelle Saison 2026-27 heisst bei ESPN 2027! Ab Okt = aktuelles Jahr +1, sonst aktuelles Jahr
+        return y+1 if m>=10 else y
+    if league=="MLB":
+        return y
+    return y
+def _espn_standings_raw(league):
+    # ESPN Tabellen, None-sicher! V60-Fehler war: children=None -> 'NoneType' not subscriptable -> jetzt or []
+    urls=[]
+    if league=="NFL":
+        sy=_season_year("NFL"); urls=[f"https://site.api.espn.com/apis/v2/sports/football/nfl/standings?season={sy}&seasontype=2&type=0&level=4", f"https://site.api.espn.com/apis/v2/sports/football/nfl/standings?season={sy}"]
+    elif league=="NBA":
+        sy=_season_year("NBA"); urls=[f"https://site.api.espn.com/apis/v2/sports/basketball/nba/standings?season={sy}"]
+    elif league=="NHL":
+        sy=_season_year("NHL"); urls=[f"https://site.api.espn.com/apis/v2/sports/hockey/nhl/standings?season={sy}"]
+    elif league=="MLB":
+        sy=_season_year("MLB"); urls=[f"https://site.api.espn.com/apis/v2/sports/baseball/mlb/standings?season={sy}"]
+    elif league=="NCAAF":
+        sy=_season_year("NCAAF"); urls=[f"https://site.api.espn.com/apis/v2/sports/football/college-football/standings?season={sy}"]
+    for u in urls:
+        try:
+            r=requests.get(u, timeout=15, headers={"User-Agent":"Mozilla/5.0"})
+            _STANDINGS_DEBUG["last_url"]=u; _STANDINGS_DEBUG["last_status"]=r.status_code
+            if r.status_code!=200: continue
+            j=r.json()
+            out={}
+            def walk(node, path):
+                if isinstance(node, dict):
+                    kids = node.get("children") or []
+                    if kids:
+                        nm = node.get("name","") or node.get("displayName","") or ""
+                        for ch in kids: walk(ch, path+[nm] if nm else path)
+                        return
+                    st = node.get("standings") or {}
+                    ents = st.get("entries") if isinstance(st, dict) else None
+                    if isinstance(ents, list) and ents:
+                        gname = node.get("name","") or node.get("displayName","") or " ".join(path) or "Tabelle"
+                        rows=[]
+                        for e in ents:
+                            if not isinstance(e, dict): continue
+                            tm=e.get("team", {}) or {}
+                            disp=tm.get("displayName","") or tm.get("shortDisplayName","") or "?"
+                            short=tm.get("shortDisplayName","") or disp
+                            W=L=T=0; streak=""
+                            # WICHTIG: ESPN hat mehrere Wins-Werte (z.B. Conference-Wins + Overall-Wins)!
+                            # Wir nehmen OVERALL! Priorität: overallWins > wins, overallLosses > losses
+                            vals={}
+                            for s in e.get("stats", []) or []:
+                                if not isinstance(s, dict): continue
+                                n=(s.get("name","") or "").lower(); v=s.get("displayValue", s.get("value",""))
+                                vals[n]=v
+                            def _iv(*names):
+                                for n in names:
+                                    if n in vals:
+                                        try: return int(float(str(vals[n])))
+                                        except: pass
+                                return 0
+                            W=_iv("overallwins","wins")
+                            L=_iv("overalllosses","losses")
+                            T=_iv("overallties","ties")
+                            streak=str(vals.get("streak","") or "")
+                            rows.append((disp, short, tm.get("abbreviation",""), W, L, T, streak))
+                        if rows and gname not in out: out[gname]=rows
+                        return
+                    for k,v in node.items():
+                        if k=="standings": continue
+                        walk(v, path)
+                elif isinstance(node, list):
+                    for it in node: walk(it, path)
+            walk(j, [])
+            if out:
+                clean={}
+                for k,v in out.items():
+                    kk=k.replace("American Football Conference","AFC").replace("National Football Conference","NFC").replace("Eastern Conference","Eastern").replace("Western Conference","Western").strip()
+                    clean[kk]=v
+                return clean
+        except Exception:
+            continue
+    return {}
+
+def _ncaaf_records_from_scoreboard():
+    # NCAAF: Record selbst aus Ergebnissen rechnen! ESPN Tabellen zeigen bei College manchmal
+    # nur Conference-Record (z.B. 2-0) oder 0-0 obwohl Team schon gespielt hat!
+    # Scoreboard-Wochen 1-13 holen und Siege/Niederlagen selbst zählen -> nie mehr 0-0!
+    rec={}
+    for wk in range(1, 14):
+        try:
+            u=f"https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?week={wk}&seasontype=2&limit=200"
+            r=requests.get(u, timeout=12, headers={"User-Agent":"Mozilla/5.0"})
+            if r.status_code!=200: continue
+            j=r.json()
+            for ev in j.get("events", []) or []:
+                comps=ev.get("competitions", []) or []
+                if not comps: continue
+                comp=comps[0]
+                if (comp.get("status", {}) or {}).get("type", {}).get("completed") is not True: continue
+                teams=comp.get("competitors", []) or []
+                if len(teams)!=2: continue
+                # Winner bestimmen über winner=True oder Score
+                wteam=None
+                for tm in teams:
+                    if tm.get("winner") is True: wteam=tm
+                if wteam is None:
+                    try:
+                        s0=int(float(str((teams[0].get("score") or "0")))); s1=int(float(str((teams[1].get("score") or "0"))))
+                        wteam=teams[0] if s0>s1 else teams[1] if s1>s0 else None
+                    except: wteam=None
+                if wteam is None: continue
+                for tm in teams:
+                    tinfo=tm.get("team", {}) or {}
+                    disp=tinfo.get("displayName","") or ""
+                    if not disp: continue
+                    if disp not in rec: rec[disp]=[0,0]
+                    if tm is wteam or (tm.get("team", {}) or {}).get("id")== (wteam.get("team", {}) or {}).get("id"):
+                        rec[disp][0]+=1
+                    else:
+                        rec[disp][1]+=1
+        except Exception:
+            continue
+    return rec
+
+def _nhl_standings():
+    # V65: NHL über OFFIZIELLE NHL-API! ESPN spinnt bei NHL (nur Conferences, falsche Stände, doppelte Buttons)!
+    # https://api-web.nhle.com/v1/standings/now -> standings[] mit divisionName, conferenceName, teamCommonName, wins, losses, otLosses, points, streakCode
+    try:
+        r=requests.get("https://api-web.nhle.com/v1/standings/now", timeout=15, headers={"User-Agent":"Mozilla/5.0"})
+        if r.status_code!=200: return {}
+        j=r.json()
+        out={}
+        for s in j.get("standings", []) or []:
+            div=s.get("divisionName","") or "NHL"
+            team_name=(s.get("teamName", {}) or {}).get("default","") or ""
+            short=(s.get("teamCommonName", {}) or {}).get("default","") or team_name
+            abbr=s.get("teamAbbrev", {}).get("default","") if isinstance(s.get("teamAbbrev"), dict) else (s.get("teamAbbrev","") or "")
+            W=int(s.get("wins",0) or 0); L=int(s.get("losses",0) or 0); OTL=int(s.get("otLosses",0) or 0)
+            PTS=int(s.get("points",0) or 0)
+            # V66-FIX: NHL-API trennt streakCode="W" und streakCount=2! Zusammen = "W2"! Vorher stand nur "W" ohne Zahl!
+            _code=str(s.get("streakCode","") or "").strip()
+            _cnt=s.get("streakCount","")
+            try: _cnt=int(_cnt) if _cnt not in ("", None) else 0
+            except: _cnt=0
+            streak=f"{_code}{_cnt}" if _code and _cnt else _code
+            # streak-Feld trägt bei NHL BEIDES: Streak + Punkte! Anzeige wird: "15-5-2 (W2 \u2022 32 PTS)"
+            streak_disp=f"{streak} \u2022 {PTS} PTS" if streak else f"{PTS} PTS"
+            out.setdefault(div, []).append((team_name, short, abbr, W, L, OTL, streak_disp))
+        # Sortieren pro Division nach Punkten (NHL-Standard!), nicht nach Wins!
+        for k in out: out[k].sort(key=lambda x: (int(str(x[6]).split("\u2022")[-1].replace("PTS","").strip() or 0) if "PTS" in str(x[6]) else 0, x[3]), reverse=True)
+        return out
+    except Exception:
+        return {}
+def espn_standings(league):
+    # V65: NHL zuerst über offizielle NHL-API!
+    if league=="NHL":
+        nhl=_nhl_standings()
+        if nhl: return nhl
+
+    # V62: TheSportsDB RAUS! War veraltet (Steelers 10-7 = letzte Saison, NCAAF 0-0)!
+    # NFL/NBA/NHL/MLB = ESPN direkt (aktuell + korrekt)
+    # NCAAF = ESPN für Conference-Gruppierung + Record selbst aus Scoreboard gerechnet!
+    raw=_espn_standings_raw(league)
+    if league!="NCAAF" or not raw:
+        return raw
+    # NCAAF-Fix: Overall-Record aus Scoreboard überschreibt den falschen ESPN-Wert!
+    try:
+        rec=_ncaaf_records_from_scoreboard()
+        if rec:
+            fixed={}
+            for gname, rows in raw.items():
+                nrows=[]
+                for (disp, short, abbr, W, L, T, streak) in rows:
+                    if disp in rec and rec[disp][0]+rec[disp][1]>0:
+                        W2, L2 = rec[disp]
+                        nrows.append((disp, short, abbr, W2, L2, T, streak))
+                    else:
+                        nrows.append((disp, short, abbr, W, L, T, streak))
+                # Neu sortieren nach echtem Record!
+                nrows.sort(key=lambda x: (x[3], -x[4]), reverse=True)
+                fixed[gname]=nrows
+            return fixed
+    except Exception:
+        pass
+    return raw
+def standings_conferences(league, divs):
+    # Für NBA/NHL: Eastern/Western als Sammel-Liste (sortiert nach Wins)
+    # Division -> Conference Mapping
+    conf_map = {
+        "NBA": {"Eastern": ["Atlantic","Central","Southeast"], "Western": ["Northwest","Pacific","Southwest"]},
+        "NHL": {"Eastern": ["Atlantic","Metropolitan"], "Western": ["Central","Pacific"]},
+    }
+    m = conf_map.get(league, {})
+    res={}
+    for conf, div_names in m.items():
+        rows=[]
+        for dn in div_names:
+            # divs keys können "Atlantic" oder "Eastern Atlantic" sein - flexibel matchen
+            for k,v in divs.items():
+                if dn.lower() in k.lower():
+                    rows.extend(v)
+        # Sortieren: NHL nach Punkten, Rest nach Wins!
+        if league=="NHL":
+            def _pts(x):
+                try:
+                    s=str(x[6] or "")
+                    # "W2 • 32 PTS" -> 32
+                    if "PTS" in s: return int(s.split("\u2022")[-1].replace("PTS","").strip())
+                except: pass
+                return 0
+            rows.sort(key=lambda x: (_pts(x), x[3]), reverse=True)
+        else:
+            rows.sort(key=lambda x: (x[3], -x[4]), reverse=True)
+        res[conf]=rows
+    return res
+async def tables_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    target = update.message or update.callback_query.message
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📊 Alle Ligen", callback_data="tables_all")],
+        [InlineKeyboardButton("⭐ Nur meine Favoriten", callback_data="tables_mine")],
+        [InlineKeyboardButton("🏆 Playoffs", callback_data="playoffs")],
+        [InlineKeyboardButton("❓ Hilfe", callback_data="help")],
+        [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+    ])
+    await target.reply_text("📊 Tabellen\n\nWas willst du sehen?\n📊 Alle Ligen = alle Tabellen, auch ohne Favoriten!\n⭐ Nur meine Favoriten = nur deine Teams, über alle Ligen!\n🏆 Playoffs = Wer ist schon sicher in den Playoffs, wer ist raus, wer ist noch im Rennen?", reply_markup=kb)
+def _bowl_name(ev):
+    # V83: Bowl-Name aus ESPN Notes! Z.B. "Pop-Tarts Bowl", "Rose Bowl"!
+    # Steht in ev["notes"] oder in competitions[0]["notes"] als headline!
+    for _src in [ev.get("notes", []) or []]:
+        for _n in _src:
+            _h = (_n.get("headline", "") or "").strip()
+            if _h: return _h
+    for _comp in (ev.get("competitions", []) or []):
+        for _n in (_comp.get("notes", []) or []):
+            _h = (_n.get("headline", "") or "").strip()
+            if _h: return _h
+    return ""
+async def playoffs_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    target = update.message or update.callback_query.message
+    # V79: Buttons GANZ NORMAL benannt! Kein Schloss, kein "Saison vorbei" auf dem Button!
+    # Erst wenn man drauf drückt, kommt: "Noch nix fest!" / "Saison vorbei + Champion!" / Playoff-Übersicht!
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🏈 NFL", callback_data="playoffs_league:NFL"),
+         InlineKeyboardButton("🎓 NCAAF", callback_data="playoffs_league:NCAAF")],
+        [InlineKeyboardButton("🏒 NHL", callback_data="playoffs_league:NHL"),
+         InlineKeyboardButton("🏀 NBA", callback_data="playoffs_league:NBA")],
+        [InlineKeyboardButton("⚾ MLB", callback_data="playoffs_league:MLB")],
+        [InlineKeyboardButton("❓ Hilfe", callback_data="help")],
+        [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+    ])
+    await target.reply_text("🏆 Playoffs\n\nWelche Liga?", reply_markup=kb)
+async def playoffs_bowls_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, league: str):
+    target = update.message or update.callback_query.message
+    from datetime import date as _date
+    today = _date.today()
+    # Bowl-Fenster: Dez bis Jan! Wenn heute Nov ist -> Dez dieses Jahr bis Jan nächstes Jahr! Wenn Jan/Feb -> Dez letztes Jahr bis Jan dieses Jahr!
+    if today.month <= 2:
+        _start, _end = _date(today.year-1, 12, 1), _date(today.year, 1, 31)
+    else:
+        _start, _end = _date(today.year, 12, 1), _date(today.year+1, 1, 31)
+    _bowls = []
+    for ev in espn_scoreboard(league, dates=f"{_start.strftime('%Y%m%d')}-{_end.strftime('%Y%m%d')}"):
+        _sn = ((ev.get("season", {}) or {}).get("type", {}) or {}).get("name","").lower() + " " + ((ev.get("season", {}) or {}).get("type", {}) or {}).get("slug","").lower()
+        _bn = _bowl_name(ev)
+        # Bowl = Season-Type enthält "bowl" ODER Bowl-Name enthält "Bowl"! CFP-Spiele (playoff) raus, ausser sie sind auch ein Bowl als CFP-Viertelfinale - die bleiben in CFP!
+        if "bowl" in _sn or "bowl" in _bn.lower():
+            # Reine CFP-Spiele (Playoff ohne Bowl-Name) raus! Bowls mit Bowl-Namen rein!
+            if "playoff" in _sn and "bowl" not in _sn and "bowl" not in _bn.lower():
+                continue
+            # CFP-Viertelfinale/Halbfinale in Bowls (z.B. Rose Bowl als CFP) -> raus, die sind in CFP!
+            if "playoff" in _sn and ("quarterfinal" in _sn or "semifinal" in _sn):
+                continue
+            _, _dt = fmt_dt(ev.get("date",""))
+            _bowls.append((_dt or datetime.now(BERLIN), _bn, ev))
+    if not _bowls:
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("🏆 CFP Playoffs", callback_data="playoffs_cfp:NCAAF")], [InlineKeyboardButton("⬅️ Zurück", callback_data="back")]])
+        await target.reply_text("🥣 Bowl Games - 🎓🏈 NCAAF\n\nBowl Games starten erst im Dezember! 😅\nDie Matchups werden am Selection Sunday Anfang Dezember festgelegt!\nSchau dann nochmal vorbei!", reply_markup=kb); return
+    _bowls.sort(key=lambda x: x[0])
+    lines = ["🥣 Bowl Games - 🎓🏈 NCAAF\n"]
+    _last_day = ""
+    for _dt, _bn, ev in _bowls:
+        _day = _dt.strftime("%d.%m.")
+        if _day != _last_day:
+            lines.append(f"\n📅 {_day}")
+            _last_day = _day
+        _bn_txt = f" — {_bn}" if _bn else " — Bowl Game"
+        lines.append(f"{LEAGUES[league]['emoji']} {game_line(ev, league, show_broadcast=True)}{_bn_txt}")
+    kb = InlineKeyboardMarkup([[InlineKeyboardButton("🏆 CFP Playoffs", callback_data="playoffs_cfp:NCAAF")], [InlineKeyboardButton("🏆 Andere Liga", callback_data="playoffs")], [InlineKeyboardButton("⬅️ Zurück", callback_data="back")]])
+    await target.reply_text("\n".join(lines), reply_markup=kb)
+async def playoffs_league_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, league: str, force_cfp: bool = False):
+    target = update.message or update.callback_query.message
+    # V83: NCAAF -> erst Auswahl! CFP Playoffs vs. Bowl Games! Bowls sind keine Playoffs!
+    if league == "NCAAF" and not force_cfp:
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🏆 CFP Playoffs", callback_data="playoffs_cfp:NCAAF")],
+            [InlineKeyboardButton("🥣 Bowl Games", callback_data="playoffs_bowls:NCAAF")],
+            [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+        ])
+        await target.reply_text("🏆 Playoffs - 🎓🏈 NCAAF\n\nWas willst du sehen?\n🏆 CFP Playoffs = Wer ist in den Top 12, wer ist sicher, wer ist raus!\n🥣 Bowl Games = Alle Bowl Games mit Bowl-Namen!", reply_markup=kb); return
+    from datetime import date as _date
+    today = _date.today()
+    # --- Phase 2 Check: Laufen schon Playoffs? Postseason-Spiele in den letzten 30 + nächsten 30 Tagen? ---
+    _post = []  # (dt, round_label, ev)
+    for _rng in [f"{(today - timedelta(days=30)).strftime('%Y%m%d')}-{today.strftime('%Y%m%d')}", f"{today.strftime('%Y%m%d')}-{(today + timedelta(days=30)).strftime('%Y%m%d')}"]:
+        for ev in espn_scoreboard(league, dates=_rng):
+            _season = (ev.get("season", {}) or {}).get("type", {}) or {}
+            _sname = ((_season.get("name","") or "") + " " + (_season.get("slug","") or "")).lower()
+            _detail = ((ev.get("status", {}) or {}).get("type", {}) or {}).get("detail","") or ""
+            if any(k in _sname for k in ["post", "playoff", "wild", "divisional", "conference", "championship", "final", "world series", "super bowl"]) or any(k in _detail.lower() for k in ["wild card", "divisional", "conference", "championship"]):
+                _, _dt = fmt_dt(ev.get("date",""))
+                _round = _season.get("name","") or "Playoffs"
+                _post.append((_dt or datetime.now(BERLIN), _round, ev))
+    # V83: NCAAF CFP -> Bowls raus! Nur Spiele, deren Season-Type "playoff" enthält, keine reinen Bowls!
+    if league == "NCAAF" and force_cfp:
+        _filtered = []
+        for _dt, _round, ev in _post:
+            _sn = ((ev.get("season", {}) or {}).get("type", {}) or {}).get("name","").lower() + " " + ((ev.get("season", {}) or {}).get("type", {}) or {}).get("slug","").lower()
+            if "playoff" in _sn or "championship" in _sn or "quarterfinal" in _sn or "semifinal" in _sn:
+                _filtered.append((_dt, _round, ev))
+        _post = _filtered
+        if not _post:
+            # Noch keine CFP-Spiele in den nächsten 30 Tagen -> weiter zu Phase 1 (Sicher/Raus/Top 12)!
+            pass
+        else:
+            _post.sort(key=lambda x: x[0])
+            lines = [f"🏆 CFP Playoffs - {LEAGUES[league]['emoji']} {league}\n"]
+            _last_round = ""
+            for _dt, _round, ev in _post:
+                if _round != _last_round:
+                    lines.append(f"\n**{_round}**")
+                    _last_round = _round
+                _bn = _bowl_name(ev)
+                _bn_txt = f" — {_bn}" if _bn else ""
+                lines.append(f"{LEAGUES[league]['emoji']} {game_line(ev, league, show_broadcast=True)}{_bn_txt}")
+            kb = InlineKeyboardMarkup([[InlineKeyboardButton("🥣 Bowl Games", callback_data="playoffs_bowls:NCAAF")], [InlineKeyboardButton("🏆 Andere Liga", callback_data="playoffs")], [InlineKeyboardButton("⬅️ Zurück", callback_data="back")]])
+            await target.reply_text("\n".join(lines), reply_markup=kb); return
+    if _post:
+        _post.sort(key=lambda x: x[0])
+        lines = [f"🏆 Playoffs - {LEAGUES[league]['emoji']} {league}\n"]
+        _last_round = ""
+        for _dt, _round, ev in _post:
+            if _round != _last_round:
+                lines.append(f"\n**{_round}**")
+                _last_round = _round
+            lines.append(f"{LEAGUES[league]['emoji']} {game_line(ev, league, show_broadcast=True)}")
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("🏆 Andere Liga", callback_data="playoffs")], [InlineKeyboardButton("⬅️ Zurück", callback_data="back")]])
+        await target.reply_text("\n".join(lines), reply_markup=kb); return
+    # --- Saison vorbei? Keine Spiele in den nächsten 30 Tagen + keine in den letzten 7 Tagen + Champion bekannt? ---
+    _future = []
+    for _off in range(0, 31):
+        _d = today + timedelta(days=_off)
+        _future.extend(espn_scoreboard(league, dates=_d.strftime("%Y%m%d")))
+    _recent = []
+    for _off in range(0, 8):
+        _d = today - timedelta(days=_off)
+        _recent.extend(espn_scoreboard(league, dates=_d.strftime("%Y%m%d")))
+    if not _future and not _recent and league in CHAMPIONS:
+        ch = CHAMPIONS[league]
+        _ch_label = {"NFL": "Super Bowl Champion", "NCAAF": "National Champion", "MLB": "World Series Champion", "NHL": "Stanley Cup Champion", "NBA": "NBA Champion"}.get(league, "Champion")
+        _note = f"\n💡 {ch['note']}" if ch.get("note") else ""
+        lines = [f"🏆 Playoffs - {LEAGUES[league]['emoji']} {league}\nSaison vorbei! {LEAGUES[league]['emoji']}\n\n🏆 **{_ch_label}:**\n{ch['team']} ({ch['year']})\n{ch['result']}{_note}"]
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("🏆 Andere Liga", callback_data="playoffs")], [InlineKeyboardButton("⬅️ Zurück", callback_data="back")]])
+        await target.reply_text("\n".join(lines), reply_markup=kb); return
+    # --- Phase 1: Vor den Playoffs ---
+    if not _playoff_mode(league):
+        lines = [f"🏆 Playoffs - {LEAGUES[league]['emoji']} {league}\n\nNoch nix fest! 😅\nNoch kein Team ist sicher in den Playoffs oder raus!\nSchau später nochmal vorbei!"]
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("🏆 Andere Liga", callback_data="playoffs")], [InlineKeyboardButton("⬅️ Zurück", callback_data="back")]])
+        await target.reply_text("\n".join(lines), reply_markup=kb); return
+    # Spät in der Saison: Sicher / Rennen / Raus - einfach gedacht, kein Tiebreaker!
+    # Conference-Listen aus Divisionen bauen!
+    divs = espn_standings(league) or {}
+    _TOTAL = {"NFL": 17, "NCAAF": 12, "NHL": 82, "NBA": 82, "MLB": 162}.get(league, 17)
+    _CUTOFF = {"NFL": 7, "NCAAF": 12, "NHL": 8, "NBA": 8, "MLB": 6}.get(league, 7)
+    # Conference-Mapping: Key enthält Conference-Name oder Division gehört zu Conference!
+    _conf_map = {
+        "NFL": {"AFC": ["AFC"], "NFC": ["NFC"]},
+        "MLB": {"AL": ["American", "AL "], "NL": ["National", "NL "]},
+        "NHL": {"Eastern": ["Atlantic", "Metropolitan"], "Western": ["Central", "Pacific"]},
+        "NBA": {"Eastern": ["Atlantic", "Central", "Southeast"], "Western": ["Northwest", "Pacific", "Southwest"]},
+        "NCAAF": {"Alle": [""]},
+    }.get(league, {"Alle": [""]})
+    _sicher, _rennen, _raus = [], [], []
+    for _conf, _keys in _conf_map.items():
+        _rows = []
+        for _dk, _rv in divs.items():
+            if any(_k.lower() in _dk.lower() for _k in _keys) or _keys == [""]:
+                for (disp, short, abbr, W, L, T, streak) in _rv:
+                    _rows.append((disp, W, L, T))
+        if not _rows: continue
+        _rows.sort(key=lambda x: (x[1], -x[2]), reverse=True)
+        _cut = _CUTOFF if len(_rows) > _CUTOFF else len(_rows)
+        _cut_wins = _rows[_cut-1][1] if _cut > 0 else 0
+        _next_wins = _rows[_cut][1] if len(_rows) > _cut else 0
+        _next_rem = max(0, _TOTAL - (_rows[_cut][1] + _rows[_cut][2])) if len(_rows) > _cut else 0
+        for _rank, (disp, W, L, T) in enumerate(_rows, 1):
+            _rem = max(0, _TOTAL - (W + L + (T or 0)))
+            _short = disp.split()[-1] if disp else disp
+            _label = f"Die {disp} ({W}-{L})"
+            if _rank <= _cut and W > (_next_wins + _next_rem):
+                _sicher.append(_label)
+            elif (_rank > _cut) and (W + _rem) < _cut_wins:
+                _raus.append(_label)
+            else:
+                _rennen.append(_label)
+    lines = [f"🏆 Playoffs - {LEAGUES[league]['emoji']} {league}\n📅 Stand: {today.strftime('%d.%m.')}\n"]
+    # V80-FIX: Wenn nix sicher UND nix raus -> NUR "Noch nix fest!", KEINE Rennen-Liste!
+    # Sonst: NCAAF zeigt "Noch im Rennen: 12 + 126 weitere!" + "Noch nix fest!" gleichzeitig - doppelt + sinnlos!
+    # NCAAF hat 134 Teams, da ist "Noch im Rennen" ohne Sicher/Raus einfach nur eine Tabelle, kein Playoff-Bild!
+    if not _sicher and not _raus:
+        lines.append("\nNoch nix fest! 😅\nNoch kein Team ist sicher in den Playoffs oder raus!\nSchau später nochmal vorbei!")
+    else:
+        if _sicher:
+            lines.append("\n✅ **Sicher in den Playoffs:**")
+            lines.extend([f"• {_s}" for _s in _sicher])
+        # V83: NCAAF -> KEIN "Noch im Rennen: 134 Teams"! Stattdessen: Aktuell Top 12!
+        if league == "NCAAF":
+            # Top 12 aus allen Rows: nach W sortiert, erste 12!
+            _all_sorted = []
+            for _dk, _rv in divs.items():
+                for (disp, short, abbr, W, L, T, streak) in _rv:
+                    _all_sorted.append((disp, W, L))
+            _all_sorted.sort(key=lambda x: (x[1], -x[2]), reverse=True)
+            lines.append("\n🔝 **Aktuell Top 12:**")
+            for _i, (disp, W, L) in enumerate(_all_sorted[:12], 1):
+                lines.append(f"{_i}. Die {disp} ({W}-{L})")
+        elif _rennen:
+            lines.append("\n🔥 **Noch im Rennen:**")
+            lines.extend([f"• {_s}" for _s in _rennen[:12]])
+            if len(_rennen) > 12: lines.append(f"... und {len(_rennen)-12} weitere!")
+        if _raus:
+            lines.append("\n❌ **Raus:**")
+            lines.extend([f"• {_s}" for _s in _raus])
+    # V83: NCAAF CFP -> Bowl-Button dazu!
+    if league == "NCAAF" and force_cfp:
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("🥣 Bowl Games", callback_data="playoffs_bowls:NCAAF")], [InlineKeyboardButton("🏆 Andere Liga", callback_data="playoffs")], [InlineKeyboardButton("⬅️ Zurück", callback_data="back")]])
+        await target.reply_text("\n".join(lines), reply_markup=kb); return
+    kb = InlineKeyboardMarkup([[InlineKeyboardButton("🏆 Andere Liga", callback_data="playoffs")], [InlineKeyboardButton("⬅️ Zurück", callback_data="back")]])
+    await target.reply_text("\n".join(lines), reply_markup=kb)
+async def tables_all_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    target = update.message or update.callback_query.message
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🏈 NFL", callback_data="tables_league:NFL"),
+         InlineKeyboardButton("🎓 NCAAF", callback_data="tables_league:NCAAF")],
+        [InlineKeyboardButton("🏒 NHL", callback_data="tables_league:NHL"),
+         InlineKeyboardButton("🏀 NBA", callback_data="tables_league:NBA")],
+        [InlineKeyboardButton("⚾ MLB", callback_data="tables_league:MLB")],
+        [InlineKeyboardButton("⭐ Nur meine Favoriten", callback_data="tables_mine")],
+        [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+    ])
+    await target.reply_text("📊 Tabellen - Alle Ligen\n\nWelche Liga?", reply_markup=kb)
+async def tables_league_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, league: str):
+    target = update.message or update.callback_query.message
+    await target.reply_text("📊 Ich hole die Tabelle... einen Moment ⏳")
+    divs = espn_standings(league)
+    if not divs:
+        dbg = _STANDINGS_DEBUG
+        await target.reply_text(f"Keine Tabelle gefunden - versuch es später nochmal.\n\nDebug: Status {dbg.get('last_status')} | Keys: {dbg.get('last_keys')} | URL: {dbg.get('last_url')}", reply_markup=main_kb()); return
+    ctx.user_data["tables_divs_"+league]=divs
+    # NCAAF: nur Top 25, keine Division-Auswahl
+    if league=="NCAAF":
+        await tables_top25_cmd(update, ctx, league, divs); return
+    # Division / Conference Buttons: 2 pro Reihe
+    rows=[]
+    # NBA/NHL: Conference-Buttons nur wenn divs wirklich Divisionen sind (Atlantic, Metropolitan, ...), NICHT wenn divs schon Eastern/Western sind!
+    # Sonst: Doppelte Buttons (Eastern Conference + Eastern) und "Conference nicht gefunden"!
+    _has_conf_keys = any(k.lower() in ("eastern","western","eastern conference","western conference") for k in divs.keys())
+    if league in ("NBA","NHL") and not _has_conf_keys:
+        rows.append([InlineKeyboardButton("Eastern Conference", callback_data=f"tables_conf:{league}:Eastern"),
+                     InlineKeyboardButton("Western Conference", callback_data=f"tables_conf:{league}:Western")])
+    keys = sorted(divs.keys())
+    def _short_div(k):
+        # "American Football Conference" -> "AFC", "National Football Conference" -> "NFC"
+        # "AFC East" bleibt, "American Football Conference East" -> "AFC East"
+        kk = k.replace("American Football Conference", "AFC").replace("National Football Conference", "NFC")
+        kk = kk.replace("American Football", "AFC").replace("National Football", "NFC")
+        kk = kk.replace("Eastern Conference", "East").replace("Western Conference", "West")
+        return kk.strip()
+    for i in range(0, len(keys), 2):
+        row=[]
+        for k in keys[i:i+2]:
+            row.append(InlineKeyboardButton(f"{_short_div(k)}", callback_data=f"tables_div:{league}:{k}"))
+        rows.append(row)
+    rows.append([InlineKeyboardButton("⭐ Meine Teams", callback_data="tables_mine")])
+    rows.append([InlineKeyboardButton("⬅️ Zurück", callback_data="back")])
+    kb = InlineKeyboardMarkup(rows)
+    await target.reply_text(f"📊 Tabelle - {LEAGUES[league]['emoji']} {league}\n\nWelche Division / Conference?\nNur 1 Division = übersichtlich, 4-8 Teams!", reply_markup=kb)
+async def tables_div_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, league: str, div: str):
+    target = update.message or update.callback_query.message
+    divs = ctx.user_data.get("tables_divs_"+league)
+    if not divs:
+        divs = espn_standings(league)
+        ctx.user_data["tables_divs_"+league]=divs
+    rows = divs.get(div, [])
+    if not rows:
+        await target.reply_text("Division nicht gefunden.", reply_markup=main_kb()); return
+    favs = favs_for(update.effective_user.id) if update.effective_user else []
+    fav_names = [f.split(" (")[0].strip().lower() for f in favs]
+    div_short = div.replace("American Football Conference", "AFC").replace("National Football Conference", "NFC").replace("American Football", "AFC").replace("National Football", "NFC").strip()
+    lines=[f"📊 Tabelle - {LEAGUES[league]['emoji']} {league} - {div_short}\n"]
+    for i,(disp, short, abbrev, W, L, T, streak) in enumerate(rows,1):
+        rec = f"{W}-{L}" + (f"-{T}" if T else "")
+        is_fav = any(fn in disp.lower() or disp.lower() in fn for fn in fav_names)
+        star = " ⭐" if is_fav else ""
+        streak_s = f" ({streak})" if streak and streak not in ("-", "0") else ""
+        # Kurz: "1. Steelers 7-2 ⭐ (W3)" - 1 Zeile pro Team!
+        lines.append(f"{i}. {short} {rec}{star}{streak_s}")
+    if league=="NHL":
+        lines.append("")
+        lines.append(NHL_LEGEND_SHORT)
+    _kb_rows = [[InlineKeyboardButton("📊 Andere Division", callback_data=f"tables_league:{league}")], [InlineKeyboardButton("⭐ Meine Teams", callback_data="tables_mine")]]
+    if league=="NHL":
+        _kb_rows.append([InlineKeyboardButton("❓ Was bedeutet W-L-OTL / OT1?", callback_data="nhl_help")])
+    _kb_rows.append([InlineKeyboardButton("⬅️ Zurück", callback_data="back")])
+    kb = InlineKeyboardMarkup(_kb_rows)
+    await target.reply_text("\n".join(lines), reply_markup=kb)
+async def tables_conf_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, league: str, conf: str):
+    target = update.message or update.callback_query.message
+    divs = ctx.user_data.get("tables_divs_"+league)
+    if not divs:
+        divs = espn_standings(league)
+        ctx.user_data["tables_divs_"+league]=divs
+    confs = standings_conferences(league, divs)
+    rows = confs.get(conf, [])
+    if not rows:
+        await target.reply_text("Conference nicht gefunden.", reply_markup=main_kb()); return
+    favs = favs_for(update.effective_user.id) if update.effective_user else []
+    fav_names = [f.split(" (")[0].strip().lower() for f in favs]
+    lines=[f"📊 Tabelle - {LEAGUES[league]['emoji']} {league} - {conf} Conference\n"]
+    for i,(disp, short, abbrev, W, L, T, streak) in enumerate(rows,1):
+        rec = f"{W}-{L}" + (f"-{T}" if T else "")
+        is_fav = any(fn in disp.lower() or disp.lower() in fn for fn in fav_names)
+        star = " ⭐" if is_fav else ""
+        # V66-FIX: Auch in Conference-Ansicht Streak/Punkte zeigen! Vorher fehlten PTS komplett!
+        streak_s = f" ({streak})" if streak and streak not in ("-", "0") else ""
+        # Playoff-Strich bei NBA/NHL: Top 8 = Playoffs, 9-10 = Play-In (NBA) / Top 8 Playoffs (NHL)
+        marker = ""
+        if league=="NBA" and i==8: marker=" — Playoff-Platz"
+        if league=="NBA" and i==10: marker=" — Play-In"
+        if league=="NHL" and i==8: marker=" — Playoff-Platz"
+        lines.append(f"{i}. {short} {rec}{star}{streak_s}{marker}")
+    if league=="NHL":
+        lines.append("")
+        lines.append(NHL_LEGEND_SHORT)
+    _kb_rows2 = [[InlineKeyboardButton("📊 Andere Division", callback_data=f"tables_league:{league}")], [InlineKeyboardButton("⭐ Meine Teams", callback_data="tables_mine")]]
+    if league=="NHL":
+        _kb_rows2.append([InlineKeyboardButton("❓ Was bedeutet W-L-OTL / OT1?", callback_data="nhl_help")])
+    _kb_rows2.append([InlineKeyboardButton("⬅️ Zurück", callback_data="back")])
+    kb = InlineKeyboardMarkup(_kb_rows2)
+    await target.reply_text("\n".join(lines), reply_markup=kb)
+async def tables_top25_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, league: str, divs):
+    target = update.message or update.callback_query.message
+    # NCAAF: Alle Teams aus allen Conferences, nach Wins sortiert, Top 25
+    all_rows=[]
+    for k,v in divs.items():
+        all_rows.extend(v)
+    all_rows.sort(key=lambda x: (x[3], -x[4]), reverse=True)
+    top = all_rows[:25]
+    favs = favs_for(update.effective_user.id) if update.effective_user else []
+    fav_names = [f.split(" (")[0].strip().lower() for f in favs]
+    lines=[f"📊 Tabelle - 🎓 NCAAF - Top 25\n"]
+    for i,(disp, short, abbrev, W, L, T, streak) in enumerate(top,1):
+        rec = f"{W}-{L}" + (f"-{T}" if T else "")
+        is_fav = any(fn in disp.lower() or disp.lower() in fn for fn in fav_names)
+        star = " ⭐" if is_fav else ""
+        lines.append(f"{i}. {short} {rec}{star}")
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("⭐ Meine Teams", callback_data="tables_mine")],
+        [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+    ])
+    await target.reply_text("\n".join(lines), reply_markup=kb)
+async def tables_mine_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    target = update.message or update.callback_query.message
+    user = update.effective_user or (update.callback_query.from_user if update.callback_query else None)
+    favs = favs_for(user.id) if user else []
+    if not favs:
+        await target.reply_text("Du hast noch keine Favoriten. Füge erst ein Team hinzu, dann zeige ich dir hier deine Tabellen!", reply_markup=main_kb()); return
+    await target.reply_text("📊 Ich hole deine Tabellen... einen Moment ⏳")
+    lines=["📊 Deine Teams - Tabellen\n⭐ = Dein Team\n"]
+    # Für jeden Favorit: seine Division finden und zeigen
+    for f in favs:
+        name = f.split(" (")[0].strip()
+        lg = f.split(" (")[-1].replace(")", "").strip() if " (" in f else None
+        if not lg or lg not in LEAGUES: continue
+        divs = espn_standings(lg)
+        if not divs: continue
+        # Division finden, wo das Team drin ist
+        found=None
+        for div, rows in divs.items():
+            for (disp, short, abbrev, W, L, T, streak) in rows:
+                if name.lower() in disp.lower() or disp.lower() in name.lower():
+                    found=(div, rows); break
+            if found: break
+        if not found: continue
+        div, rows = found
+        div_s = div.replace("American Football Conference", "AFC").replace("National Football Conference", "NFC").replace("American Football", "AFC").replace("National Football", "NFC").strip()
+        lines.append(f"\n{LEAGUES[lg]['emoji']} {lg} - {div_s}")
+        for i,(disp, short, abbrev, W, L, T, streak) in enumerate(rows,1):
+            rec = f"{W}-{L}" + (f"-{T}" if T else "")
+            is_fav = name.lower() in disp.lower() or disp.lower() in name.lower()
+            star = " ⭐" if is_fav else ""
+            streak_s = f" ({streak})" if streak and streak not in ("-", "0") else ""
+            lines.append(f"{i}. {short} {rec}{star}{streak_s}")
+    if len(lines)<=2:
+        lines.append("Keine Tabellen für deine Favoriten gefunden.")
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📊 Alle Tabellen", callback_data="tables")],
+        [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+    ])
+    await target.reply_text("\n".join(lines), reply_markup=kb)
+
+async def next_hub_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    target = update.message or update.callback_query.message
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📅 Heute - Alle Spiele", callback_data="next_today")],
+        [InlineKeyboardButton("📅 Morgen - Alle Spiele", callback_data="next_tomorrow")],
+        [InlineKeyboardButton("⭐ Nur meine Favoriten", callback_data="next_mine")],
+        [InlineKeyboardButton("❓ Hilfe", callback_data="help")],
+        [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+    ])
+    await target.reply_text("⏭️ Next Games\n\nWas willst du sehen?\n📅 Heute / Morgen = alle Spiele, auch ohne Favoriten!\n⭐ Nur meine Favoriten = wann spielen DEINE Teams als Nächstes?", reply_markup=kb)
+async def next_mine_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    target = update.message or update.callback_query.message
+    user = update.effective_user or (update.callback_query.from_user if update.callback_query else None)
+    favs = favs_for(user.id) if user else []
+    lines=["⏭️ Next Games - Deine Favoriten\n"]
+    grouped = {}  # V69: Datum -> [(dt, league, ev, disp)]
+    if not favs:
+        lines.append("Du hast noch keine Favoriten. Füge erst ein Team hinzu, dann zeige ich dir hier das nächste Spiel pro Team.")
+        await target.reply_text("\n".join(lines), reply_markup=main_kb()); return
+    # Favoriten-Namen ohne "(NFL)" hinten dran + Liga dazu!
+    # WICHTIG: Nur Vollname in der richtigen Liga matchen! "Pirates" allein würde sonst auch
+    # East Carolina Pirates (NCAAF) als Pittsburgh Pirates (MLB) verkaufen! Spitzname nur als Fallback mit Vollname-Check.
+    fav_list=[]  # [(anzeige, liga, [suchbegriffe], vollname)]
+    for f in favs:
+        name = f.split(" (")[0].strip()
+        lg = f.split(" (")[-1].replace(")", "").strip() if " (" in f else None
+        terms=[name.lower()]
+        fav_list.append((f, lg, terms, name.lower()))
+    # Nächste 14 Tage durchsuchen - nicht nur heute! Samstag Longhorns, Sonntag Steelers etc.
+    from datetime import date as _date
+    today=_date.today()
+    all_events=[]  # (datum, league, ev, fav_anzeige)
+    seen_ids=set()
+    for league in LEAGUES:
+        for offset in range(0, 15):
+            d = today + timedelta(days=offset)
+            ds = d.strftime("%Y%m%d")
+            for ev in espn_scoreboard(league, dates=ds):
+                eid = ev.get("id")
+                if eid in seen_ids: continue
+                seen_ids.add(eid)
+                # Nur zukünftige / heutige Spiele, keine fertigen
+                state = ev.get("status",{}).get("type",{}).get("state","")
+                if state=="post": continue
+                teams,_ = event_teams(ev)
+                team_text = " ".join([x[0] for x in teams]).lower()
+                for disp, lg, terms, fullname in fav_list:
+                    # Nur in der gleichen Liga! Pittsburgh Pirates (MLB) darf nicht East Carolina Pirates (NCAAF) matchen!
+                    if lg and lg != league: continue
+                    if any(tm in team_text for tm in terms):
+                        # Extra-Sicherheit: Bei gleichem Spitznamen (Pirates, Panthers, etc.) muss der VOLLE Name drin stehen,
+                        # nicht nur der Spitzname! "east carolina pirates" enthält nicht "pittsburgh pirates" -> kein Match!
+                        # Ausnahme: Wenn der Vollname aus nur 2 Wörtern besteht und das Team genau so heißt, reicht Vollname.
+                        # Hier: Wir verlangen Vollname-Match, wenn der Vollname in einer anderen Liga auch vorkommt.
+                        if fullname not in team_text:
+                            # Vollname nicht drin -> nur Spitzname-Match, das ist zu unsicher bei Pirates/Panthers/etc.
+                            # Wir erlauben Spitzname-Match nur, wenn kein anderes Team in dieser Liga den gleichen Spitznamen hat.
+                            # Einfachste sichere Regel: Nur Vollname zählt!
+                            continue
+                        _, dt = fmt_dt(ev.get("date",""))
+                        all_events.append((dt or datetime.now(BERLIN), league, ev, disp))
+                        break
+    # Sortiert nach Datum, pro Favorit nur das nächste Spiel
+    all_events.sort(key=lambda x: x[0])
+    shown=set()
+    for dt, league, ev, disp in all_events:
+        if disp in shown: continue
+        shown.add(disp)
+        # V69: Kein doppelter Team-Name mehr! Nach Tag gruppieren!
+        day_key = dt.date() if dt else None
+        grouped.setdefault(day_key, []).append((dt, league, ev, disp))
+    # --- Off-Season / Preseason: Wenn ein Favorit in 14 Tagen kein Spiel hat, weiter suchen bis 180 Tage ---
+    # z.B. Pirates: Spring Training im Feb schon bekannt -> direkt anzeigen statt nur Meister!
+    missing = [(disp, terms) for disp, lg, terms, fullname in fav_list if disp not in shown]
+    if missing:
+        # Pro Liga einmalig in 30-Tage-Blöcken bis 180 Tage suchen (ESPN Range: YYYYMMDD-YYYYMMDD)
+        for disp, terms in missing:
+            # Liga aus "Team (LIGA)" holen
+            lg = disp.split(" (")[-1].replace(")", "").strip() if " (" in disp else None
+            if lg not in LEAGUES: continue
+            found_pre=None
+            for chunk_start in [14, 44, 74, 104, 134, 164]:
+                s = today + timedelta(days=chunk_start)
+                e = today + timedelta(days=chunk_start+29)
+                rng = f"{s.strftime('%Y%m%d')}-{e.strftime('%Y%m%d')}"
+                for ev in espn_scoreboard(lg, dates=rng):
+                    state = ev.get("status",{}).get("type",{}).get("state","")
+                    if state=="post": continue
+                    teams,_ = event_teams(ev)
+                    team_text = " ".join([x[0] for x in teams]).lower()
+                    if any(tm in team_text for tm in terms):
+                        _, dt = fmt_dt(ev.get("date",""))
+                        # Preseason-Label aus ESPN season type, z.B. "Pre-Season" / "Spring Training"
+                        season_name = (ev.get("season",{}) or {}).get("type",{}).get("name","") or (ev.get("season",{}) or {}).get("slug","") or ""
+                        is_pre = any(k in season_name.lower() for k in ["pre", "spring", "exhibition"]) or chunk_start>=14 and dt and (dt - datetime.now(BERLIN)).days>21 and lg=="MLB"
+                        found_pre=(dt, lg, ev, disp, is_pre, season_name)
+                        break
+                if found_pre: break
+            if found_pre:
+                dt, lg2, ev, disp2, is_pre, season_name = found_pre
+                shown.add(disp2)
+                weekday = ["Mo","Di","Mi","Do","Fr","Sa","So"][dt.weekday()] if dt else ""
+                # Label: 🌱 Spring Training bei MLB, sonst 🏋️ Preseason
+                if lg2=="MLB" and is_pre: pre_label = "🌱 Spring Training"
+                elif is_pre: pre_label = "🏋️ Preseason"
+                else: pre_label = "⏭️ Nächstes Spiel"
+                day_key2 = dt.date() if dt else None
+                grouped.setdefault(day_key2, []).append((dt, lg2, ev, disp2))
+    # V69: Gruppierte Anzeige: Nach Tag! ⭐ = Dein Team!
+    for day_key in sorted([k for k in grouped.keys() if k is not None]):
+        items = sorted(grouped[day_key], key=lambda x: x[0] or datetime.now(BERLIN))
+        dt0 = items[0][0]
+        wd = ["Mo","Di","Mi","Do","Fr","Sa","So"][dt0.weekday()] if dt0 else ""
+        lines.append(f"\n**{wd} {day_key.strftime('%d.%m.')}**")
+        for dt, league, ev, disp in items:
+            lines.append(f"⭐ {game_line(ev, league, show_broadcast=True)}")
+    if not shown:
+        lines.append("Keine kommenden Spiele für deine Favoriten gefunden - auch keine Preseason / Spring Training Daten bei ESPN.")
+        lines.append("Aktueller Meister:")
+        for lg,ch in CHAMPIONS.items():
+            if any(lg in f for f in favs):
+                lines.append(f"{LEAGUES[lg]['emoji']} {lg}: {ch['team']} ({ch['year']}) - {ch['result']}")
+    _kb = InlineKeyboardMarkup([[InlineKeyboardButton("🏥 Verletzungen meiner Teams", callback_data="injuries_mine")], [InlineKeyboardButton("ℹ️ Mehr Infos zu den Spielen", callback_data="game_info_leagues")], [InlineKeyboardButton("⬅️ Zurück", callback_data="back")]])
+    await target.reply_text("\n".join(lines), reply_markup=_kb)
+
+async def injuries_mine_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    target = update.message or update.callback_query.message
+    user = update.effective_user or (update.callback_query.from_user if update.callback_query else None)
+    favs = favs_for(user.id) if user else []
+    _now = datetime.now(BERLIN)
+    lines = [f"🏥 Verletzungen — Meine Teams\n📅 Stand: {_now.strftime('%d.%m. %H:%M')}\nℹ️ Bis zu 15 Min verzögert!"]
+    if not favs:
+        lines.append("Du hast noch keine Favoriten.")
+        await target.reply_text("\n".join(lines), reply_markup=main_kb()); return
+    _has_ncaaf = False; _ir_buttons = []
+    lines.append("Quelle: Sleeper (NFL) / ESPN (NBA, NHL, MLB)")
+    for f in favs:
+        _name = f.split(" (")[0].strip()
+        _lg = f.split(" (")[-1].replace(")", "").strip() if " (" in f else None
+        if _lg not in LEAGUES: continue
+        lines.append(f"\n**{LEAGUES[_lg]['emoji']} {_name}:**")
+        if _lg == "NCAAF":
+            _has_ncaaf = True; lines.append("• Keine Verletzungsliste!"); continue
+        if not _league_in_season(_lg):
+            lines.append(f"• Saison vorbei! 🏖️\n• Nächste Saison: {LEAGUE_NEXT.get(_lg, '')}"); continue
+        _inj, _has_data = _team_injuries_with_status(_lg, _name)
+        if not _has_data: lines.append("• Keine Daten gefunden!")
+        elif not _inj: lines.append("• Keine Verletzten! 🎉")
+        else:
+            for _x in _inj: lines.append(f"• {_x}")
+        if _lg == "NFL":
+            _g2, _ir2, _h2 = _sleeper_split(_name)
+            if _ir2:
+                lines.append(f"ℹ️ + {len(_ir2)} auf IR (Langzeit)")
+                _ir_buttons.append([InlineKeyboardButton(f"🏥 IR-Liste {_name} ({len(_ir2)})", callback_data=f"injuries_ir:NFL:{_name}")])
+    if _has_ncaaf: lines.append("\nℹ️ NCAAF: Keine Liste! Für College gibt's keinen offiziellen Injury Report, deswegen listen wir da nix auf!")
+    _kb_rows = _ir_buttons + [[InlineKeyboardButton("⏭️ Nächste Spiele", callback_data="next_mine")], [InlineKeyboardButton("⬅️ Zurück", callback_data="back")]]
+    await target.reply_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(_kb_rows))
+async def injuries_ir_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, league: str, team_full: str):
+    target = update.message or update.callback_query.message
+    _g, _ir, _has = _sleeper_split(team_full) if league == "NFL" else ([], [], False)
+    if not _has or not _ir:
+        await target.reply_text(f"🏥 IR-Liste — {team_full}\n\nKeine IR-Spieler gefunden.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Zurück zu Verletzungen", callback_data="injuries_mine")]])); return
+    lines = [f"🏥 IR-Liste — {team_full} ({len(_ir)})\n"]
+    for _x in _ir: lines.append(f"• {_x}")
+    await target.reply_text("\n".join(lines), reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Zurück zu Verletzungen", callback_data="injuries_mine")]]))
+def _fav_next_games(user_id):
+    _favs = favs_for(user_id); _out=[]; _seen=set()
+    from datetime import date as _date
+    _today=_date.today()
+    for _lg in LEAGUES:
+        for _off in range(0,15):
+            _d=_today+timedelta(days=_off); _ds=_d.strftime("%Y%m%d")
+            for _ev in espn_scoreboard(_lg, dates=_ds):
+                _eid=_ev.get("id")
+                if _eid in _seen: continue
+                _seen.add(_eid)
+                if _ev.get("status",{}).get("type",{}).get("state","")=="post": continue
+                _teams,_=event_teams(_ev); _txt=" ".join([x[0] for x in _teams]).lower()
+                for _f in _favs:
+                    _nm=_f.split(" (")[0].strip(); _l2=_f.split(" (")[-1].replace(")","").strip() if " (" in _f else None
+                    if _l2 and _l2!=_lg: continue
+                    if _nm.lower() in _txt:
+                        _,_dt=fmt_dt(_ev.get("date",""))
+                        _out.append((_dt or datetime.now(BERLIN),_lg,_ev,_f)); break
+    _out.sort(key=lambda x: x[0]); _seen_f=set(); _res=[]
+    for _x in _out:
+        if _x[3] in _seen_f: continue
+        _seen_f.add(_x[3]); _res.append(_x)
+    return _res
+async def game_info_leagues_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    target=update.message or update.callback_query.message
+    user=update.effective_user or (update.callback_query.from_user if update.callback_query else None)
+    _games=_fav_next_games(user.id) if user else []
+    if not _games:
+        await target.reply_text("ℹ️ Mehr Infos — Keine kommenden Spiele deiner Favoriten gefunden.", reply_markup=main_kb()); return
+    ctx.user_data["game_info_events"]={str(_ev.get("id")): _ev for _,_lg,_ev,_f in _games}
+    ctx.user_data["game_info_league"]={str(_ev.get("id")): _lg for _,_lg,_ev,_f in _games}
+    _by={}
+    for _dt,_lg,_ev,_f in _games: _by.setdefault(_lg,[]).append(_ev)
+    _rows=[[InlineKeyboardButton(f"{LEAGUES[_lg]['emoji']} {_lg} ({len(_v)})", callback_data=f"game_info_games:{_lg}")] for _lg,_v in _by.items()]
+    _rows.append([InlineKeyboardButton("⬅️ Zurück", callback_data="back")])
+    await target.reply_text("ℹ️ Mehr Infos zu den Spielen\n\nWelche Liga?", reply_markup=InlineKeyboardMarkup(_rows))
+async def game_info_games_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, league: str):
+    target=update.message or update.callback_query.message
+    _all=_fav_next_games(update.effective_user.id)
+    _filt=[x for x in _all if x[1]==league]
+    if not _filt:
+        await target.reply_text("Keine Spiele in dieser Liga.", reply_markup=main_kb()); return
+    _rows=[]
+    for _dt,_lg,_ev,_f in _filt:
+        _rows.append([InlineKeyboardButton(f"{game_line(_ev,_lg,show_broadcast=False)[:60]}", callback_data=f"game_info_detail:{_ev.get('id')}")])
+    _rows.append([InlineKeyboardButton("⬅️ Zurück", callback_data="game_info_leagues")])
+    await target.reply_text(f"ℹ️ Mehr Infos — {LEAGUES[league]['emoji']} {league}\n\nWelches Spiel?", reply_markup=InlineKeyboardMarkup(_rows))
+def _team_form(league, team_full):
+    try:
+        from datetime import date as _date
+        _today=_date.today(); _res=[]
+        for _off in range(1,31):
+            _d=_today-timedelta(days=_off); _ds=_d.strftime("%Y%m%d")
+            for _ev in espn_scoreboard(league, dates=_ds):
+                if _ev.get("status",{}).get("type",{}).get("state","")!="post": continue
+                _teams,_=event_teams(_ev); _txt=" ".join([x[0] for x in _teams]).lower()
+                if team_full.lower() not in _txt: continue
+                _sc={x[0]:(int(x[2]) if str(x[2]).isdigit() else 0) for x in _teams}
+                _my=_sc.get(team_full,0); _opp=max([v for k,v in _sc.items() if k!=team_full] or [0])
+                _res.append("W" if _my>_opp else "L")
+                if len(_res)>=5: return "-".join(_res)
+        return "-".join(_res) if _res else "Keine Daten"
+    except Exception: return "Keine Daten"
+async def game_info_detail_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, eid: str):
+    target=update.message or update.callback_query.message
+    _ev=(ctx.user_data.get("game_info_events",{}) or {}).get(str(eid))
+    _lg=(ctx.user_data.get("game_info_league",{}) or {}).get(str(eid))
+    if not _ev or not _lg:
+        await target.reply_text("Spiel nicht mehr gefunden. Bitte nochmal über Next Games öffnen.", reply_markup=main_kb()); return
+    _teams,_comp=event_teams(_ev)
+    _home=next((x for x in _teams if (x[1] or "").lower()=="home"), _teams[1] if len(_teams)>1 else _teams[0])
+    _away=next((x for x in _teams if (x[1] or "").lower()=="away"), _teams[0])
+    _venue=((_comp.get("venue",{}) or {}).get("fullName","") or "")
+    _date_s,_dt=fmt_dt(_ev.get("date",""))
+    lines=[f"ℹ️ {_away[0]} @ {_home[0]} — {_date_s} Uhr\n"]
+    if _venue: lines.append(f"📍 {_venue}")
+    lines.append(f"{game_line(_ev,_lg,show_broadcast=True)}")
+    lines.append("🌦️ Wetter: Keine Daten")
+    lines.append("\n**Wer fehlt?**")
+    for _tm in [_away[0],_home[0]]:
+        _inj,_has=_team_injuries_with_status(_lg,_tm)
+        if _lg=="NCAAF": lines.append(f"{_tm}: Keine Verletzungsliste (kein offizieller Report)")
+        elif not _league_in_season(_lg): lines.append(f"{_tm}: Saison vorbei!")
+        elif not _has: lines.append(f"{_tm}: Keine Daten gefunden!")
+        elif not _inj: lines.append(f"{_tm}: Keine Verletzten! 🎉")
+        else:
+            for _x in _inj[:4]: lines.append(f"{_tm}: {_x}")
+    lines.append("\n**Form (letzte Spiele):**")
+    lines.append(f"{_away[0]}: {_team_form(_lg,_away[0])}")
+    lines.append(f"{_home[0]}: {_team_form(_lg,_home[0])}")
+    lines.append("\n**Letztes Duell:**")
+    lines.append("Keine Daten — wird noch ausgebaut!")
+    lines.append("\n**Was steht auf dem Spiel?**")
+    lines.append("Playoffs kommen näher – jeder Sieg zählt! Keine Wetten, nur Sport! 😅")
+    await target.reply_text("\n".join(lines), reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Zurück zu den Spielen", callback_data="game_info_leagues")]]))
+async def fav_remove_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    target=update.message or update.callback_query.message
+    _favs=favs_for(update.effective_user.id)
+    if not _favs:
+        await target.reply_text("Noch keine Favoriten.", reply_markup=main_kb()); return
+    _rows=[[InlineKeyboardButton(f"❌ {_f}", callback_data=f"fav_del:{_i}")] for _i,_f in enumerate(_favs)]
+    _rows.append([InlineKeyboardButton("⬅️ Zurück", callback_data="back")])
+    await target.reply_text("🗑️ Welchen Favorit willst du entfernen?", reply_markup=InlineKeyboardMarkup(_rows))
+async def heute_morgen(update: Update, ctx: ContextTypes.DEFAULT_TYPE, morgen=False):
+    target = update.message or update.callback_query.message
+    want = (datetime.now(BERLIN)+timedelta(days=1 if morgen else 0)).date()
+    lines=[f"📅 {'Morgen' if morgen else 'Heute'} ({want.strftime('%d.%m.')})\n"]
+    # Überall: "Gast @ Heim" - erstes Team ist Heimteam!
+
+    live_lines=[]; upcoming_lines=[]
+    for league in LEAGUES:
+        for ev in espn_scoreboard(league):
+            _, dt = fmt_dt(ev.get("date",""))
+            if dt and dt.date()==want:
+                state = ev.get("status",{}).get("type",{}).get("state","")
+                # Heute: NUR Live + Noch heute! Finals kommen bei ✅ Ergebnisse rein, sonst ewige Liste!
+                if not morgen and state=="post":
+                    continue
+                if state=="in":
+                    live_lines.append(f"{LEAGUES[league]['emoji']} {game_line(ev, league, show_broadcast=True)}")
+                else:
+                    upcoming_lines.append(f"{LEAGUES[league]['emoji']} {game_line(ev, league, show_broadcast=True)}")
+    if live_lines:
+        lines.append("🔴 Live:")
+        lines.extend(live_lines)
+    if upcoming_lines:
+        lines.append("\n⏰ Noch heute:" if not morgen else "\n⏰ Morgen:")
+        lines.extend(upcoming_lines)
+    if not live_lines and not upcoming_lines:
+        if morgen:
+            lines.append("Morgen keine Spiele in den Ligen. Schau mal bei /top10 oder /next vorbei.")
+        else:
+            lines.append("Heute kein Spiel mehr - alles schon vorbei! Schau mal bei ✅ Ergebnisse für die Endergebnisse von letzter Nacht.")
+            lines.append("Oder bei ⏭️ Next Games für die nächsten Spiele deiner Favoriten.")
+    await target.reply_text("\n".join(lines), reply_markup=main_kb())
+
+
+async def results_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    # Liga-Auswahl für Ergebnisse - nicht alle Ligen auf einmal, sonst ewige Liste!
+    target = update.message or update.callback_query.message
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🏈 NFL", callback_data="results_league:NFL"),
+         InlineKeyboardButton("🏒 NHL", callback_data="results_league:NHL")],
+        [InlineKeyboardButton("⚾ MLB", callback_data="results_league:MLB"),
+         InlineKeyboardButton("🏀 NBA", callback_data="results_league:NBA")],
+        [InlineKeyboardButton("🏈 NCAAF", callback_data="results_league:NCAAF")],
+        [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+    ])
+    await target.reply_text("✅ Ergebnisse\n\nWelche Liga?", reply_markup=kb)
+async def results_league_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, league: str):
+    target = update.message or update.callback_query.message
+    # Limit pro Liga: NCAAF hat am Wochenende 30+ Spiele, da sind 5 viel zu wenig!
+    # NFL/NHL/NBA/MLB: 10 reichen (da sind pro Tag nur 8-15 Spiele). NCAAF: 20, sonst fehlen die Longhorns!
+    LIMITS = {"NCAAF": 20, "NFL": 12, "NHL": 10, "NBA": 10, "MLB": 12}
+    limit = LIMITS.get(league, 10)
+    # Wir gucken die letzten 7 Tage durch, sammeln Finals, sortieren neueste zuerst, nehmen Limit
+    from datetime import date as _date
+    today = _date.today()
+    finals=[]; seen=set()
+    for offset in range(0, 8):
+        d = today - timedelta(days=offset)
+        ds = d.strftime("%Y%m%d")
+        for ev in espn_scoreboard(league, dates=ds):
+            eid = ev.get("id")
+            if eid in seen: continue
+            seen.add(eid)
+            state = ev.get("status",{}).get("type",{}).get("state","")
+            if state!="post": continue
+            _, dt = fmt_dt(ev.get("date",""))
+            finals.append((dt or datetime.now(BERLIN), ev))
+    finals.sort(key=lambda x: x[0], reverse=True)
+    finals = finals[:limit]
+    lines=[f"✅ Ergebnisse - {LEAGUES[league]['emoji']} {league} (letzte {limit})\n"]
+    if not finals:
+        lines.append("Keine Endergebnisse in den letzten 7 Tagen gefunden.")
+    else:
+        # Übersichtlicher: Nach Datum gruppieren, kurze Teamnamen, 1 Zeile pro Spiel, kein Sender!
+        # Vorher: "Ball State Cardinals 7 @ Buffalo Bulls 28 • ✅ Final • 12.11. 01:30 • 📺 ESPN2" (2 Zeilen, ewig lang)
+        # Jetzt: "📅 12.11.\nBuffalo 28 - 7 Ball State ✅" (1 Zeile, kurz!)
+        from collections import OrderedDict
+        by_date = OrderedDict()
+        for dt, ev in finals:
+            key = dt.strftime("%d.%m.") if dt else "?"
+            by_date.setdefault(key, []).append((dt, ev))
+        for date_s, items in by_date.items():
+            lines.append(f"\n📅 {date_s}")
+            for dt, ev in items:
+                teams, _ = event_teams(ev)
+                # Kurze Namen: "Buffalo" statt "Buffalo Bulls", "Ball State" statt "Ball State Cardinals"
+                def short_name(idx):
+                    try:
+                        comp = ev.get("competitions", [{}])[0]
+                        c = comp.get("competitors", [])[idx]
+                        tm = c.get("team", {}) or {}
+                        return tm.get("shortDisplayName","") or tm.get("displayName","") or teams[idx][0]
+                    except: return teams[idx][0] if idx < len(teams) else ""
+                # teams[0] = Heim, teams[1] = Gast (ESPN-Reihenfolge) - wir zeigen Heim zuerst!
+                h_name = short_name(0); a_name = short_name(1)
+                h_score = teams[0][2] if len(teams)>0 else ""
+                a_score = teams[1][2] if len(teams)>1 else ""
+                # Suffix: Kein Haken mehr pro Spiel! Nur (OT)/(2OT)/(SO)/(10 Inn.) in Klammern
+                # NFL: nur (OT) möglich. NCAAF/NBA: (OT),(2OT),(3OT)... NHL: (OT)/(SO). MLB: (10 Inn.)...
+                st = ev.get("status",{}) or {}
+                per = st.get("period") or 0
+                det = (st.get("type",{}) or {}).get("detail","") or ""
+                det_u = det.upper()
+                suffix = ""
+                if league=="MLB":
+                    # Baseball: period = gespielte Innings. 9 = normal, >9 = Extra Innings
+                    try: inn = int(per)
+                    except: inn = 0
+                    if inn>9: suffix = f" ({inn} Inn.)"
+                    elif "/10" in det or "EXTRA" in det_u: suffix = " (10 Inn.)"
+                elif league=="NHL":
+                    if "SO" in det_u or "SHOOTOUT" in det_u: suffix = " (SO)"
+                    elif per==5 or "/OT" in det or " OT" in det_u: suffix = " (OT)"
+                elif league in ("NCAAF","NBA"):
+                    # period 4=Regulation, 5=1OT, 6=2OT, 7=3OT...
+                    ot_count = 0
+                    if per and per>4: ot_count = int(per)-4
+                    elif "OT" in det_u:
+                        import re as _re
+                        m=_re.search(r"(\d+)\s*OT", det_u)
+                        ot_count = int(m.group(1)) if m else 1
+                    if ot_count==1: suffix=" (OT)"
+                    elif ot_count>1: suffix=f" ({ot_count}OT)"
+                elif league=="NFL":
+                    if (per and per>4) or "OT" in det_u: suffix=" (OT)"
+                lines.append(f"{h_name} {h_score} - {a_score} {a_name}{suffix}")
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ Andere Liga", callback_data="results")],
+        [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+    ])
+    await target.reply_text("\n".join(lines), reply_markup=kb)
+
+async def live_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    target = update.message or update.callback_query.message
+    # Nur Spiele der eigenen Favoriten - kein NBA wenn kein NBA-Team als Favorit drin ist!
+    user = update.effective_user or (update.callback_query.from_user if update.callback_query else None)
+    favs = favs_for(user.id) if user else []
+    # favs sind wie "Pittsburgh Penguins (NHL)" - Vollname + Liga! Nur Vollname in gleicher Liga zählt,
+    # sonst wird East Carolina Pirates (NCAAF) als Pittsburgh Pirates (MLB) angezeigt!
+    fav_map = []  # [(liga, vollname_lower)]
+    for f in favs:
+        name = f.split(" (")[0].strip().lower()
+        lg = f.split(" (")[-1].replace(")", "").strip() if " (" in f else None
+        fav_map.append((lg, name))
+    lines=["🔴 Live - Deine Favoriten\n"]
+    live_found=False
+    finals=[]
+    for league in LEAGUES:
+        for ev in espn_scoreboard(league):
+            teams, _ = event_teams(ev)
+            team_text = " ".join([x[0] for x in teams]).lower()
+            # Nur wenn Vollname in der gleichen Liga vorkommt!
+            if fav_map and not any((lg is None or lg==league) and fullname in team_text for lg, fullname in fav_map):
+                continue
+            status = ev.get("status",{}).get("type",{}).get("state","")
+            if status=="in":
+                lines.append(f"{LEAGUES[league]['emoji']} {game_line(ev, league, show_broadcast=True)}")
+                # Wenn SO live läuft, jeden Versuch mit ✅ / ❌ zeigen
+                for sl in shootout_lines(ev, league):
+                    lines.append(sl)
+                sc = last_scorer(ev, league)
+                if sc: lines.append(sc)
+                live_found=True
+            elif status=="post":
+                finals.append(f"{LEAGUES[league]['emoji']} {game_line(ev, league, show_broadcast=True)}")
+                for sl in shootout_lines(ev, league):
+                    finals.append(sl)
+                scf = last_scorer(ev, league)
+                if scf: finals.append(scf)
+    if not favs:
+        lines.append("Du hast noch keine Favoriten. Füge erst ein Team hinzu, dann zeige ich dir hier nur deine Teams live.")
+    elif not live_found:
+        lines.append("Gerade spielt kein Team von deinen Favoriten live.")
+        if finals:
+            lines.append("\n✅ Letzte Endergebnisse deiner Favoriten:")
+            lines.extend(finals[:5])
+    await target.reply_text("\n".join(lines), reply_markup=main_kb())
+
+async def settings_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    target = update.message or update.callback_query.message
+    uid = update.effective_user.id if update.effective_user else 0
+    rm = get_reminder_minutes(uid)
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("⭐ Favoriten verwalten", callback_data="fav_list")],
+        [InlineKeyboardButton("🔔 Benachrichtigungen", callback_data="notif")],
+        [InlineKeyboardButton("❓ Allgemeine Hilfe", callback_data="help")],
+        [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+    ])
+    await _cb_edit(update, "⚙️ Einstellungen\n\nWas willst du einstellen?", kb)
+async def settings_reminder_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    target = update.message or update.callback_query.message
+    uid = update.effective_user.id if update.effective_user else 0
+    cur = get_reminder_minutes(uid)
+    def _lbl(m):
+        return f"{'✅ ' if cur==m else ''}{fmt_reminder(m)}"
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton(_lbl(180), callback_data="reminder_set:180")],
+        [InlineKeyboardButton(_lbl(120), callback_data="reminder_set:120")],
+        [InlineKeyboardButton(_lbl(60), callback_data="reminder_set:60")],
+        [InlineKeyboardButton(_lbl(30), callback_data="reminder_set:30")],
+        [InlineKeyboardButton("🔕 Aus" if cur is not None else "✅ Aus", callback_data="reminder_set:off")],
+        [InlineKeyboardButton("⬅️ Zurück zu Einstellungen", callback_data="settings")],
+    ])
+    await _cb_edit(update, "⏰ Reminder-Zeit\n\nWann soll ich dich erinnern?\nEine Zeit für alle Favoriten!\nSpielen 2 deiner Favoriten gleichzeitig, kriegst du 1 Nachricht für beide!", kb)
+async def nhl_help_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    target = update.message or update.callback_query.message
+    kb = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Zurück zu Tabellen", callback_data="tables")]])
+    await target.reply_text(NHL_HELP_TEXT, reply_markup=kb)
+_REMINDER_SENT = set()
+# --- V89: Benachrichtigungen Hub + Live-Scores ---
+async def _cb_edit(update, text, kb):
+    # V89-FIX3: Gleiche Nachricht bearbeiten statt jedes Mal eine neue!
+    try:
+        if update.callback_query and update.callback_query.message:
+            await update.callback_query.message.edit_text(text, reply_markup=kb); return
+    except Exception:
+        pass
+    try:
+        target = update.message or (update.callback_query.message if update.callback_query else None)
+        if target is not None: await target.reply_text(text, reply_markup=kb)
+    except Exception: pass
+
+async def notif_cmd(update, ctx):
+    target = update.message or update.callback_query.message
+    uid = update.effective_user.id if update.effective_user else 0
+    rm = get_reminder_minutes(uid); master = get_live_master(uid)
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"⏰ Reminder - Aktuell: {fmt_reminder(rm)}", callback_data="settings_reminder")],
+        [InlineKeyboardButton(f"🔴 Live-Scores: {'✅ AN' if master else '❌ AUS'} (tippen zum An/Aus)", callback_data="notif_master")],
+        [InlineKeyboardButton("🔴 Live-Scores pro Team einstellen", callback_data="notif_teams")],
+        [InlineKeyboardButton("⬅️ Zurück zu Einstellungen", callback_data="settings")],
+    ])
+    await _cb_edit(update, "🔔 Benachrichtigungen\n\n⏰ Reminder: vor dem Spiel.\n🔴 Live-Scores: nur deine Favoriten! Pro Team einzeln: Jeder Score / Perioden-Ende / Endstand.\n\nAlles aus = kein Spam - du entscheidest!", kb)
+async def notif_teams_cmd(update, ctx):
+    target = update.message or update.callback_query.message
+    uid = update.effective_user.id if update.effective_user else 0
+    favs = favs_for(uid)
+    if not favs:
+        await target.reply_text("Du hast noch keine Favoriten. Füge erst ein Team hinzu!", reply_markup=main_kb()); return
+    rows = []
+    for i, f in enumerate(favs):
+        cfg = get_live_team(uid, f)
+        on = any(cfg.values())
+        rows.append([InlineKeyboardButton(f"{'✅' if on else '❌'} {f}", callback_data=f"notif_team:{i}")])
+    rows.append([InlineKeyboardButton("⬅️ Zurück zu Benachrichtigungen", callback_data="notif")])
+    await _cb_edit(update, "🔴 Live-Scores pro Team\n\nTippe ein Team an, dann kannst du pro Team einstellen: Jeder Score / Perioden-Ende / Endstand!", InlineKeyboardMarkup(rows))
+async def notif_team_cmd(update, ctx, idx):
+    target = update.message or update.callback_query.message
+    uid = update.effective_user.id if update.effective_user else 0
+    favs = favs_for(uid)
+    if idx < 0 or idx >= len(favs):
+        await notif_teams_cmd(update, ctx); return
+    f = favs[idx]; cfg = get_live_team(uid, f)
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"{'✅' if cfg['score'] else '❌'} Jeder Score (TD / FG / Tor / Run)", callback_data=f"notif_toggle:{idx}:score")],
+        [InlineKeyboardButton(f"{'✅' if cfg['period'] else '❌'} Perioden-Ende (Quarter / Drittel / Inning)", callback_data=f"notif_toggle:{idx}:period")],
+        [InlineKeyboardButton(f"{'✅' if cfg['final'] else '❌'} Endstand", callback_data=f"notif_toggle:{idx}:final")],
+        [InlineKeyboardButton("⬅️ Zurück zu Teams", callback_data="notif_teams")],
+    ])
+    _lg_team = f.split(" (")[-1].replace(")", "").strip() if " (" in f else ""
+    _hint = "\nHinweis: NBA = jeder Korb = viele Nachrichten! Da lieber nur Perioden-Ende + Endstand!" if _lg_team == "NBA" else ""
+    await _cb_edit(update, f"🔴 Live-Scores - {f}\n\nTippe an / aus. Nur was du anmachst, schicke ich dir!{_hint}", kb)
+_LIVE_SEEN = {}
+def _live_scores_of(ev):
+    try:
+        comps = ev.get("competitions", [{}])[0]
+        out = {}
+        for c in comps.get("competitors", []):
+            nm = (c.get("team", {}) or {}).get("displayName", "")
+            try: out[nm] = int(c.get("score", 0) or 0)
+            except: out[nm] = 0
+        return out
+    except: return {}
+async def live_score_job(context):
+    try:
+        favs_all = load_favs()
+        if not favs_all: return
+        for uid_str, favs in favs_all.items():
+            if not favs: continue
+            try: uid = int(uid_str)
+            except: continue
+            if not get_live_master(uid): continue
+            for fav in favs:
+                cfg = get_live_team(uid, fav)
+                if not any(cfg.values()): continue
+                name = fav.split(" (")[0].strip(); lg = fav.split(" (")[-1].replace(")", "").strip() if " (" in fav else None
+                if lg not in LEAGUES: continue
+                for ev in espn_scoreboard(lg):
+                    teams, _ = event_teams(ev)
+                    team_text = " ".join([x[0] for x in teams]).lower()
+                    if name.lower() not in team_text: continue
+                    eid = str(ev.get("id", ""))
+                    state = (ev.get("status", {}) or {}).get("type", {}).get("state", "")
+                    if state not in ("in", "post"): continue
+                    scores = _live_scores_of(ev); period = (ev.get("status", {}) or {}).get("period")
+                    key = (uid, eid, fav)
+                    prev = _LIVE_SEEN.get(key)
+                    if prev is None:
+                        _LIVE_SEEN[key] = {"scores": scores, "period": period, "state": state}; continue
+                    # Score geaendert?
+                    if cfg.get("score") and state == "in" and scores != prev["scores"]:
+                        diffs = {k: scores.get(k, 0) - prev["scores"].get(k, 0) for k in scores}
+                        scorer = max(diffs, key=lambda k: diffs[k]) if diffs else ""
+                        d = diffs.get(scorer, 0)
+                        if d > 0:
+                            if lg in ("NFL", "NCAAF"): label = "TOUCHDOWN" if d >= 6 else "FIELD GOAL" if d == 3 else "SAFETY" if d == 2 else "SCORE"
+                            elif lg == "NHL": label = "TOR"
+                            elif lg == "MLB": label = "RUN"
+                            else: label = "KORB"
+                            # V89-FIX2: Scorer dazu, wenn ESPN ihn schon hat! Sonst Nachricht trotzdem ohne Scorer schicken!
+                            _scorer_line = ""
+                            try:
+                                _ls = last_scorer(ev, lg) or ""
+                                if _ls.strip(): _scorer_line = "\n" + _ls.strip()
+                            except: _scorer_line = ""
+                            try: await context.bot.send_message(chat_id=uid, text=f"🔴 LIVE: {label}! {scorer}{_scorer_line}\n{LEAGUES[lg]['emoji']} {game_line(ev, lg)}")
+                            except: pass
+                    # Perioden-Ende? Period hat sich erhoeht, Spiel noch live
+                    if cfg.get("period") and state == "in" and prev["period"] is not None and period is not None and int(period) > int(prev["period"]):
+                        try: await context.bot.send_message(chat_id=uid, text=f"⏸️ Perioden-Ende: {live_period_label(lg, prev['period'])} vorbei!\n{LEAGUES[lg]['emoji']} {game_line(ev, lg)}")
+                        except: pass
+                    # Endstand?
+                    if cfg.get("final") and state == "post" and prev["state"] != "post":
+                        try: await context.bot.send_message(chat_id=uid, text=f"✅ Endstand: {fav}\n{LEAGUES[lg]['emoji']} {game_line(ev, lg)}")
+                        except: pass
+                    _LIVE_SEEN[key] = {"scores": scores, "period": period, "state": state}
+    except Exception as e:
+        logger.warning(f"live_score_job: {e}")
+_REMEMBER = None
+async def reminder_job(context):
+    # V67: Alle 15 Min laufen! Gruppiert Spiele mit gleichem Start in 1 Nachricht + Sender dazu!
+    try:
+        favs_all = load_favs()
+        if not favs_all: return
+        now = datetime.now(BERLIN)
+        for uid_str, favs in favs_all.items():
+            if not favs: continue
+            try: uid = int(uid_str)
+            except: continue
+            mins = get_reminder_minutes(uid)
+            if mins is None: continue
+            # Naechste Spiele der Favoriten in den naechsten (mins+15) Min suchen
+            upcoming = []  # (start_dt, league, ev, fav_name)
+            for league in LEAGUES:
+                for offset in range(0, 3):
+                    d = now.date() + timedelta(days=offset)
+                    for ev in espn_scoreboard(league, dates=d.strftime("%Y%m%d")):
+                        if ev.get("status",{}).get("type",{}).get("state","")=="post": continue
+                        _, dt = fmt_dt(ev.get("date",""))
+                        if not dt: continue
+                        diff = (dt - now).total_seconds()/60
+                        if diff < 0 or diff > mins + 15: continue
+                        teams,_ = event_teams(ev)
+                        team_text = " ".join([x[0] for x in teams]).lower()
+                        for f in favs:
+                            name = f.split(" (")[0].strip()
+                            lg = f.split(" (")[-1].replace(")", "").strip() if " (" in f else None
+                            if lg and lg != league: continue
+                            if name.lower() in team_text:
+                                key = (uid, ev.get("id"), mins)
+                                if key in _REMINDER_SENT: break
+                                upcoming.append((dt, league, ev, name))
+                                break
+            if not upcoming: continue
+            # Gruppieren nach Startzeit (gleiche Minute = gleiche Nachricht!)
+            groups = {}
+            for dt, league, ev, name in sorted(upcoming, key=lambda x: x[0]):
+                k = dt.strftime("%d.%m. %H:%M")
+                groups.setdefault(k, []).append((dt, league, ev, name))
+            for k, items in groups.items():
+                lines = [f"⏰ Reminder - In ca. {mins//60}h geht's los! ({k})\n" if mins>=60 else f"⏰ Reminder - In ca. {mins} Min geht's los! ({k})\n"]
+                for dt, league, ev, name in items:
+                    _REMINDER_SENT.add((uid, ev.get("id"), mins))
+                    b = broadcast_line(ev)
+                    btxt = f" - 📺 {b}" if b else ""
+                    lines.append(f"{LEAGUES[league]['emoji']} {game_line(ev, league)}{btxt}")
+                lines.append("\nViel Spaß! 🍿")
+                try: await context.bot.send_message(chat_id=uid, text="\n".join(lines))
+                except Exception: pass
+    except Exception as e:
+        logger.warning(f"reminder_job: {e}")
+async def remind_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    await settings_reminder_cmd(update, ctx)
+
+async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    txt = (update.message.text or "").strip()
+    if txt.isdigit() and 1 <= int(txt) <= 10 and ctx.user_data.get("top10_list") and not ctx.user_data.get("awaiting_fav"):
+        await top10_detail_cmd(update, ctx, int(txt)); return
+    if not ctx.user_data.get("awaiting_fav"): return
+    ctx.user_data["awaiting_fav"]=False
+    name = update.message.text.strip()
+    low = name.lower().strip()
+    # 1) Exakter Vollname? z.B. "Pittsburgh Steelers"
+    for lg, lst in TEAMS.items():
+        for full in lst:
+            if low == full.lower():
+                chosen = f"{full} ({lg})"
+                favs = load_favs(); uid=str(update.effective_user.id); favs.setdefault(uid, [])
+                if chosen not in favs[uid]: favs[uid].append(chosen)
+                save_favs(favs)
+                await update.message.reply_text(f"✅ {chosen} zu deinen Favoriten hinzugefügt!", reply_markup=main_kb())
+                return
+    # 2) Spitzname? z.B. "Steelers" oder "Panthers"
+    if low in NICKNAME_MAP:
+        cands = NICKNAME_MAP[low]
+        if len(cands)==1:
+            chosen = cands[0]
+            favs = load_favs(); uid=str(update.effective_user.id); favs.setdefault(uid, [])
+            if chosen not in favs[uid]: favs[uid].append(chosen)
+            save_favs(favs)
+            await update.message.reply_text(f"✅ {chosen} zu deinen Favoriten hinzugefügt!", reply_markup=main_kb())
+            return
+        else:
+            ctx.user_data["fav_candidates"]=cands
+            kb = InlineKeyboardMarkup([[InlineKeyboardButton(f"{i+1}. {m}", callback_data=f"fav_pick:{i}")] for i,m in enumerate(cands)])
+            await update.message.reply_text("Welches Team meinst du? Bitte nur die Zahl schicken:", reply_markup=kb)
+            ctx.user_data["awaiting_fav_pick"]=True
+            return
+    # 3) Stadt / Bundesstaat? z.B. "Texas", "New York", "Los Angeles", "Pittsburgh"
+    city_cands = _find_by_city_or_state(low)
+    if len(city_cands)>1:
+        ctx.user_data["fav_candidates"]=city_cands
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton(f"{i+1}. {m}", callback_data=f"fav_pick:{i}")] for i,m in enumerate(city_cands[:12])])
+        await update.message.reply_text("Welches Team meinst du? Bitte nur die Zahl schicken:", reply_markup=kb)
+        ctx.user_data["awaiting_fav_pick"]=True
+        return
+    elif len(city_cands)==1:
+        chosen = city_cands[0]
+        favs = load_favs(); uid=str(update.effective_user.id); favs.setdefault(uid, [])
+        if chosen not in favs[uid]: favs[uid].append(chosen)
+        save_favs(favs)
+        await update.message.reply_text(f"✅ {chosen} zu deinen Favoriten hinzugefügt!", reply_markup=main_kb())
+        return
+    # 4) Teil-Suche: z.B. "Steel" findet Steelers, "Longhorn" findet Longhorns
+    partial=[]
+    for lg, lst in TEAMS.items():
+        for full in lst:
+            if low in full.lower(): partial.append(f"{full} ({lg})")
+    if len(partial)>1:
+        ctx.user_data["fav_candidates"]=partial
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton(f"{i+1}. {m}", callback_data=f"fav_pick:{i}")] for i,m in enumerate(partial[:12])])
+        await update.message.reply_text("Welches Team meinst du? Bitte nur die Zahl schicken:", reply_markup=kb)
+        ctx.user_data["awaiting_fav_pick"]=True
+        return
+    elif len(partial)==1:
+        chosen = partial[0]
+        favs = load_favs(); uid=str(update.effective_user.id); favs.setdefault(uid, [])
+        if chosen not in favs[uid]: favs[uid].append(chosen)
+        save_favs(favs)
+        await update.message.reply_text(f"✅ {chosen} zu deinen Favoriten hinzugefügt!", reply_markup=main_kb())
+        return
+    # 5) Gar nichts gefunden -> nicht einfach speichern, sondern nachfragen!
+    await update.message.reply_text(f"Hmm, '{name}' nicht gefunden. Probier mal den vollen Teamnamen, z.B. 'Pittsburgh Steelers'.", reply_markup=main_kb())
+    return
+    chosen = partial[0] if partial else name
+    favs = load_favs(); uid=str(update.effective_user.id)
+    favs.setdefault(uid, [])
+    if chosen not in favs[uid]: favs[uid].append(chosen)
+    save_favs(favs)
+    await update.message.reply_text(f"✅ {chosen} zu deinen Favoriten hinzugefügt!", reply_markup=main_kb())
+
+async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query; await q.answer()
+    data=q.data
+    if data=="back": await q.message.edit_text(START_TEXT, reply_markup=main_kb())
+    elif data=="help": await q.message.edit_text(HELP_TEXT, reply_markup=main_kb())
+    elif data=="top10": await top10_cmd(update, ctx)
+    elif data=="notif": await notif_cmd(update, ctx)
+    elif data=="notif_master":
+        _m = not get_live_master(update.effective_user.id); set_live_master(update.effective_user.id, _m)
+        await notif_cmd(update, ctx)
+    elif data=="notif_teams": await notif_teams_cmd(update, ctx)
+    elif data.startswith("notif_team:"): await notif_team_cmd(update, ctx, int(data.split(":")[1]))
+    elif data.startswith("notif_toggle:"):
+        _p = data.split(":"); _idx = int(_p[1]); _kind = _p[2]
+        _favs = favs_for(update.effective_user.id)
+        if 0 <= _idx < len(_favs):
+            set_live_team_toggle(update.effective_user.id, _favs[_idx], _kind)
+        await notif_team_cmd(update, ctx, _idx)
+    elif data=="settings": await settings_cmd(update, ctx)
+    elif data=="settings_reminder": await settings_reminder_cmd(update, ctx)
+    elif data=="settings_sender": await q.message.reply_text("📺 Sender-Anzeige: 🇺🇸 Original (CBS / FOX / ESPN ...)\n\nDeutsche Sender wechseln wir nicht - die Rechte ändern sich ständig (NFL jetzt RTL / Sky / Game Pass) und wir wollen dir nichts Falsches zeigen!", reply_markup=main_kb())
+    elif data.startswith("reminder_set:"):
+        _v = data.split(":")[1]
+        _mins = None if _v=="off" else int(_v)
+        set_reminder_minutes(update.effective_user.id, _mins)
+        await q.message.reply_text(f"✅ Reminder-Zeit eingestellt: {fmt_reminder(_mins)}!\n\nSpielen 2 deiner Favoriten gleichzeitig, kriegst du 1 Nachricht für beide - mit Sender!", reply_markup=main_kb())
+    elif data=="nhl_help": await nhl_help_cmd(update, ctx)
+    elif data=="tables_all": await tables_all_cmd(update, ctx)
+    elif data=="tables": await tables_cmd(update, ctx)
+    elif data.startswith("tables_league:"): await tables_league_cmd(update, ctx, data.split(":")[1])
+    elif data.startswith("tables_div:"):
+        _parts = data.split(":", 2)
+        await tables_div_cmd(update, ctx, _parts[1], _parts[2])
+    elif data.startswith("tables_conf:"):
+        _parts = data.split(":")
+        await tables_conf_cmd(update, ctx, _parts[1], _parts[2])
+    elif data=="tables_mine": await tables_mine_cmd(update, ctx)
+    elif data=="playoffs": await playoffs_cmd(update, ctx)
+    elif data.startswith("playoffs_league:"): await playoffs_league_cmd(update, ctx, data.split(":")[1])
+    elif data.startswith("playoffs_cfp:"): await playoffs_league_cmd(update, ctx, data.split(":")[1], force_cfp=True)
+    elif data.startswith("playoffs_bowls:"): await playoffs_bowls_cmd(update, ctx, data.split(":")[1])
+    elif data.startswith("top10_league:"): await top10_league_cmd(update, ctx, data.split(":")[1])
+    elif data.startswith("top10_detail:"): await top10_detail_cmd(update, ctx, int(data.split(":")[1]))
+    elif data=="next": await next_hub_cmd(update, ctx)
+    elif data=="next_today": await heute_morgen(update, ctx, False)
+    elif data=="next_tomorrow": await heute_morgen(update, ctx, True)
+    elif data=="next_mine": await next_mine_cmd(update, ctx)
+    elif data=="injuries_mine": await injuries_mine_cmd(update, ctx)
+    elif data.startswith("injuries_ir:"): _p=data.split(":"); await injuries_ir_cmd(update, ctx, _p[1], ":".join(_p[2:]))
+    elif data=="game_info_leagues": await game_info_leagues_cmd(update, ctx)
+    elif data.startswith("game_info_games:"): await game_info_games_cmd(update, ctx, data.split(":")[1])
+    elif data.startswith("game_info_detail:"): await game_info_detail_cmd(update, ctx, data.split(":")[1])
+    elif data=="fav_remove": await fav_remove_cmd(update, ctx)
+    elif data.startswith("fav_del:"):
+        _idx=int(data.split(":")[1]); _d=load_favs(); _uid=str(update.effective_user.id); _lst=_d.get(_uid,[])
+        _rem=_lst.pop(_idx) if 0 <= _idx < len(_lst) else "?"
+        _d[_uid]=_lst; save_favs(_d)
+        await q.message.reply_text(f"✅ {_rem} entfernt!", reply_markup=main_kb())
+    elif data=="heute": await heute_morgen(update, ctx, False)
+    elif data=="morgen": await heute_morgen(update, ctx, True)
+    elif data=="results": await results_cmd(update, ctx)
+    elif data.startswith("results_league:"): await results_league_cmd(update, ctx, data.split(":")[1])
+    elif data=="live": await live_cmd(update, ctx)
+    elif data=="remind": await remind_cmd(update, ctx)
+    elif data=="fav_add":
+        ctx.user_data["awaiting_fav"]=True
+        await q.message.reply_text("Bitte Teamnamen eingeben:")
+    elif data=="fav_list":
+        favs=favs_for(update.effective_user.id)
+        _kb=InlineKeyboardMarkup([[InlineKeyboardButton("➕ Favorit hinzufügen", callback_data="fav_add")],[InlineKeyboardButton("🗑️ Favorit entfernen", callback_data="fav_remove")],[InlineKeyboardButton("🗑️ Alle Favoriten löschen", callback_data="fav_clear")],[InlineKeyboardButton("⬅️ Zurück", callback_data="back")]])
+        await q.message.reply_text("⭐ Deine Favoriten:\n" + ("\n".join([f"• {f}" for f in favs]) if favs else "Noch keine."), reply_markup=_kb)
+    elif data=="fav_clear":
+        favs=load_favs(); favs[str(update.effective_user.id)]=[]; save_favs(favs)
+        await q.message.reply_text("🗑️ Alle Favoriten gelöscht.", reply_markup=main_kb())
+    elif data.startswith("fav_pick:"):
+        idx=int(data.split(":")[1]); cands=ctx.user_data.get("fav_candidates",[])
+        if idx < len(cands):
+            chosen=cands[idx]; favs=load_favs(); uid=str(update.effective_user.id); favs.setdefault(uid,[])
+            if chosen not in favs[uid]: favs[uid].append(chosen)
+            save_favs(favs)
+            await q.message.reply_text(f"✅ {chosen} zu deinen Favoriten hinzugefügt!", reply_markup=main_kb())
+
+
+# --- Health Server fuer Render Free Web Service ---
+# Winziger eingebauter Webserver, kein Flask - klaut dem Bot keinen Event-Loop.
+def _run_health_server():
+    class H(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200); self.send_header("Content-Type","text/plain"); self.end_headers()
+            self.wfile.write(b"USA Sport Radar laeuft!")
+        def log_message(self, *a): pass
+    port = int(os.getenv("PORT", "10000"))
+    try:
+        ThreadingHTTPServer(("0.0.0.0", port), H).serve_forever()
+    except Exception as e:
+        print("Health server:", e)
+
+def main():
+    if not TOKEN:
+        print("FEHLER: BOT_TOKEN fehlt! In Render als Environment Variable setzen.")
+        return
+    # Health-Server im Hintergrund starten (fuer Render Free)
+    threading.Thread(target=_run_health_server, daemon=True).start()
+    # V88-FIX2: Loop MUSS gesetzt sein! PTB ruft intern get_event_loop() auf.
+    # Python 3.14 macht KEINEN Default-Loop mehr -> sonst RuntimeError in MainThread.
+    try:
+        asyncio.set_event_loop(asyncio.new_event_loop())
+    except Exception as e:
+        print("Loop-Fix:", e)
+    app = Application.builder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_cmd))
+    app.add_handler(CommandHandler("fav", fav_cmd))
+    app.add_handler(CommandHandler("next", next_hub_cmd))
+    app.add_handler(CommandHandler("top10", top10_cmd))
+    app.add_handler(CommandHandler("tables", tables_cmd))
+    app.add_handler(CommandHandler("heute", lambda u,c: heute_morgen(u,c,False)))
+    app.add_handler(CommandHandler("morgen", lambda u,c: heute_morgen(u,c,True)))
+    app.add_handler(CommandHandler("live", live_cmd))
+    app.add_handler(CommandHandler("ergebnisse", results_cmd))
+    app.add_handler(CommandHandler("remind", remind_cmd))
+    try:
+        _jq = getattr(app, "job_queue", None)
+        if _jq is not None:
+            _jq.run_repeating(reminder_job, interval=900, first=10)
+            _jq.run_repeating(live_score_job, interval=60, first=20)  # V89-FIX: 60 Sek statt 120 Sek - so schnell wie moeglich ohne ESPN-Block (429)!
+        else:
+            print("JobQueue: kein APScheduler - Reminder aus, Bot laeuft trotzdem.")
+    except Exception as e:
+        print("JobQueue:", e)
+    app.add_handler(CallbackQueryHandler(on_cb))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
+    print("USA Sport Radar läuft...")
+    app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
+
+if __name__=="__main__": main()
