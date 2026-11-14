@@ -1789,7 +1789,7 @@ async def injuries_mine_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user or (update.callback_query.from_user if update.callback_query else None)
     favs = favs_for(user.id) if user else []
     _now = datetime.now(BERLIN)
-    lines = [f"🏥 Verletzungen — Meine Teams\n📅 Stand: {_now.strftime('%d.%m. %H:%M')}\nℹ️ Bis zu 15 Min verzögert!"]
+    lines = [f"🏥 Verletzungen — Meine Teams\n📅 Stand: {_now.strftime('%d.%m. %H:%M')}\n"]
     if not favs:
         lines.append("Du hast noch keine Favoriten.")
         await target.reply_text("\n".join(lines), reply_markup=main_kb()); return
@@ -2225,13 +2225,7 @@ async def live_score_job(context):
                             elif lg == "NHL": label = "TOR"
                             elif lg == "MLB": label = "RUN"
                             else: label = "KORB"
-                            # V89-FIX2: Scorer dazu, wenn ESPN ihn schon hat! Sonst Nachricht trotzdem ohne Scorer schicken!
-                            _scorer_line = ""
-                            try:
-                                _ls = last_scorer(ev, lg) or ""
-                                if _ls.strip(): _scorer_line = "\n" + _ls.strip()
-                            except: _scorer_line = ""
-                            try: await context.bot.send_message(chat_id=uid, text=f"🔴 LIVE: {label}! {scorer}{_scorer_line}\n{LEAGUES[lg]['emoji']} {game_line(ev, lg)}")
+                            try: await context.bot.send_message(chat_id=uid, text=f"🔴 LIVE: {label}! {scorer}\n{LEAGUES[lg]['emoji']} {game_line(ev, lg)}")
                             except: pass
                     # Perioden-Ende? Period hat sich erhoeht, Spiel noch live
                     if cfg.get("period") and state == "in" and prev["period"] is not None and period is not None and int(period) > int(prev["period"]):
@@ -2503,7 +2497,7 @@ def main():
         _jq = getattr(app, "job_queue", None)
         if _jq is not None:
             _jq.run_repeating(reminder_job, interval=900, first=10)
-            _jq.run_repeating(live_score_job, interval=60, first=20)  # V89-FIX: 60 Sek statt 120 Sek - so schnell wie moeglich ohne ESPN-Block (429)!
+            _jq.run_repeating(live_score_job, interval=120, first=30)
         else:
             print("JobQueue: kein APScheduler - Reminder aus, Bot laeuft trotzdem.")
     except Exception as e:
