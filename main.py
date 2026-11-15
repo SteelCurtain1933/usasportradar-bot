@@ -1,4 +1,4 @@
-# USA Sport Radar - V130 FINAL - News: Liga-Breaking Aufklapp pro Liga + pro Liga eigene Breaking-Begriffe!
+# USA Sport Radar - V132 FINAL - Spiel-Breaking: is OUT + will not return + done for dazu! RedZone / X-Sprache!
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging
 from datetime import datetime, timedelta, timezone
@@ -788,18 +788,17 @@ def game_line(ev, league, show_venue=False, compact_home_first=True, show_broadc
 
 def main_kb(with_close=True):
     # V94: Hauptmenue = KEIN Fenster-schliessen (sonst muss man jedes Mal wieder /start tippen)! Ueberall sonst = mit Fenster-schliessen!
+    # V132: 5 Reihen! Favorit hinzufügen ist in Meine Favoriten! Meine Live-Spiele ist in Live!
     rows = [
-        [InlineKeyboardButton("➕ Favorit hinzufügen", callback_data="fav_add")],
         [InlineKeyboardButton("⭐ Meine Favoriten", callback_data="fav_list")],
-        [InlineKeyboardButton("🔴 Meine Live-Spiele", callback_data="my_live_games")],
         [InlineKeyboardButton("⏭️ Next Games", callback_data="next"),
          InlineKeyboardButton("🏆 Top 10", callback_data="top10")],
         [InlineKeyboardButton("🔴 Live", callback_data="live"),
          InlineKeyboardButton("📊 Tabellen", callback_data="tables")],
-        [InlineKeyboardButton("📰 News", callback_data="news")],
+        [InlineKeyboardButton("📰 News", callback_data="news"),
+         InlineKeyboardButton("❓ Hilfe", callback_data="help")],
         [InlineKeyboardButton("✅ Ergebnisse", callback_data="results"),
          InlineKeyboardButton("⚙️ Einstellungen", callback_data="settings")],
-        [InlineKeyboardButton("❓ Hilfe", callback_data="help")],
     ]
     if with_close:
         rows.append([InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")])
@@ -810,10 +809,9 @@ START_TEXT = """Willkommen beim USA Sport Radar 🇺🇸📡
 Dein Guide für US-Sport — alles an einem Ort!
 
 ⭐ Favoriten | 🔴 Live | ⏭️ Next Games
-✅ Ergebnisse | 📊 Tabellen | 🏆 Top 10
+✅ Ergebnisse | 📊 Tabellen | 🏆 Top 10 | 📰 News
 
-Einfach auf die Knöpfe drücken — mehr musst du nicht tun!
-❓ Hilfe = da steht, wie der Bot funktioniert!"""
+Einfach auf die Knöpfe drücken — mehr musst du nicht tun!"""
 
 HELP_TEXT = """❓ Hilfe - So liest du den Bot
 
@@ -948,7 +946,8 @@ async def top10_league_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, leagu
     lines=[f"🏆 Top 10 - {title}\n💡 Zahl tippen für Rating + Details!\n"]
     if not top:
         lines.append("Keine kommenden Spiele in den nächsten 7 Tagen gefunden.")
-        await target.reply_text("\n".join(lines), reply_markup=main_kb()); return
+        _live_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔴 Meine Live-Spiele", callback_data="my_live_games")],[InlineKeyboardButton("⬅️ Zurück", callback_data="back")]])
+    await target.reply_text("\n".join(lines), reply_markup=_live_kb); return
     # V53: KEINE Datum-Gruppierung mehr bei Top 10! Strikt 1-10 nach Rating!
     # Sonst: "20.11. -> 4. Texans-Colts" obwohl oben schon 10 Spiele waren - total verwirrend!
     # Ranking ist hier wichtiger als Datum: Platz 1 ist das beste Spiel, egal ob Montag Nacht oder Sonntag!
@@ -2372,10 +2371,10 @@ async def _live_send(context, uid, eid, text):
         except: return None
 
 
-# ===== V130: News + Liga-Breaking + Spiel-Breaking in einem Rutsch! =====
+# ===== V132: News + Liga-Breaking + Spiel-Breaking in einem Rutsch! =====
 _ESPN_NEWS_SPORT = {"NFL": ("football","nfl"), "NCAAF": ("football","college-football"), "NBA": ("basketball","nba"), "NHL": ("hockey","nhl"), "MLB": ("baseball","mlb")}
 _LIGA_BREAKING_KEYS = ["international series","london","munich","munchen","madrid","berlin","schedule","super bowl","playoffs","trade deadline","expansion","rule change","new stadium","franchise"]
-# V130: Pro Liga eigene Begriffe! Super Bowl nur NFL, NBA Finals nur NBA, usw!
+# V132: Pro Liga eigene Begriffe! Super Bowl nur NFL, NBA Finals nur NBA, usw!
 _LIGA_BREAKING_PER_LEAGUE = {
  "NFL": ["super bowl","draft","trade deadline","international series","london","munich","munchen","madrid","berlin","schedule","playoffs","franchise tag","rule change","expansion","new stadium"],
  "NBA": ["nba finals","draft","trade deadline","all-star","playoffs","play-in","schedule","expansion","rule change"],
@@ -2406,7 +2405,8 @@ def set_news_league_open(uid, val):
     try:
         s=load_settings(); s.setdefault(str(uid),{})["news_league_open"]=bool(val); save_settings(s)
     except: pass
-_BREAKING_KEYS = ["ruled out","out for","out indefinitely","out for season","season-ending","torn acl","torn achilles","ejected","suspended","carted off"]
+# V132: RedZone / X-Sprache! "Travis Kelce is OUT!" muss treffen! Aber nur als ganzes Wort: " is out", nicht "shout out"!
+_BREAKING_KEYS = ["ruled out","out for","out indefinitely","out for season","season-ending","torn acl","torn achilles","ejected","suspended","carted off"," is out"," is out with"," declared out"," listed as out"," out for the game"," out for the rest"," will not return"," done for"," will miss"," sidelined"," is done"," out for tonight"," out for today"]
 def espn_news(league, limit=8):
     # ESPN News API: nur Headline + Link! Kein Text, kein Spam!
     try:
@@ -2478,7 +2478,7 @@ async def news_team_cmd(update, ctx, idx):
     lines.append("\nTippe /start für Hauptmenü!")
     await _cb_edit(update, "\n".join(lines), InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Zurück zu News", callback_data="news")]]))
 async def news_breaking_job(context):
-    # V130: Alle 10 Min: Liga-Breaking + Spiel-Breaking checken! Kein Spam: nur 1x pro Headline!
+    # V132: Alle 10 Min: Liga-Breaking + Spiel-Breaking checken! Kein Spam: nur 1x pro Headline!
     try:
         for uid_str in list(load_settings().keys()):
             try: uid=int(uid_str)
@@ -3217,7 +3217,7 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 # V94: Hilfe passend zur Funktion, wo man grade ist! Nur beim Start / Hauptmenue die ganze Hilfe!
 
-# V130: Hilfe in Kategorien - nicht mehr ein Batzen Text!
+# V132: Hilfe in Kategorien - nicht mehr ein Batzen Text!
 HELP_CATS = {
  "grund": "❓ Hilfe - Grundlagen\n\n**Gast @ Heim**\nErstes Team = Auswärts, zweites = Heim!\nZ.B. Vikings @ Packers = Vikings spielt bei den Packers!\n\n**⭐ = Dein Team**\nDas ist einer deiner Favoriten!\n\n**📺 = US-Sender**\nSender in den USA (CBS / FOX / ESPN...). Deutsche Sender zeigen wir nicht, Rechte ändern sich ständig!\n\n**📍 / 🏟️ = Stadion / Ort**\nWo das Spiel stattfindet!",
  "spiele": "❓ Hilfe - Spiele / Live / Next Games\n\n**🔴 Live**\nLäuft gerade! Nach Spielende fragt der Bot, ob er Live-Nachrichten löschen soll!\n\n**⏭️ Next Games**\nHeute / Morgen = alle Spiele! Nur Favoriten = nur deine Teams!\nDa kannst du auch 🔴 Live für ein Spiel anmachen (z.B. München)!\n\n**✅ Ergebnisse**\nWie die letzten Spiele ausgingen, mit Final Stats!",
@@ -3560,7 +3560,7 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try: _from_main = _is_main_msg(q.message)
         except: _from_main = False
         if _from_main:
-            # V130: Hilfe = Kategorien, nicht mehr Batzen! Wähl nur, was du wissen willst!
+            # V132: Hilfe = Kategorien, nicht mehr Batzen! Wähl nur, was du wissen willst!
             _hkb = InlineKeyboardMarkup([
                 [InlineKeyboardButton("📖 Grundlagen (Gast @ Heim, ⭐, 📺)", callback_data="help_cat:grund")],
                 [InlineKeyboardButton("🏈 Spiele / Live / Next Games", callback_data="help_cat:spiele")],
@@ -3727,7 +3727,7 @@ def main():
         print("JobQueue:", e)
     app.add_handler(CallbackQueryHandler(on_cb))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
-    print("✅ USA Sport Radar Bot online - V130 - News Aufklapp + pro Liga Breaking!")
+    print("✅ USA Sport Radar Bot online - V132 - is OUT Trigger!")
     logger.warning("✅ USA Sport Radar Bot online - V116 - Clean Logs!")
     app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
 
