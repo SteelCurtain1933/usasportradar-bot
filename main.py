@@ -1,4 +1,4 @@
-# USA Sport Radar - V128 FINAL - News + Liga-Breaking + Spiel-Breaking in einem Rutsch! Team-News nur Headline + Link!
+# USA Sport Radar - V130 FINAL - News: Liga-Breaking Aufklapp pro Liga + pro Liga eigene Breaking-Begriffe!
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging
 from datetime import datetime, timedelta, timezone
@@ -796,8 +796,7 @@ def main_kb(with_close=True):
          InlineKeyboardButton("🏆 Top 10", callback_data="top10")],
         [InlineKeyboardButton("🔴 Live", callback_data="live"),
          InlineKeyboardButton("📊 Tabellen", callback_data="tables")],
-        [InlineKeyboardButton("📰 News", callback_data="news"),
-         InlineKeyboardButton("🌍 Liga-Breaking: AN/AUS", callback_data="news_league_toggle")],
+        [InlineKeyboardButton("📰 News", callback_data="news")],
         [InlineKeyboardButton("✅ Ergebnisse", callback_data="results"),
          InlineKeyboardButton("⚙️ Einstellungen", callback_data="settings")],
         [InlineKeyboardButton("❓ Hilfe", callback_data="help")],
@@ -2373,9 +2372,40 @@ async def _live_send(context, uid, eid, text):
         except: return None
 
 
-# ===== V128: News + Liga-Breaking + Spiel-Breaking in einem Rutsch! =====
+# ===== V130: News + Liga-Breaking + Spiel-Breaking in einem Rutsch! =====
 _ESPN_NEWS_SPORT = {"NFL": ("football","nfl"), "NCAAF": ("football","college-football"), "NBA": ("basketball","nba"), "NHL": ("hockey","nhl"), "MLB": ("baseball","mlb")}
 _LIGA_BREAKING_KEYS = ["international series","london","munich","munchen","madrid","berlin","schedule","super bowl","playoffs","trade deadline","expansion","rule change","new stadium","franchise"]
+# V130: Pro Liga eigene Begriffe! Super Bowl nur NFL, NBA Finals nur NBA, usw!
+_LIGA_BREAKING_PER_LEAGUE = {
+ "NFL": ["super bowl","draft","trade deadline","international series","london","munich","munchen","madrid","berlin","schedule","playoffs","franchise tag","rule change","expansion","new stadium"],
+ "NBA": ["nba finals","draft","trade deadline","all-star","playoffs","play-in","schedule","expansion","rule change"],
+ "NHL": ["stanley cup","trade deadline","winter classic","playoffs","draft","schedule","expansion","rule change"],
+ "MLB": ["world series","trade deadline","draft","playoffs","opening day","schedule","expansion","rule change"],
+ "NCAAF": ["college football playoff","national championship","bowl games","draft","transfer portal","schedule","playoffs","rule change"],
+}
+def get_league_breaking_map(uid):
+    try:
+        v=load_settings().get(str(uid),{}).get("league_breaking", True)
+        if isinstance(v, dict):
+            return {lg: bool(v.get(lg, True)) for lg in ["NFL","NBA","NHL","MLB","NCAAF"]}
+        if isinstance(v, bool):
+            return {lg: bool(v) for lg in ["NFL","NBA","NHL","MLB","NCAAF"]}
+        return {lg: True for lg in ["NFL","NBA","NHL","MLB","NCAAF"]}
+    except: return {lg: True for lg in ["NFL","NBA","NHL","MLB","NCAAF"]}
+def set_league_breaking_league(uid, lg, val):
+    try:
+        s=load_settings(); s.setdefault(str(uid),{})
+        cur=s[str(uid)].get("league_breaking", True)
+        if not isinstance(cur, dict): cur={x: bool(cur) for x in ["NFL","NBA","NHL","MLB","NCAAF"]}
+        cur[lg]=bool(val); s[str(uid)]["league_breaking"]=cur; save_settings(s)
+    except: pass
+def get_news_league_open(uid):
+    try: return bool(load_settings().get(str(uid),{}).get("news_league_open", False))
+    except: return False
+def set_news_league_open(uid, val):
+    try:
+        s=load_settings(); s.setdefault(str(uid),{})["news_league_open"]=bool(val); save_settings(s)
+    except: pass
 _BREAKING_KEYS = ["ruled out","out for","out indefinitely","out for season","season-ending","torn acl","torn achilles","ejected","suspended","carted off"]
 def espn_news(league, limit=8):
     # ESPN News API: nur Headline + Link! Kein Text, kein Spam!
@@ -2419,10 +2449,19 @@ async def news_cmd(update, ctx):
     favs=favs_for(uid)
     if not favs:
         await _cb_edit(update, "📰 News\n\nDu hast noch keine Favoriten. Füge erst ein Team hinzu!", main_kb()); return
-    rows=[]
+    _lb_map = get_league_breaking_map(uid)
+    _open = get_news_league_open(uid)
+    _on_list = [lg for lg,_v in _lb_map.items() if _v]
+    _on_txt = f" ({len(_on_list)} an: {', '.join(_on_list)})" if not _open else ""
+    rows=[[InlineKeyboardButton(f"🌍 Liga-Breaking {'▾' if _open else '▸'}{_on_txt}", callback_data="news_league_expand")]]
+    if _open:
+        _em={"NFL":"🏈","NBA":"🏀","NHL":"🏒","MLB":"⚾","NCAAF":"🎓"}
+        for _lg in ["NFL","NBA","NHL","MLB","NCAAF"]:
+            rows.append([InlineKeyboardButton(f"{'✅' if _lb_map.get(_lg) else '❌'} {_em[_lg]} {_lg}", callback_data=f"news_league_toggle:{_lg}")])
+        rows.append([InlineKeyboardButton("✖️ Zuklappen", callback_data="news_league_expand")])
     for i,f in enumerate(favs): rows.append([InlineKeyboardButton(f"📰 {f}", callback_data=f"news_team:{i}")])
     rows.append([InlineKeyboardButton("⬅️ Zurück", callback_data="back")])
-    await _cb_edit(update, "📰 News - Nur deine Favoriten!\n\nTippe ein Team an, dann kriegst du nur Headline + Link! Artikel sind auf Englisch!\nKein Push-Spam - du holst dir die News, wenn du willst!", InlineKeyboardMarkup(rows))
+    await _cb_edit(update, "📰 News - Nur deine Favoriten!\n\n🌍 Liga-Breaking oben = Push für große Sachen (International Series, Schedule, Super Bowl, Playoffs, Trade Deadline)!\n\nTippe ein Team an, dann kriegst du nur Headline + Link! Artikel sind auf Englisch, Quelle: ESPN!\nKein Push-Spam - News holst du dir, wenn du willst!", InlineKeyboardMarkup(rows))
 async def news_team_cmd(update, ctx, idx):
     uid=update.effective_user.id if update.effective_user else 0
     favs=favs_for(uid)
@@ -2439,18 +2478,20 @@ async def news_team_cmd(update, ctx, idx):
     lines.append("\nTippe /start für Hauptmenü!")
     await _cb_edit(update, "\n".join(lines), InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Zurück zu News", callback_data="news")]]))
 async def news_breaking_job(context):
-    # V128: Alle 10 Min: Liga-Breaking + Spiel-Breaking checken! Kein Spam: nur 1x pro Headline!
+    # V130: Alle 10 Min: Liga-Breaking + Spiel-Breaking checken! Kein Spam: nur 1x pro Headline!
     try:
         for uid_str in list(load_settings().keys()):
             try: uid=int(uid_str)
             except: continue
-            if not get_league_breaking(uid): continue
+            _lbmap = get_league_breaking_map(uid)
             sent=_news_sent(uid)
-            # Liga-Breaking: nur große Themen!
+            # Liga-Breaking: nur große Themen, pro Liga eigene Begriffe + pro Liga Toggle!
             for lg in ["NFL","NCAAF","NBA","NHL","MLB"]:
+                if not _lbmap.get(lg, True): continue
+                _keys = _LIGA_BREAKING_PER_LEAGUE.get(lg, _LIGA_BREAKING_KEYS)
                 for a in espn_news(lg, limit=5):
                     hl=(a.get("headline") or "").lower()
-                    if not any(k in hl for k in _LIGA_BREAKING_KEYS): continue
+                    if not any(k in hl for k in _keys): continue
                     key=f"liga:{lg}:{a['headline']}"
                     if key in sent: continue
                     _news_mark_sent(uid, key)
@@ -3175,6 +3216,16 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 # V94: Hilfe passend zur Funktion, wo man grade ist! Nur beim Start / Hauptmenue die ganze Hilfe!
+
+# V130: Hilfe in Kategorien - nicht mehr ein Batzen Text!
+HELP_CATS = {
+ "grund": "❓ Hilfe - Grundlagen\n\n**Gast @ Heim**\nErstes Team = Auswärts, zweites = Heim!\nZ.B. Vikings @ Packers = Vikings spielt bei den Packers!\n\n**⭐ = Dein Team**\nDas ist einer deiner Favoriten!\n\n**📺 = US-Sender**\nSender in den USA (CBS / FOX / ESPN...). Deutsche Sender zeigen wir nicht, Rechte ändern sich ständig!\n\n**📍 / 🏟️ = Stadion / Ort**\nWo das Spiel stattfindet!",
+ "spiele": "❓ Hilfe - Spiele / Live / Next Games\n\n**🔴 Live**\nLäuft gerade! Nach Spielende fragt der Bot, ob er Live-Nachrichten löschen soll!\n\n**⏭️ Next Games**\nHeute / Morgen = alle Spiele! Nur Favoriten = nur deine Teams!\nDa kannst du auch 🔴 Live für ein Spiel anmachen (z.B. München)!\n\n**✅ Ergebnisse**\nWie die letzten Spiele ausgingen, mit Final Stats!",
+ "tabellen": "❓ Hilfe - Tabellen / Top 10\n\n**📊 Tabellen**\nW-L-OTL = Siege - Niederlagen - Overtime-Niederlagen.\nNHL: Sieg = 2 Punkte, Overtime-Niederlage = 1 Punkt!\n\n**🏆 Top 10**\nTippe Zahl 1-10 für Rating + Warum so bewertet!\nRating (z.B. ⭐ 9,9/10) steht nur im Detail!",
+ "benach": "❓ Hilfe - Benachrichtigungen\n\nIn ⚙️ Einstellungen → 🔔 Benachrichtigungen:\n**⏰ Reminder** - 3h / 2h / 1h / 30 Min / Aus. 2 Favoriten gleichzeitig = 1 Nachricht für beide, mit Sender!\n**🔴 Live-Scores** - Nur für Favoriten, pro Team: Jeder Score / Spielstart + Quarter-Wechsel / Endstand / Crunch-Time / Spiel-Breaking!\nAlles aus = kein Spam!",
+ "news": "❓ Hilfe - News / Verletzungen / Breaking\n\n**📰 News** - Nur deine Favoriten! Nur Headline + Link!\nQuelle: ESPN! Artikel sind auf Englisch!\nKein Push-Spam - du holst dir News, wenn du willst!\n\n**🌍 Liga-Breaking** - In News ganz oben als Toggle! Nur große Sachen: International Series, Schedule, Super Bowl, Playoffs, Trade Deadline! Push, aber nur 1x!\n\n**🚨 Spiel-Breaking** - Bei Favorit / Live-Spiel: Nur OUT / RULED OUT / Ejection! Nur 1x pro Spieler!\n\n**🏥 Verletzungen** - Daten von Sleeper (NFL) / ESPN (NBA, NHL, MLB). Offizielle Team-Apps können bis zu 15 Min schneller sein - Bot holt alle 15 Min neu!",
+ "fenster": "❓ Hilfe - Fenster\n\n**🪟 Fenster**\nAuswahl = Fenster ändert sich! Detail = neues Fenster! ✖️ = Fenster weg!\n\n**Einfach auf Knöpfe drücken** - kein @, kein Befehl nötig!",
+}
 HELP_SHORT = {
     "top10": "❓ Hilfe - Top 10\n\nTippe eine Zahl 1-10 in den Chat für Rating + Warum!\nRating steht nur im Detail, nicht in der Übersicht!",
     "tables": "❓ Hilfe - Tabellen\n\nW-L-OTL = Siege - Niederlagen - Overtime-Niederlagen.\nBei NHL: Sieg = 2 Punkte, Overtime-Niederlage = 1 Punkt!",
@@ -3509,13 +3560,27 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try: _from_main = _is_main_msg(q.message)
         except: _from_main = False
         if _from_main:
-            # Hauptmenue: grosse Hilfe als NEUE Nachricht, Hauptmenue bleibt! last_section ignorieren!
-            await q.message.reply_text(HELP_TEXT, reply_markup=main_kb())
+            # V130: Hilfe = Kategorien, nicht mehr Batzen! Wähl nur, was du wissen willst!
+            _hkb = InlineKeyboardMarkup([
+                [InlineKeyboardButton("📖 Grundlagen (Gast @ Heim, ⭐, 📺)", callback_data="help_cat:grund")],
+                [InlineKeyboardButton("🏈 Spiele / Live / Next Games", callback_data="help_cat:spiele")],
+                [InlineKeyboardButton("📊 Tabellen / Top 10", callback_data="help_cat:tabellen")],
+                [InlineKeyboardButton("🔔 Benachrichtigungen", callback_data="help_cat:benach")],
+                [InlineKeyboardButton("📰 News / Verletzungen / Breaking", callback_data="help_cat:news")],
+                [InlineKeyboardButton("🪟 Fenster", callback_data="help_cat:fenster")],
+                [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+            ])
+            await q.message.reply_text("❓ Hilfe - Was willst du wissen?\n\nTippe eine Kategorie an - nur das Thema, kein Batzen Text!", reply_markup=_hkb)
         elif _sec in HELP_SHORT:
             _hkb = InlineKeyboardMarkup([[InlineKeyboardButton("📖 Ganze Hilfe", callback_data="help_all")], [InlineKeyboardButton("⬅️ Zurück", callback_data="back")], [InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")]])
             await q.message.edit_text(HELP_SHORT[_sec], reply_markup=_hkb)
         else:
             await q.message.edit_text(HELP_TEXT, reply_markup=main_kb())
+    elif data.startswith("help_cat:"):
+        _k=data.split(":")[1]; _txt=HELP_CATS.get(_k,"❓ Hilfe\n\nTippe eine Kategorie an!")
+        _hkb2=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Zurück zu Hilfe", callback_data="help")],[InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")]])
+        try: await q.message.edit_text(_txt, reply_markup=_hkb2)
+        except: await q.message.reply_text(_txt, reply_markup=_hkb2)
     elif data=="help_all":
         # V95: Ganze Hilfe auch nie ins Hauptmenue reinschreiben!
         try:
@@ -3524,8 +3589,16 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         except: pass
     elif data=="top10": await top10_cmd(update, ctx)
     elif data=="news": await news_cmd(update, ctx)
-    elif data=="news_league_toggle":
-        _uid2=update.effective_user.id if update.effective_user else 0; _cur=get_league_breaking(_uid2); set_league_breaking(_uid2, not _cur); await _cb_edit(update, f"🌍 Liga-Breaking: {'✅ AN' if not _cur else '❌ AUS'}\n\nNur große Sachen: International Series, Schedule, Super Bowl, Playoffs, Trade Deadline!\nKein Spam!", InlineKeyboardMarkup([[InlineKeyboardButton("📰 Zu News", callback_data="news")],[InlineKeyboardButton("⬅️ Zurück", callback_data="back")]]))
+    elif data=="news_league_expand":
+        _uid3=update.effective_user.id if update.effective_user else 0; set_news_league_open(_uid3, not get_news_league_open(_uid3)); await news_cmd(update, ctx)
+    elif data.startswith("news_league_toggle:"):
+        _uid2=update.effective_user.id if update.effective_user else 0
+        _pp2=data.split(":")
+        if len(_pp2)>=2:
+            _lg2=_pp2[1]; _cur2=get_league_breaking_map(_uid2).get(_lg2, True); set_league_breaking_league(_uid2, _lg2, not _cur2)
+        else:
+            _cur=get_league_breaking(_uid2); set_league_breaking(_uid2, not _cur)
+        await news_cmd(update, ctx)
     elif data.startswith("news_team:"): await news_team_cmd(update, ctx, int(data.split(":")[1]))
     elif data=="notif": await notif_cmd(update, ctx)
     elif data=="notif_master":
@@ -3647,15 +3720,14 @@ def main():
         _jq = getattr(app, "job_queue", None)
         if _jq is not None:
             _jq.run_repeating(reminder_job, interval=900, first=10)
-            _jq.run_repeating(live_score_job, interval=60, first=20)  # V89-FIX: 60 Sek statt 120 Sek
-            _jq.run_repeating(news_breaking_job, interval=600, first=30)  # V128: alle 10 Min News + Breaking checken!
+            _jq.run_repeating(live_score_job, interval=60, first=20)  # V89-FIX: 60 Sek statt 120 Sek - so schnell wie moeglich ohne ESPN-Block (429)!
         else:
             print("JobQueue: kein APScheduler - Reminder aus, Bot laeuft trotzdem.")
     except Exception as e:
         print("JobQueue:", e)
     app.add_handler(CallbackQueryHandler(on_cb))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
-    print("✅ USA Sport Radar Bot online - V128 - News + Liga-Breaking + Spiel-Breaking!")
+    print("✅ USA Sport Radar Bot online - V130 - News Aufklapp + pro Liga Breaking!")
     logger.warning("✅ USA Sport Radar Bot online - V116 - Clean Logs!")
     app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
 
