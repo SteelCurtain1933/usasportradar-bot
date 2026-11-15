@@ -1,4 +1,4 @@
-# USA Sport Radar - V135 FINAL - Hauptmenü logisch: Einstellungen + Hilfe ganz unten + Start-Text mit Hilfe!
+# USA Sport Radar - V136 FINAL - Hauptmenü logisch: Einstellungen + Hilfe ganz unten + Start-Text mit Hilfe!
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging
 from datetime import datetime, timedelta, timezone
@@ -1678,7 +1678,7 @@ async def tables_all_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def tables_league_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, league: str):
     target = update.message or update.callback_query.message
     _load = None
-    try: _load = await target.reply_text("📊 Ich hole die Tabelle... einen Moment ⏳")
+    try: _load = await target.reply_text(f"📊 Ich hole die {league} Tabelle... einen Moment ⏳")
     except Exception: pass
     divs = espn_standings(league)
     try:
@@ -1811,9 +1811,11 @@ async def tables_top25_cmd(update, ctx, league: str, divs):
     lines=[f"📊 Tabelle - 🎓 NCAAF - {_tag}\n"]
     for i,(disp, short, abbrev, W, L, T, streak) in enumerate(top,1):
         rec = f"{W}-{L}" + (f"-{T}" if T else "")
-        is_fav = any(fn in disp.lower() or disp.lower() in fn for fn in fav_names)
+        dl=(disp or "").lower()
+        is_fav = bool(dl) and any(fn and (fn in dl or dl in fn) for fn in fav_names)
         star = " ⭐" if is_fav else ""
-        lines.append(f"{i}. {short} {rec}{star}")
+        _show = short or disp
+        lines.append(f"{i}. {_show} {rec}{star}")
     kb = InlineKeyboardMarkup([[InlineKeyboardButton("⭐ Meine Teams", callback_data="tables_mine")],[InlineKeyboardButton("⬅️ Zurück", callback_data="back")],[InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")],])
     await target.reply_text("\n".join(lines), reply_markup=kb)
 
@@ -2546,10 +2548,20 @@ def _espn_ap_top25():
         if not chosen: return []
         out=[]
         for e in (chosen.get("ranks") or [])[:25]:
-            tm=(e.get("team") or {})
-            disp=tm.get("displayName","") or tm.get("shortDisplayName","") or ""
-            short=tm.get("shortDisplayName","") or disp
-            abbr=tm.get("abbreviation","") or ""
+            # V136: Team steckt in ESPN mal unter team.displayName, mal unter team.name, mal nur abbreviation!
+            tm=e.get("team") or {}
+            if isinstance(tm, str): tm={"displayName": tm}
+            disp=str(tm.get("displayName","") or tm.get("shortDisplayName","") or tm.get("name","") or tm.get("nickname","") or "").strip()
+            short=str(tm.get("shortDisplayName","") or tm.get("nickname","") or tm.get("name","") or disp or "").strip()
+            abbr=str(tm.get("abbreviation","") or tm.get("abbr","") or "").strip()
+            # Fallback: location + nickname, z.B. "Pittsburgh" + "Panthers"
+            if not disp:
+                loc=str(tm.get("location","") or "").strip(); nick=str(tm.get("nickname","") or "").strip()
+                if loc or nick: disp=f"{loc} {nick}".strip(); short=short or nick or disp
+            # Letzter Fallback: Abkürzung als Name, NIE leer lassen!
+            if not disp: disp=abbr or str(e.get("teamId","") or "")
+            if not short: short=disp or abbr
+            if not disp: continue
             rec=str(e.get("recordSummary","") or e.get("record","") or "")
             W=L=0
             try:
@@ -2596,9 +2608,35 @@ def _espn_team_news(league, team_full, limit=8):
                     lk=a.get("links") or []
                     if isinstance(lk,list) and lk: link=lk[0].get("href","") or ""
                 except: pass
-            if hl: out.append({"headline":hl,"link":link,"published":a.get("published","")})
+            if hl and not _v136_is_scam_news(hl, link): out.append({"headline":hl,"link":link,"published":a.get("published","")})
         return out
     except: return []
+
+def _v136_is_scam_news(title, link=""):
+    # V136: Offensichtliche Scam / Illegal-Stream Artikel rausfiltern!
+    try:
+        t=(title or "").strip()
+        tl=t.lower()
+        # Leerzeichen raus, damit "F r e e" / "L I V E" auch erkannt wird!
+        nospace=re.sub(r"\s+","",tl)
+        # Harte Scam-Signale im Titel
+        bad_subs=["livestream","livestreams","livefree","freeontv","ontvchannel","watchfree","freewatch",
+                  "crackstream","buffstream","methstream","streameast","watchlivefree","freelive",
+                  "hdq","【","】","!+","*0","*1","*2","*3","*4","*5","*6","*7","*8","*9",
+                  "free hd","hd free","on tv channel","tv channel |","channel | free"]
+        for b in bad_subs:
+            if b in tl or b in nospace: return True
+        # "LIVE Free" + "Channel" / "TV" zusammen = fast immer Scam
+        if "live" in tl and "free" in tl and ("channel" in tl or " tv " in tl or "tv" in nospace): return True
+        # Viele Sonderzeichen / Zahlen-Code wie HDQ*0147234
+        if re.search(r"\*\d{4,}", t): return True
+        if "【" in t or "】" in t: return True
+        # Link check: bekannte Scam-Domains
+        ll=(link or "").lower()
+        for d in ["crackstreams","buffstreams","methstreams","streameast","watchfree","livetv","freestreams"]:
+            if d in ll: return True
+        return False
+    except: return False
 def _google_news_rss(team_full, league, limit=8):
     try:
         import urllib.parse as _up, xml.etree.ElementTree as _ET
@@ -2612,7 +2650,9 @@ def _google_news_rss(team_full, league, limit=8):
             lk=it.findtext("link") or ""
             if " - " in t: t=t.rsplit(" - ",1)[0]
             t=t.strip()
-            if t and lk: out.append({"headline":t,"link":lk,"published":""})
+            if not t or not lk: continue
+            if _v136_is_scam_news(t, lk): continue
+            out.append({"headline":t,"link":lk,"published":""})
             if len(out)>=limit: break
         return out
     except: return []
