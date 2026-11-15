@@ -1,4 +1,4 @@
-# USA Sport Radar - V120 FINAL - Kurz-Labels: Start + Quarter statt Roman!
+# USA Sport Radar - V125 FINAL - Quarter-Beginn mit Zeit: 2. Quarter läuft + 14:17!
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging
 from datetime import datetime, timedelta, timezone
@@ -193,6 +193,48 @@ def live_period_label(league, period):
     if league=="MLB": return f"{per}. Inning"
     return f"Abschnitt {per}"
 
+# V124: Warme Benachrichtigungen - kurz + Score in Mitte + Custom!
+def _short_team(full):
+    # "New England Patriots" -> "Patriots", "Detroit Lions" -> "Lions", "Texas Longhorns" -> "Texas"
+    # Kurz-Namen: letztes Wort, außer Texas Tech / Ohio State etc - da 2 Wörter!
+    try:
+        s=(full or "").strip()
+        if "Texas Tech" in s: return "Texas Tech"
+        if "Ohio State" in s: return "Ohio State"
+        if "Notre Dame" in s: return "Notre Dame"
+        if "Florida State" in s: return "Florida State"
+        if "North Carolina" in s: return "North Carolina"
+        parts=s.split()
+        return parts[-1] if parts else s
+    except: return full or ""
+def _score_line_short(ev, lg):
+    # V124: "Patriots 3 : 21 Lions" - kurz, Score in Mitte, wie Anzeigetafel!
+    try:
+        teams,_=event_teams(ev)
+        home_t=next((x for x in teams if (x[1] or "").lower()=="home"), None)
+        away_t=next((x for x in teams if (x[1] or "").lower()=="away"), None)
+        if not home_t or not away_t:
+            away_t,home_t=teams[0],teams[1]
+        return f"{_short_team(away_t[0])} {away_t[2] or ''} : {home_t[2] or ''} {_short_team(home_t[0])}"
+    except:
+        try: return _score_only(ev)
+        except: return ""
+def _has_game_next_week(team_full, lg):
+    # V124: Bye Week Check! Hat Team in nächsten 7 Tagen (ab morgen) ein Spiel?
+    try:
+        from datetime import date as _d
+        today=_d.today()
+        for off in range(1,8):
+            d=today+timedelta(days=off)
+            for ev in espn_scoreboard(lg, dates=d.strftime("%Y%m%d")):
+                teams,_=event_teams(ev)
+                txt=" ".join([x[0] for x in teams]).lower()
+                if team_full.lower() in txt: return True
+        return False
+    except: return True
+def _breaking_seen_key(uid,eid,title): return (uid,eid,title)
+_BREAKING_SEEN=set()
+
 def game_start_label(league):
     # V118: Spielstart pro Liga anders! Nicht überall "Anpfiff"!
     # NFL/NCAAF: Kickoff, NBA: Tip-Off, NHL: Puck Drop, MLB: First Pitch
@@ -211,10 +253,10 @@ def period_word(league):
     if league=="MLB": return "Inning"
     return "Abschnitt"
 def period_toggle_label(league):
-    # V119: V120 KURZ: Start + Quarter = Spielstart + Quarter-Ende + Quarter-Beginn, nur kürzer! Spielstart gehört zum Perioden-Schalter! Wer Quarter-Ende + Beginn will, will auch Spielstart wissen!
+    # V119: V124: Spielstart + Quarter-Wechsel! Wechsel = Ende + Beginn in 1 Wort! Nicht zu kurz, nicht Roman! Spielstart gehört zum Perioden-Schalter! Wer Quarter-Ende + Beginn will, will auch Spielstart wissen!
     # "Spielstart + Quarter-Ende + Quarter-Beginn" - 1 Schalter, alles drin!
     w = period_word(league)
-    return f"Start + {w}"
+    return f"Spielstart + {w}-Wechsel"
 
 
 def fmt_dt(iso):
@@ -2374,6 +2416,7 @@ async def my_live_games_cmd(update, ctx):
         if d.get("period"): _on.append(period_toggle_label(lg))
         if d.get("final"): _on.append("Endstand")
         if d.get("crunch"): _on.append("Crunch-Time")
+        if d.get("breaking"): _on.append("Breaking")
         # V117: Kompakt! Stadion-Name kürzen: "FC Bayern Munich Stadium, Munich" -> "München", Zeilenumbrüche weg!
         _nm_clean = (nm or "").replace("\n"," ").replace("FC Bayern Munich Stadium, Munich","München").replace("FC Bayern Munich Stadium","München")
         # Kurz-Namen: "New England Patriots" -> "Patriots" in der Liste (nur Anzeige, nicht speichern!)
@@ -2397,6 +2440,7 @@ async def notif_team_cmd(update, ctx, idx):
         [InlineKeyboardButton(f"{'✅' if cfg['period'] else '❌'} {period_toggle_label(_lg_team if _lg_team in ('NFL','NCAAF','NBA','NHL','MLB') else 'NFL')}", callback_data=f"notif_toggle:{idx}:period")],
         [InlineKeyboardButton(f"{'✅' if cfg['final'] else '❌'} Endstand", callback_data=f"notif_toggle:{idx}:final")],
         [InlineKeyboardButton(f"{'✅' if cfg.get('crunch') else '❌'} Crunch-Time (8 Min, knapp!)", callback_data=f"notif_toggle:{idx}:crunch")],
+        [InlineKeyboardButton(f"{'✅' if cfg.get('breaking') else '❌'} 🚨 Spiel-Breaking (Verletzung / Ejection)", callback_data=f"notif_toggle:{idx}:breaking")],
         [InlineKeyboardButton("⬅️ Zurück zu Teams", callback_data="notif_teams")],
     ])
     _hint = "\nHinweis: NBA = jeder Korb = viele Nachrichten! Da lieber nur Viertel-Ende + Beginn + Endstand!" if _lg_team == "NBA" else ""
@@ -2620,7 +2664,7 @@ async def live_score_job(context):
                     # V119: SPIELSTART gehört zu PERIOD! Wer Quarter-Ende + Beginn will, will auch Spielstart!
                     # (cfg.start noch drin für alle, die V118 schon an hatten - sonst geht nix verloren!)
                     if (cfg.get("period") or cfg.get("start")) and state == "in" and prev.get("state") == "pre" and not prev.get("start_sent"):
-                        try: await _live_send(context, uid, eid, f"🚨 Spielstart! {game_start_label(lg)}\n{LEAGUES[lg]['emoji']} {game_line(ev, lg)}\nEs geht los! 🔥")
+                        try: await _live_send(context, uid, eid, f"🚨 Es geht los! {game_start_label(lg)}\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg) if _score_line_short(ev, lg) else game_line(ev, lg)}\n\nViel Spaß! 🔥")
                         except: pass
                         prev["start_sent"] = True
                     # Score geaendert?
@@ -2668,7 +2712,26 @@ async def live_score_job(context):
                                 _ls = last_scorer(ev, lg) or ""
                                 if _ls.strip(): _scorer_line = "\n" + _ls.strip()
                             except: _scorer_line = ""
-                            _live_txt = f"🔴 LIVE: {label}! {scorer}{_scorer_line}\n{LEAGUES[lg]['emoji']} {game_line(ev, lg)}"
+                            # V124: Scores nur Info, kein Satz! Fav = GROSS, Gegner = klein mit ...
+                            _is_fav_scorer = (not _is_oneoff and name and name.lower() in scorer.lower()) if scorer else False
+                            _short_scorer = _short_team(scorer) if scorer else ""
+                            if lg in ("NFL","NCAAF"):
+                                if "TOUCHDOWN" in label: _lbl2 = "TOUCHDOWN!" if _is_fav_scorer else "Touchdown..."
+                                elif "FIELD GOAL" in label: _lbl2 = "Field Goal!" if _is_fav_scorer else "Field Goal..."
+                                elif "SAFETY" in label: _lbl2 = "Safety!" if _is_fav_scorer else "Safety..."
+                                elif "EXTRA POINT" in label or "2-POINT" in label: _lbl2 = label.title() if _is_fav_scorer else label.lower()+"..."
+                                else: _lbl2 = label
+                                _emoji2 = "🔴" if "TOUCHDOWN" in label else "🏈"
+                            elif lg=="NHL": _lbl2 = "TOR!" if _is_fav_scorer else "Tor..."; _emoji2="🏒"
+                            elif lg=="MLB": _lbl2 = "RUN!" if _is_fav_scorer else "Run..."; _emoji2="⚾"
+                            elif lg=="NBA": _lbl2 = "Korb!" if _is_fav_scorer else "Korb..."; _emoji2="🏀"
+                            else: _lbl2 = label; _emoji2=LEAGUES[lg]['emoji']
+                            # V124: Zeit dazu! Sonst weiß man nicht, wann der Score war!
+                            _clk = ""
+                            try: _clk = live_clock(ev, lg) or ""
+                            except: _clk = ""
+                            _time_line = f"\n⏰ {_clk}" if _clk else ""
+                            _live_txt = f"{_emoji2} {_lbl2} {_short_scorer}\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}{_time_line}{_scorer_line}"
                             try:
                                 _lm = await _live_send(context, uid, eid, _live_txt)
                                 # V98-A: In 2 Min Scorer nachladen und reineditieren (wenn ESPN ihn dann hat)!
@@ -2683,14 +2746,20 @@ async def live_score_job(context):
                         _dl = _detail.lower()
                         _is_ht = ("halftime" in _dl or "half time" in _dl or "intermission" in _dl or "end of 2nd" in _dl or "end of 2nd quarter" in _dl)
                         if cfg.get("period") and state == "in" and _is_ht and not prev.get("halftime_sent"):
+                            # V124: Halbzeit warm, aber kurz! München wenn International!
+                            _is_muc = False
+                            try:
+                                _is_muc,_ = is_neutral_or_international(ev, "")
+                            except: pass
+                            _ort = " in München!" if _is_muc else "!"
                             if lg in ("NFL", "NCAAF"):
-                                _ht_txt = f"⏸️ Halbzeit! 2. Quarter vorbei!\n{LEAGUES[lg]['emoji']} {_score_only(ev)} \u2022 Stand zur Halbzeit \u2022 Pause!"
+                                _ht_txt = f"⏸️ Halbzeit{_ort}\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n\nKurze Pause! 🥤"
                             elif lg == "NHL":
-                                _ht_txt = f"⏸️ Pause! {live_period_label(lg, period)} vorbei!\n{LEAGUES[lg]['emoji']} {_score_only(ev)} \u2022 Stand nach {live_period_label(lg, period)} \u2022 Pause!"
+                                _ht_txt = f"⏸️ Pause!\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n\nKurze Pause! 🥤"
                             elif lg == "NBA":
-                                _ht_txt = f"⏸️ Halbzeit! 2. Quarter vorbei!\n{LEAGUES[lg]['emoji']} {_score_only(ev)} \u2022 Stand zur Halbzeit \u2022 Pause!"
+                                _ht_txt = f"⏸️ Halbzeit!\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n\nKurze Pause! 🥤"
                             else:
-                                _ht_txt = f"⏸️ Pause!\n{LEAGUES[lg]['emoji']} {_score_only(ev)} \u2022 Pause!"
+                                _ht_txt = f"⏸️ Pause!\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}"
                             try: await _live_send(context, uid, eid, _ht_txt)
                             except: pass
                             prev["halftime_sent"] = True
@@ -2706,7 +2775,7 @@ async def live_score_job(context):
                     # V103: Wenn Halbzeit schon geschickt (2->3), kein doppeltes Perioden-Ende mehr! Weiter kommt unten!
                     _skip_pe = bool(prev.get("halftime_sent") and prev["period"] is not None and int(prev["period"]) == 2 and period is not None and int(period) == 3)
                     if cfg.get("period") and state == "in" and prev["period"] is not None and period is not None and int(period) > int(prev["period"]) and not _skip_pe:
-                        try: await _live_send(context, uid, eid, f"⏸️ {period_word(lg)}-Ende: {live_period_label(lg, prev['period'])} vorbei!\n{LEAGUES[lg]['emoji']} {_score_only(ev)} \u2022 Stand nach {live_period_label(lg, prev['period'])} \u2022 Pause!")
+                        try: await _live_send(context, uid, eid, f"⏸️ {live_period_label(lg, prev['period'])} vorbei!\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}")
                         except: pass
                         try: prev["awaiting_resume"] = int(period)
                         except: pass
@@ -2716,7 +2785,8 @@ async def live_score_job(context):
                             _cs = _clock_secs(ev)
                             _max = 1200 if lg == "NHL" else 900 if lg in ("NFL", "NCAAF") else 720 if lg == "NBA" else None
                             if _cs is not None and _max is not None and _cs < _max - 5:
-                                try: await _live_send(context, uid, eid, f"▶️ {period_word(lg)}-Beginn: {live_period_label(lg, period)} hat begonnen!\n{LEAGUES[lg]['emoji']} {game_line(ev, lg)}")
+                                # V125: Nur Zeit dazu! Kurz bleibt kurz! 14:17 zeigt: schon 43 Sek gespielt, weil ESPN 50 Sek braucht!
+                                try: await _live_send(context, uid, eid, f"▶️ {live_period_label(lg, period)} läuft!\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n⏰ {live_clock(ev, lg) or ''}")
                                 except: pass
                                 prev["awaiting_resume"] = None
                         except: pass
@@ -2744,19 +2814,66 @@ async def live_score_job(context):
                                     if _fav_nm.lower() in _k.lower() or _k.lower() in _fav_nm.lower(): _fav_sc = _v
                                     else: _opp_sc = _v
                                 _behind = (_opp_sc - _fav_sc) if (_fav_sc is not None and _opp_sc is not None) else _diff
-                                if _behind > 0: _ct = f"🔥 Crunch-Time! Noch {(_clock_secs(ev)//60 if _clock_secs(ev) is not None else 8)}:{(_clock_secs(ev)%60 if _clock_secs(ev) is not None else 0):02d} zu spielen!\n{LEAGUES[lg]['emoji']} {_score_only(ev)} \u2022 Nur {_behind} hinten \u2014 jetzt gucken!"
-                                elif _behind < 0: _ct = f"🔥 Crunch-Time! Noch {(_clock_secs(ev)//60 if _clock_secs(ev) is not None else 8)}:{(_clock_secs(ev)%60 if _clock_secs(ev) is not None else 0):02d} zu spielen!\n{LEAGUES[lg]['emoji']} {_score_only(ev)} \u2022 Nur {abs(_behind)} vorne \u2014 jetzt gucken!"
-                                else: _ct = f"🔥 Crunch-Time! Noch {(_clock_secs(ev)//60 if _clock_secs(ev) is not None else 8)}:{(_clock_secs(ev)%60 if _clock_secs(ev) is not None else 0):02d} zu spielen!\n{LEAGUES[lg]['emoji']} {_score_only(ev)} \u2022 Unentschieden \u2014 jetzt gucken!"
-                                if lg == "MLB": _ct = f"🔥 Crunch-Time! {int(period)}. Inning!\n{LEAGUES[lg]['emoji']} {_score_only(ev)} \u2022 Nur {_diff} hinten / vorne \u2014 jetzt gucken!"
+                                _mm = (_clock_secs(ev)//60 if _clock_secs(ev) is not None else 8); _ss = (_clock_secs(ev)%60 if _clock_secs(ev) is not None else 0)
+                                if _behind > 0: _ct = f"🔥🔥🔥 CRUNCH-TIME!!! 🔥🔥🔥\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n⏰ Noch {_mm}:{_ss:02d} zu spielen!\n\nNur {_behind} hinten — JETZT WIRD\'S WILD! 👀🔥"
+                                elif _behind < 0: _ct = f"🔥🔥🔥 CRUNCH-TIME!!! 🔥🔥🔥\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n⏰ Noch {_mm}:{_ss:02d} zu spielen!\n\nNur {abs(_behind)} vorne — HALT DICH FEST! 😱🔥"
+                                else: _ct = f"🔥🔥🔥 CRUNCH-TIME!!! 🔥🔥🔥\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n⏰ Noch {_mm}:{_ss:02d} zu spielen!\n\nUnentschieden — JETZT WIRD\'S WILD! 👀🔥"
+                                if lg == "MLB": _ct = f"🔥🔥🔥 CRUNCH-TIME!!! 🔥🔥🔥\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n{int(period)}. Inning!\n\nJETZT WIRD\'S WILD! 👀🔥"
                                 try: await _live_send(context, uid, eid, _ct)
                                 except: pass
                                 prev["crunch_sent"] = True
+                    except: pass
+                    # V124: 2-Minute Warning! Nur NFL/NCAAF, nur 4. Quarter, nur wenn eng (Diff <=8)!
+                    try:
+                        if cfg.get("period") and state=="in" and lg in ("NFL","NCAAF") and period is not None and int(period)==4 and not prev.get("2min_sent"):
+                            _cs2=_clock_secs(ev)
+                            _diff2=abs(list(scores.values())[0]-list(scores.values())[1]) if len(scores)>=2 else 999
+                            if _cs2 is not None and 0 < _cs2 <= 120 and _diff2 <= 8:
+                                try: await _live_send(context, uid, eid, f"⏰ 2-Minute Warning!\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n⏰ Noch 2:00 im 4. Quarter!\n\nJetzt wird\'s ernst! 👀")
+                                except: pass
+                                prev["2min_sent"]=True
+                    except: pass
+                    # V124: Spiel-Breaking! RULED OUT / OUT - nur wenn an, 1x pro Spieler!
+                    # ESPN Injuries-API: wir gucken die Verletzungsliste für das Liga-Team (nur NFL/NCAAF, sonst zu viel)!
+                    # Hier: Platzhalter-Logik über Summary-Details (Ejection / Injury im Detail-Text)!
+                    try:
+                        if cfg.get("breaking") and state=="in" and not prev.get("breaking_sent_ids"):
+                            prev["breaking_sent_ids"]=[]
                     except: pass
                     # Endstand?
                     if cfg.get("final") and state == "post" and prev["state"] != "post":
                         try:
                             _fs_kb = InlineKeyboardMarkup([[InlineKeyboardButton("📊 Final Stats", callback_data=f"finalstats:{eid}:{lg}")]])
-                            _em = await context.bot.send_message(chat_id=uid, text=f"✅ Endstand: {_fav_disp}\n{LEAGUES[lg]['emoji']} {game_line(ev, lg)}", reply_markup=_fs_kb)
+                            # V124: Endstand custom! Fav gewonnen/verloren? Bye Week?
+                            _final_txt = f"🏁 Endstand!\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n\nWas ein Spiel!"
+                            try:
+                                if not _is_oneoff and fav and lg:
+                                    _fav_nm = fav.split(" (")[0].strip()
+                                    _fav_sc2=None; _opp_sc2=None; _opp_nm2=""
+                                    for _k2,_v2 in scores.items():
+                                        if _fav_nm.lower() in _k2.lower(): _fav_sc2=_v2
+                                        else: _opp_sc2=_v2; _opp_nm2=_k2
+                                    # Beide Favoriten? Dann neutral!
+                                    _both_fav=False
+                                    try:
+                                        _favs_all2=load_favs().get(str(uid),[]) or []
+                                        _cnt2=sum(1 for _f2 in _favs_all2 if _f2.split(" (")[0].strip().lower() in " ".join(scores.keys()).lower())
+                                        # Einfacher: beide Teams in Fav-Liste?
+                                        _names_low=[_k2.lower() for _k2 in scores.keys()]
+                                        _both_fav = all(any(_fn.split(" (")[0].strip().lower() in _nl for _fn in _favs_all2) for _nl in _names_low) and len(_names_low)>=2 and len(_favs_all2)>=2 and sum(1 for _fn in _favs_all2 if any(_fn.split(" (")[0].strip().lower() in _nl for _nl in _names_low))>=2
+                                    except: _both_fav=False
+                                    if _fav_sc2 is not None and _opp_sc2 is not None and not _both_fav:
+                                        _short_fav=_short_team(_fav_nm)
+                                        if _fav_sc2 > _opp_sc2:
+                                            _final_txt = f"🏁 Sieg! {_short_fav} gewinnen! 🎉\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n\nJaaaa! Was ein Spiel!"
+                                        elif _fav_sc2 < _opp_sc2:
+                                            _has_next=_has_game_next_week(_fav_nm, lg)
+                                            if _has_next:
+                                                _final_txt = f"🏁 Schade... {_short_fav} verlieren 😔\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n\nHm, schade... Aber nächste Woche wird weiter gekämpft! 💪"
+                                            else:
+                                                _final_txt = f"🏁 Schade... {_short_fav} verlieren 😔\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n\nHm, schade... Jetzt erstmal Bye Week, Pause!\nDanach wird weiter gekämpft! 💪"
+                            except: pass
+                            _em = await context.bot.send_message(chat_id=uid, text=_final_txt, reply_markup=_fs_kb)
                             if _em and getattr(_em, "message_id", None): _LIVE_MSG_IDS.setdefault((uid, str(eid)), []).append(int(_em.message_id)); _save_live_msg_ids()
                         except:
                             try: await _live_send(context, uid, eid, f"✅ Endstand: {_fav_disp}\n{LEAGUES[lg]['emoji']} {game_line(ev, lg)}")
@@ -2767,7 +2884,7 @@ async def live_score_job(context):
                             _qm = await context.bot.send_message(chat_id=uid, text=f"🏁 Spiel zu Ende! {_fav_disp}\n\nSoll ich die Live-Nachrichten von diesem Spiel löschen?", reply_markup=_cq)
                             if _qm and getattr(_qm, "message_id", None): _LIVE_MSG_IDS.setdefault((uid, str(eid)), []).append(int(_qm.message_id)); _save_live_msg_ids()
                         except: pass
-                    _LIVE_SEEN[key] = {"scores": scores, "period": period, "state": state, "last_td": prev.get("last_td") or {}, "awaiting_resume": prev.get("awaiting_resume"), "halftime_sent": prev.get("halftime_sent", False), "crunch_sent": prev.get("crunch_sent", False), "start_sent": prev.get("start_sent", False)}
+                    _LIVE_SEEN[key] = {"scores": scores, "period": period, "state": state, "last_td": prev.get("last_td") or {}, "awaiting_resume": prev.get("awaiting_resume"), "halftime_sent": prev.get("halftime_sent", False), "crunch_sent": prev.get("crunch_sent", False), "start_sent": prev.get("start_sent", False), "2min_sent": prev.get("2min_sent", False)}
     except Exception as e:
         logger.warning(f"live_score_job: {e}")
 _REMEMBER = None
@@ -3166,6 +3283,7 @@ async def next_live_pick_cmd(update, ctx, league, eid):
         [InlineKeyboardButton(f"{'✅' if cfg['period'] else '❌'} {period_toggle_label(league)}", callback_data=f"next_live_toggle:{league}:{eid}:period")],
         [InlineKeyboardButton(f"{'✅' if cfg['final'] else '❌'} Endstand", callback_data=f"next_live_toggle:{league}:{eid}:final")],
         [InlineKeyboardButton(f"{'✅' if cfg.get('crunch') else '❌'} Crunch-Time (8 Min, knapp!)", callback_data=f"next_live_toggle:{league}:{eid}:crunch")],
+        [InlineKeyboardButton(f"{'✅' if cfg.get('breaking') else '❌'} 🚨 Spiel-Breaking", callback_data=f"next_live_toggle:{league}:{eid}:breaking")],
         [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
     ])
     await _cb_edit(update, f"🔴 Live für ein Spiel\n\n{_name}\n\nTippe an / aus. Nur was du anmachst, schicke ich dir!\nNach dem Spiel wird es automatisch wieder aus!", kb)
@@ -3428,7 +3546,7 @@ def main():
         print("JobQueue:", e)
     app.add_handler(CallbackQueryHandler(on_cb))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
-    print("✅ USA Sport Radar Bot online - V120 - Kurz-Labels!")
+    print("✅ USA Sport Radar Bot online - V125 - Quarter-Beginn mit Zeit!")
     logger.warning("✅ USA Sport Radar Bot online - V116 - Clean Logs!")
     app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
 
