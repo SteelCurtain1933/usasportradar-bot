@@ -1,4 +1,4 @@
-# USA Sport Radar - V134 FINAL - Hauptmenü logisch: Einstellungen + Hilfe ganz unten + Start-Text mit Hilfe!
+# USA Sport Radar - V135 FINAL - Hauptmenü logisch: Einstellungen + Hilfe ganz unten + Start-Text mit Hilfe!
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging
 from datetime import datetime, timedelta, timezone
@@ -950,6 +950,7 @@ async def top10_league_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, leagu
                         seen.add(eid)
                         state = ev.get("status",{}).get("type",{}).get("state","")
                         if state=="post": continue
+                        if _v135_is_finished(ev): continue
                         try:
                             score, bd = rank_game(ev, lg)
                         except Exception:
@@ -1067,6 +1068,8 @@ async def top10_detail_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, idx: 
     if not lst or idx<1 or idx>len(lst):
         await target.reply_text("Tippe erst auf 🏆 Top 10 und wähle eine Liga, dann die Zahl!", reply_markup=main_kb()); return
     score, lg, ev, bd = lst[idx-1]
+    if _v135_is_finished(ev):
+        await target.reply_text("🏁 Spiel vorbei — wird nicht mehr bewertet!\n\nSchau bei ✅ Ergebnisse für Final Stats!", reply_markup=main_kb()); return
     teams,_ = event_teams(ev)
     # V71: Detail auch Gast @ Heim via homeAway + Liga-Tag!
     def _short_hw(want):
@@ -1790,28 +1793,30 @@ async def tables_conf_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, league
     _kb_rows2.append([InlineKeyboardButton("⬅️ Zurück", callback_data="back")])
     kb = InlineKeyboardMarkup(_kb_rows2)
     await target.reply_text("\n".join(lines), reply_markup=kb)
-async def tables_top25_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, league: str, divs):
+async def tables_top25_cmd(update, ctx, league: str, divs):
     target = update.message or update.callback_query.message
-    # NCAAF: Alle Teams aus allen Conferences, nach Wins sortiert, Top 25
-    all_rows=[]
-    for k,v in divs.items():
-        all_rows.extend(v)
-    all_rows.sort(key=lambda x: (x[3], -x[4]), reverse=True)
-    top = all_rows[:25]
+    top = _espn_ap_top25()
+    _official = bool(top)
+    if not top:
+        all_rows=[]
+        for k,v in (divs or {}).items(): all_rows.extend(v)
+        def _pct(x):
+            W,L=x[3],x[4]; tot=W+L
+            return (W/tot if tot else 0, W)
+        all_rows.sort(key=lambda x: _pct(x), reverse=True)
+        top = all_rows[:25]
     favs = favs_for(update.effective_user.id) if update.effective_user else []
     fav_names = [f.split(" (")[0].strip().lower() for f in favs]
-    lines=[f"📊 Tabelle - 🎓 NCAAF - Top 25\n"]
+    _tag = "AP Top 25 (offiziell)" if _official else "Top 25"
+    lines=[f"📊 Tabelle - 🎓 NCAAF - {_tag}\n"]
     for i,(disp, short, abbrev, W, L, T, streak) in enumerate(top,1):
         rec = f"{W}-{L}" + (f"-{T}" if T else "")
         is_fav = any(fn in disp.lower() or disp.lower() in fn for fn in fav_names)
         star = " ⭐" if is_fav else ""
         lines.append(f"{i}. {short} {rec}{star}")
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("⭐ Meine Teams", callback_data="tables_mine")],
-        [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
-        [InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")],
-    ])
+    kb = InlineKeyboardMarkup([[InlineKeyboardButton("⭐ Meine Teams", callback_data="tables_mine")],[InlineKeyboardButton("⬅️ Zurück", callback_data="back")],[InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")],])
     await target.reply_text("\n".join(lines), reply_markup=kb)
+
 async def tables_mine_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     target = update.message or update.callback_query.message
     user = update.effective_user or (update.callback_query.from_user if update.callback_query else None)
@@ -2493,6 +2498,132 @@ def set_news_league_open(uid, val):
     except: pass
 # V134: RedZone / X-Sprache! "Travis Kelce is OUT!" muss treffen! Aber nur als ganzes Wort: " is out", nicht "shout out"!
 _BREAKING_KEYS = ["ruled out","out for","out indefinitely","out for season","season-ending","torn acl","torn achilles","ejected","suspended","carted off"," is out"," is out with"," declared out"," listed as out"," out for the game"," out for the rest"," will not return"," done for"," will miss"," sidelined"," is done"," out for tonight"," out for today"]
+
+# ===== V135 HELPERS =====
+def _v135_slash(v):
+    try:
+        s=str(v or "").strip()
+        if "/" in s: return s
+        if "-" in s:
+            a,b=s.split("-",1)
+            a=a.strip(); b=b.strip()
+            if a.isdigit() and b.isdigit(): return f"{a}/{b}"
+        return s
+    except: return str(v or "")
+def _v135_stat_value(sd, wanted):
+    try:
+        flat={}
+        for k,v in (sd or {}).items():
+            flat[str(k).lower().replace(" ","").replace("_","")]=v
+        for w in wanted:
+            wl=w.lower().replace(" ","").replace("_","")
+            if wl in flat and str(flat[wl]).strip() not in ("","-","None"): return str(flat[wl]).strip()
+            for k,v in flat.items():
+                if wl in k or k in wl:
+                    if str(v).strip() not in ("","-","None"): return str(v).strip()
+        return ""
+    except: return ""
+def _v135_is_finished(ev):
+    try:
+        st=(ev.get("status",{}) or {}).get("type",{}).get("state","") or ""
+        if st=="post": return True
+        if st=="in": return False
+        _,dt=fmt_dt(ev.get("date","") or "")
+        if dt:
+            from datetime import datetime as _dt
+            if (_dt.now(BERLIN)-dt).total_seconds()>4*3600: return True
+        return False
+    except: return False
+def _espn_ap_top25():
+    try:
+        r=requests.get("https://site.api.espn.com/apis/site/v2/sports/football/college-football/rankings",timeout=10)
+        d=r.json() or {}
+        ranks=d.get("rankings") or []
+        chosen=None
+        for rk in ranks:
+            if "ap" in str(rk.get("name","") or "").lower(): chosen=rk; break
+        if not chosen and ranks: chosen=ranks[0]
+        if not chosen: return []
+        out=[]
+        for e in (chosen.get("ranks") or [])[:25]:
+            tm=(e.get("team") or {})
+            disp=tm.get("displayName","") or tm.get("shortDisplayName","") or ""
+            short=tm.get("shortDisplayName","") or disp
+            abbr=tm.get("abbreviation","") or ""
+            rec=str(e.get("recordSummary","") or e.get("record","") or "")
+            W=L=0
+            try:
+                parts=rec.replace(" ","").split("-")
+                if len(parts)>=2: W=int(parts[0]); L=int(parts[1])
+            except: pass
+            out.append((disp,short,abbr,W,L,0,""))
+        return out
+    except: return []
+def _espn_team_id_for(league, team_full):
+    try:
+        low=(team_full or "").lower()
+        from datetime import date as _date
+        for off in range(0,4):
+            ds=(_date.today()-timedelta(days=off)).strftime("%Y%m%d")
+            try: evs=espn_scoreboard(league,dates=ds) or []
+            except: evs=[]
+            for ev in evs:
+                for comp in (ev.get("competitions") or [{}]):
+                    for c in (comp.get("competitors") or []):
+                        tm=c.get("team",{}) or {}
+                        dn=str(tm.get("displayName","") or "").lower()
+                        sn=str(tm.get("shortDisplayName","") or "").lower()
+                        if low in dn or dn in low or low in sn or sn in low:
+                            tid=tm.get("id")
+                            if tid: return str(tid)
+        return ""
+    except: return ""
+def _espn_team_news(league, team_full, limit=8):
+    try:
+        sp,lg=_ESPN_NEWS_SPORT.get(league,("football","nfl"))
+        tid=_espn_team_id_for(league,team_full)
+        if not tid: return []
+        r=requests.get(f"https://site.api.espn.com/apis/site/v2/sports/{sp}/{lg}/teams/{tid}/news",params={"limit":limit},timeout=8)
+        d=r.json() or {}
+        out=[]
+        for a in (d.get("articles") or [])[:limit]:
+            hl=(a.get("headline") or "").strip()
+            link=""
+            try: link=(a.get("links",{}) or {}).get("web",{}).get("href","") or ""
+            except: link=""
+            if not link:
+                try:
+                    lk=a.get("links") or []
+                    if isinstance(lk,list) and lk: link=lk[0].get("href","") or ""
+                except: pass
+            if hl: out.append({"headline":hl,"link":link,"published":a.get("published","")})
+        return out
+    except: return []
+def _google_news_rss(team_full, league, limit=8):
+    try:
+        import urllib.parse as _up, xml.etree.ElementTree as _ET
+        q=f"{team_full} {league} news"
+        url="https://news.google.com/rss/search?q="+_up.quote(q)+"&hl=en-US&gl=US&ceid=US:en"
+        r=requests.get(url,timeout=8,headers={"User-Agent":"Mozilla/5.0"})
+        root=_ET.fromstring(r.content or b"")
+        out=[]
+        for it in root.iter("item"):
+            t=it.findtext("title") or ""
+            lk=it.findtext("link") or ""
+            if " - " in t: t=t.rsplit(" - ",1)[0]
+            t=t.strip()
+            if t and lk: out.append({"headline":t,"link":lk,"published":""})
+            if len(out)>=limit: break
+        return out
+    except: return []
+def _team_news_all(league, team_full, limit=8):
+    arts=_espn_team_news(league,team_full,limit=limit)
+    if arts: return arts, "ESPN"
+    arts2=_google_news_rss(team_full,league,limit=limit)
+    if arts2: return arts2, "Google News"
+    return [], "ESPN"
+# ===== /V135 HELPERS =====
+
 def espn_news(league, limit=8):
     # ESPN News API: nur Headline + Link! Kein Text, kein Spam!
     try:
@@ -2554,33 +2685,16 @@ async def news_team_cmd(update, ctx, idx):
     if idx<0 or idx>=len(favs): await news_cmd(update, ctx); return
     f=favs[idx]; lg=f.split(" (")[-1].replace(")","").strip() if " (" in f else "NFL"
     _full = f.split(" (")[0].strip()
-    _low = _full.lower()
-    _parts = _low.split()
-    _nick = _parts[-1] if _parts else _low
-    # V134: Nur Team-News! ESPN Team-Endpoint liefert Liga-Zeug mit -> hart filtern!
-    # Nickname (Steelers/Penguins) ODER Vollname muss in der Headline stehen. Nur Stadt (Pittsburgh) reicht NICHT, sonst kommen Steelers-News bei Penguins!
-    _terms = set([_nick, _low])
-    if _nick in ("pirates","panthers","cardinals","giants","jets","kings","bulls","hawks","stars","blues"):
-        _terms.add(_low)
-    arts_all=espn_news(lg, limit=30)
-    arts=[]
-    for a in arts_all:
-        hl=(a.get("headline") or "").lower()
-        if any(term in hl for term in _terms if len(term)>=3):
-            arts.append(a)
-        if len(arts)>=8: break
+    arts, _src = _team_news_all(lg, _full, limit=8)
     if not arts:
-        await _cb_edit(update, f"📰 News - {f}\n\nGerade keine neuen { _full }-News von ESPN.\nCheck später nochmal!", InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Zurück zu News", callback_data="news")]])); return
-    # V134: Links kurz - nur 🔗 Lesen als klickbarer Link (HTML), nicht die ewig lange URL!
+        await _cb_edit(update, f"📰 News - {f}\n\nGerade keine neuen {_full}-News.\nCheck später nochmal!", InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Zurück zu News", callback_data="news")]])); return
     import html as _html
-    lines=[f"📰 News - {f}\n", "Nur Headline + Link! Artikel auf Englisch!\n"]
+    lines=[f"📰 News - {f}\n", f"Nur Headline + Link! Artikel auf Englisch! Quelle: {_src}!\n"]
     for i,a in enumerate(arts,1):
         _hl=_html.escape(a['headline'])
         _link=(a.get("link") or "").replace('"','')
-        if _link:
-            lines.append(f"{i}. {_hl} - <a href=\"{_link}\">🔗 Lesen</a>")
-        else:
-            lines.append(f"{i}. {_hl}")
+        if _link: lines.append(f"{i}. {_hl} - <a href=\"{_link}\">🔗 Lesen</a>")
+        else: lines.append(f"{i}. {_hl}")
     _kb = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Zurück zu News", callback_data="news")]])
     _txt = "\n".join(lines)
     try:
@@ -2588,10 +2702,10 @@ async def news_team_cmd(update, ctx, idx):
         if q and q.message:
             try: await q.message.edit_text(_txt, reply_markup=_kb, parse_mode="HTML", disable_web_page_preview=True)
             except Exception: await q.message.reply_text(_txt, reply_markup=_kb, parse_mode="HTML", disable_web_page_preview=True)
-        else:
-            await update.message.reply_text(_txt, reply_markup=_kb, parse_mode="HTML", disable_web_page_preview=True)
+        else: await update.message.reply_text(_txt, reply_markup=_kb, parse_mode="HTML", disable_web_page_preview=True)
     except Exception:
         await _cb_edit(update, "\n".join([f"📰 News - {f}\n"]+[f"{i}. {a['headline']}" for i,a in enumerate(arts,1)]), _kb)
+
 async def news_breaking_job(context):
     # V134: Alle 10 Min: Liga-Breaking + Spiel-Breaking checken! Kein Spam: nur 1x pro Headline!
     try:
@@ -3427,7 +3541,11 @@ def get_final_stats_text(eid, lg):
                         except: return v
                     if not va and not vb: _sacks_missing=True
                     va=_only_count(va) if va else va; vb=_only_count(vb) if vb else vb
+                if _lbl in ("3rd Down","4th Down","Strafen"):
+                    va=_v135_slash(va) if va else va; vb=_v135_slash(vb) if vb else vb
                 if va or vb: lines.append(f"{_lbl}: {va or '-'} - {vb or '-'}")
+                elif _lbl=="Sacks":
+                    lines.append("Sacks: - - -")
             try:
                 if not any(l.startswith("Pass:") for l in lines):
                     _y_a = _pick(sa, ["totalYards","total yards"]); _r_a = _pick(sa, ["rushingYards","rushing","rush"])
@@ -3451,12 +3569,18 @@ def get_final_stats_text(eid, lg):
                         _sd2={}
                         for _s in _stats:
                             if isinstance(_s,dict): _sd2[str(_s.get("name","") or "").lower()]=_s.get("displayValue","")
-                        if "pass" in _catname and _an:
-                            _leaders.append(f"Pass: {_an} {_sd2.get('passingyards','')} Yds" + (f", {_sd2.get('passing touchdowns','')} TD" if _sd2.get('passing touchdowns') else ""))
-                        elif "rush" in _catname and _an:
-                            _leaders.append(f"Rush: {_an} {_sd2.get('rushingyards','')} Yds" + (f", {_sd2.get('rushing touchdowns','')} TD" if _sd2.get('rushing touchdowns') else ""))
-                        elif "receiv" in _catname and _an:
-                            _leaders.append(f"Catch: {_an} {_sd2.get('receivingyards','')} Yds")
+                            elif isinstance(_s,str): _sd2[_s.lower()]=_s
+                        _py=_v135_stat_value(_sd2,["passingyards","passingYards","passyards"])
+                        _ptd=_v135_stat_value(_sd2,["passingtouchdowns","passingTD"])
+                        _ry=_v135_stat_value(_sd2,["rushingyards","rushingYards","rushyards"])
+                        _rtd=_v135_stat_value(_sd2,["rushingtouchdowns","rushingTD"])
+                        _cy=_v135_stat_value(_sd2,["receivingyards","receivingYards"])
+                        if "pass" in _catname and _an and _py:
+                            _leaders.append(f"Pass: {_an} {_py} Yds" + (f", {_ptd} TD" if _ptd else ""))
+                        elif "rush" in _catname and _an and _ry:
+                            _leaders.append(f"Rush: {_an} {_ry} Yds" + (f", {_rtd} TD" if _rtd else ""))
+                        elif "receiv" in _catname and _an and _cy:
+                            _leaders.append(f"Catch: {_an} {_cy} Yds")
                 _leaders=[x for x in _leaders if x and " Yds" in x][:3]
                 if _leaders:
                     lines.append("")
@@ -3470,17 +3594,29 @@ def get_final_stats_text(eid, lg):
             for _k,_lbl in [("rebounds","Rebounds"),("assists","Assists"),("steals","Steals"),("blocks","Blocks"),("turnovers","Turnovers"),("fieldGoalPct","FG%"),("threePointFieldGoalPct","3PT%")]:
                 va = sa.get(_k.lower(),"") or sa.get(_lbl.lower(),"")
                 vb = sb.get(_k.lower(),"") or sb.get(_lbl.lower(),"")
+                if _lbl in ("3rd Down","4th Down","Strafen"):
+                    va=_v135_slash(va) if va else va; vb=_v135_slash(vb) if vb else vb
                 if va or vb: lines.append(f"{_lbl}: {va or '-'} - {vb or '-'}")
+                elif _lbl=="Sacks":
+                    lines.append("Sacks: - - -")
         elif lg == "NHL":
             for _k,_lbl in [("shotsOnGoal","Schüsse"),("hits","Hits"),("faceoffWinPct","Faceoffs"),("powerPlayGoals","PP Tore")]:
                 va = sa.get(_k.lower(),"") or sa.get(_lbl.lower(),"")
                 vb = sb.get(_k.lower(),"") or sb.get(_lbl.lower(),"")
+                if _lbl in ("3rd Down","4th Down","Strafen"):
+                    va=_v135_slash(va) if va else va; vb=_v135_slash(vb) if vb else vb
                 if va or vb: lines.append(f"{_lbl}: {va or '-'} - {vb or '-'}")
+                elif _lbl=="Sacks":
+                    lines.append("Sacks: - - -")
         elif lg == "MLB":
             for _k,_lbl in [("hits","Hits"),("homeRuns","HR"),("RBIs","RBI"),("errors","Errors"),("strikeouts","Strikeouts"),("walks","Walks")]:
                 va = sa.get(_k.lower(),"") or sa.get(_lbl.lower(),"")
                 vb = sb.get(_k.lower(),"") or sb.get(_lbl.lower(),"")
+                if _lbl in ("3rd Down","4th Down","Strafen"):
+                    va=_v135_slash(va) if va else va; vb=_v135_slash(vb) if vb else vb
                 if va or vb: lines.append(f"{_lbl}: {va or '-'} - {vb or '-'}")
+                elif _lbl=="Sacks":
+                    lines.append("Sacks: - - -")
         if len(lines) <= 2:
             return ""
         return "\n".join(lines)
