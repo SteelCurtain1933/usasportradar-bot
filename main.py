@@ -1,4 +1,4 @@
-# USA Sport Radar - V125 FINAL - Quarter-Beginn mit Zeit: 2. Quarter läuft + 14:17!
+# USA Sport Radar - V128 FINAL - News + Liga-Breaking + Spiel-Breaking in einem Rutsch! Team-News nur Headline + Link!
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging
 from datetime import datetime, timedelta, timezone
@@ -180,7 +180,7 @@ def set_live_master(uid, val):
     s = load_settings(); s.setdefault(str(uid), {}); s[str(uid)].setdefault("live", {})["master"] = bool(val); save_settings(s)
 def get_live_team(uid, team_full):
     d = _live_cfg(uid).get("teams", {}).get(team_full, {})
-    return {"score": bool(d.get("score", False)), "period": bool(d.get("period", False)), "final": bool(d.get("final", False)), "crunch": bool(d.get("crunch", False)), "start": bool(d.get("start", False))}
+    return {"score": bool(d.get("score", False)), "period": bool(d.get("period", False)), "final": bool(d.get("final", False)), "crunch": bool(d.get("crunch", False)), "start": bool(d.get("start", False)), "breaking": bool(d.get("breaking", False))}
 def set_live_team_toggle(uid, team_full, kind):
     s = load_settings(); s.setdefault(str(uid), {}); s[str(uid)].setdefault("live", {}).setdefault("teams", {}).setdefault(team_full, {})
     cur = bool(s[str(uid)]["live"]["teams"][team_full].get(kind, False))
@@ -796,6 +796,8 @@ def main_kb(with_close=True):
          InlineKeyboardButton("🏆 Top 10", callback_data="top10")],
         [InlineKeyboardButton("🔴 Live", callback_data="live"),
          InlineKeyboardButton("📊 Tabellen", callback_data="tables")],
+        [InlineKeyboardButton("📰 News", callback_data="news"),
+         InlineKeyboardButton("🌍 Liga-Breaking: AN/AUS", callback_data="news_league_toggle")],
         [InlineKeyboardButton("✅ Ergebnisse", callback_data="results"),
          InlineKeyboardButton("⚙️ Einstellungen", callback_data="settings")],
         [InlineKeyboardButton("❓ Hilfe", callback_data="help")],
@@ -2370,6 +2372,108 @@ async def _live_send(context, uid, eid, text):
         try: return await context.bot.send_message(chat_id=uid, text=text)
         except: return None
 
+
+# ===== V128: News + Liga-Breaking + Spiel-Breaking in einem Rutsch! =====
+_ESPN_NEWS_SPORT = {"NFL": ("football","nfl"), "NCAAF": ("football","college-football"), "NBA": ("basketball","nba"), "NHL": ("hockey","nhl"), "MLB": ("baseball","mlb")}
+_LIGA_BREAKING_KEYS = ["international series","london","munich","munchen","madrid","berlin","schedule","super bowl","playoffs","trade deadline","expansion","rule change","new stadium","franchise"]
+_BREAKING_KEYS = ["ruled out","out for","out indefinitely","out for season","season-ending","torn acl","torn achilles","ejected","suspended","carted off"]
+def espn_news(league, limit=8):
+    # ESPN News API: nur Headline + Link! Kein Text, kein Spam!
+    try:
+        sp, lg = _ESPN_NEWS_SPORT.get(league, ("football","nfl"))
+        import requests as _rq
+        r=_rq.get(f"https://site.api.espn.com/apis/site/v2/sports/{sp}/{lg}/news", params={"limit": limit}, timeout=8)
+        d=r.json() or {}
+        out=[]
+        for a in (d.get("articles") or [])[:limit]:
+            hl=(a.get("headline") or "").strip()
+            link=""
+            try: link=(a.get("links",{}).get("web",{}).get("href") or a.get("links",{}).get("web",{}).get("href") or "")
+            except: link=""
+            if not link:
+                try: link=(a.get("links") or [{}])[0].get("href","") if isinstance(a.get("links"), list) else ""
+                except: link=""
+            if hl: out.append({"headline": hl, "link": link, "published": a.get("published","")})
+        return out
+    except: return []
+def _news_sent(uid):
+    try: return set(load_settings().get(str(uid),{}).get("news_sent",[]) or [])
+    except: return set()
+def _news_mark_sent(uid, key):
+    try:
+        s=load_settings(); s.setdefault(str(uid),{}); s[str(uid)].setdefault("news_sent",[])
+        if key not in s[str(uid)]["news_sent"]: s[str(uid)]["news_sent"].append(key)
+        s[str(uid)]["news_sent"]=s[str(uid)]["news_sent"][-200:]
+        save_settings(s)
+    except: pass
+def get_league_breaking(uid):
+    try: return bool(load_settings().get(str(uid),{}).get("league_breaking", True))
+    except: return True
+def set_league_breaking(uid, val):
+    try:
+        s=load_settings(); s.setdefault(str(uid),{})["league_breaking"]=bool(val); save_settings(s)
+    except: pass
+async def news_cmd(update, ctx):
+    # Team-News: nur Favoriten! Nur Headline + Link!
+    uid=update.effective_user.id if update.effective_user else 0
+    favs=favs_for(uid)
+    if not favs:
+        await _cb_edit(update, "📰 News\n\nDu hast noch keine Favoriten. Füge erst ein Team hinzu!", main_kb()); return
+    rows=[]
+    for i,f in enumerate(favs): rows.append([InlineKeyboardButton(f"📰 {f}", callback_data=f"news_team:{i}")])
+    rows.append([InlineKeyboardButton("⬅️ Zurück", callback_data="back")])
+    await _cb_edit(update, "📰 News - Nur deine Favoriten!\n\nTippe ein Team an, dann kriegst du nur Headline + Link! Artikel sind auf Englisch!\nKein Push-Spam - du holst dir die News, wenn du willst!", InlineKeyboardMarkup(rows))
+async def news_team_cmd(update, ctx, idx):
+    uid=update.effective_user.id if update.effective_user else 0
+    favs=favs_for(uid)
+    if idx<0 or idx>=len(favs): await news_cmd(update, ctx); return
+    f=favs[idx]; lg=f.split(" (")[-1].replace(")","").strip() if " (" in f else "NFL"
+    arts=espn_news(lg, limit=8)
+    if not arts:
+        await _cb_edit(update, f"📰 News - {f}\n\nGerade keine News von ESPN. Probier es gleich nochmal!", InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Zurück zu News", callback_data="news")]])); return
+    # Nur Headline + Link! Kein Text!
+    lines=[f"📰 News - {f}\n", "Nur Headline + Link! Artikel auf Englisch!\n"]
+    for i,a in enumerate(arts,1):
+        lines.append(f"{i}. {a['headline']}")
+        if a.get("link"): lines.append(f"   🔗 {a['link']}")
+    lines.append("\nTippe /start für Hauptmenü!")
+    await _cb_edit(update, "\n".join(lines), InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Zurück zu News", callback_data="news")]]))
+async def news_breaking_job(context):
+    # V128: Alle 10 Min: Liga-Breaking + Spiel-Breaking checken! Kein Spam: nur 1x pro Headline!
+    try:
+        for uid_str in list(load_settings().keys()):
+            try: uid=int(uid_str)
+            except: continue
+            if not get_league_breaking(uid): continue
+            sent=_news_sent(uid)
+            # Liga-Breaking: nur große Themen!
+            for lg in ["NFL","NCAAF","NBA","NHL","MLB"]:
+                for a in espn_news(lg, limit=5):
+                    hl=(a.get("headline") or "").lower()
+                    if not any(k in hl for k in _LIGA_BREAKING_KEYS): continue
+                    key=f"liga:{lg}:{a['headline']}"
+                    if key in sent: continue
+                    _news_mark_sent(uid, key)
+                    try: await context.bot.send_message(chat_id=uid, text=f"🌍 LIGA-BREAKING: {lg}\n\n{a['headline']}\n🔗 {a.get('link','')}")
+                    except: pass
+            # Spiel-Breaking: nur wenn Breaking AN + Headline hat OUT/Ejection + Team ist Favorit!
+            favs=favs_for(uid)
+            for f in favs:
+                cfg=get_live_team(uid, f)
+                if not cfg.get("breaking"): continue
+                lg=f.split(" (")[-1].replace(")","").strip() if " (" in f else "NFL"
+                short=_short_team(f)
+                for a in espn_news(lg, limit=8):
+                    hl_low=(a.get("headline") or "").lower()
+                    if short.lower() not in hl_low: continue
+                    if not any(k in hl_low for k in _BREAKING_KEYS): continue
+                    key=f"spiel:{f}:{a['headline']}"
+                    if key in sent: continue
+                    _news_mark_sent(uid, key)
+                    try: await context.bot.send_message(chat_id=uid, text=f"🚨 SPIEL-BREAKING: {f}\n\n{a['headline']}\n🔗 {a.get('link','')}")
+                    except: pass
+    except: pass
+
 async def notif_cmd(update, ctx):
     target = update.message or update.callback_query.message
     uid = update.effective_user.id if update.effective_user else 0
@@ -2785,7 +2889,7 @@ async def live_score_job(context):
                             _cs = _clock_secs(ev)
                             _max = 1200 if lg == "NHL" else 900 if lg in ("NFL", "NCAAF") else 720 if lg == "NBA" else None
                             if _cs is not None and _max is not None and _cs < _max - 5:
-                                # V125: Nur Zeit dazu! Kurz bleibt kurz! 14:17 zeigt: schon 43 Sek gespielt, weil ESPN 50 Sek braucht!
+                                # V127: Nur Zeit dazu! Kurz bleibt kurz! 14:17 zeigt: schon 43 Sek gespielt, weil ESPN 50 Sek braucht!
                                 try: await _live_send(context, uid, eid, f"▶️ {live_period_label(lg, period)} läuft!\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n⏰ {live_clock(ev, lg) or ''}")
                                 except: pass
                                 prev["awaiting_resume"] = None
@@ -3204,7 +3308,7 @@ def _oneoff_cfg(uid):
     except: return {}
 def get_oneoff_live(uid, eid):
     d = _oneoff_cfg(uid).get(str(eid), {}) or {}
-    return {"score": bool(d.get("score", False)), "period": bool(d.get("period", False)), "final": bool(d.get("final", False)), "crunch": bool(d.get("crunch", False)), "start": bool(d.get("start", False)), "lg": d.get("lg",""), "name": d.get("name","")}
+    return {"score": bool(d.get("score", False)), "period": bool(d.get("period", False)), "final": bool(d.get("final", False)), "crunch": bool(d.get("crunch", False)), "start": bool(d.get("start", False)), "breaking": bool(d.get("breaking", False)), "lg": d.get("lg",""), "name": d.get("name","")}
 def set_oneoff_live_toggle(uid, eid, kind):
     s = load_settings(); s.setdefault(str(uid), {}); s[str(uid)].setdefault("oneoff_live", {}).setdefault(str(eid), {})
     cur = bool(s[str(uid)]["oneoff_live"][str(eid)].get(kind, False))
@@ -3419,6 +3523,10 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             else: await q.message.edit_text(HELP_TEXT, reply_markup=main_kb())
         except: pass
     elif data=="top10": await top10_cmd(update, ctx)
+    elif data=="news": await news_cmd(update, ctx)
+    elif data=="news_league_toggle":
+        _uid2=update.effective_user.id if update.effective_user else 0; _cur=get_league_breaking(_uid2); set_league_breaking(_uid2, not _cur); await _cb_edit(update, f"🌍 Liga-Breaking: {'✅ AN' if not _cur else '❌ AUS'}\n\nNur große Sachen: International Series, Schedule, Super Bowl, Playoffs, Trade Deadline!\nKein Spam!", InlineKeyboardMarkup([[InlineKeyboardButton("📰 Zu News", callback_data="news")],[InlineKeyboardButton("⬅️ Zurück", callback_data="back")]]))
+    elif data.startswith("news_team:"): await news_team_cmd(update, ctx, int(data.split(":")[1]))
     elif data=="notif": await notif_cmd(update, ctx)
     elif data=="notif_master":
         _m = not get_live_master(update.effective_user.id); set_live_master(update.effective_user.id, _m)
@@ -3539,14 +3647,15 @@ def main():
         _jq = getattr(app, "job_queue", None)
         if _jq is not None:
             _jq.run_repeating(reminder_job, interval=900, first=10)
-            _jq.run_repeating(live_score_job, interval=60, first=20)  # V89-FIX: 60 Sek statt 120 Sek - so schnell wie moeglich ohne ESPN-Block (429)!
+            _jq.run_repeating(live_score_job, interval=60, first=20)  # V89-FIX: 60 Sek statt 120 Sek
+            _jq.run_repeating(news_breaking_job, interval=600, first=30)  # V128: alle 10 Min News + Breaking checken!
         else:
             print("JobQueue: kein APScheduler - Reminder aus, Bot laeuft trotzdem.")
     except Exception as e:
         print("JobQueue:", e)
     app.add_handler(CallbackQueryHandler(on_cb))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
-    print("✅ USA Sport Radar Bot online - V125 - Quarter-Beginn mit Zeit!")
+    print("✅ USA Sport Radar Bot online - V128 - News + Liga-Breaking + Spiel-Breaking!")
     logger.warning("✅ USA Sport Radar Bot online - V116 - Clean Logs!")
     app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
 
