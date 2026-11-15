@@ -1,4 +1,4 @@
-# USA Sport Radar - V115 FINAL - Maximum - Kurz Start + Kompakt NextGames + Fixes
+# USA Sport Radar - V120 FINAL - Kurz-Labels: Start + Quarter statt Roman!
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging
 from datetime import datetime, timedelta, timezone
@@ -10,8 +10,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 
-logging.basicConfig(level=logging.INFO)
+# V116: CLEAN LOGS! Nur Warnungen + Fehler, kein INFO-Gelaber!
+# Vorher: level=INFO -> APScheduler hat alle 60 Sek "Running job..." geloggt, Logs vollgemüllt!
+# Jetzt: level=WARNING -> Nur noch: Bot online + echte Fehler! Saubere Render-Logs!
+logging.basicConfig(level=logging.WARNING, format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
 logger = logging.getLogger(__name__)
+# APScheduler + Telegram + HTTP leise machen - die labern am meisten!
+for _n in ["apscheduler", "apscheduler.executors.default", "apscheduler.scheduler", "apscheduler.jobstores.default", "httpx", "telegram", "telegram.ext", "urllib3", "httpcore"]:
+    logging.getLogger(_n).setLevel(logging.WARNING)
 
 # TOKEN: Auf Render kommt der Token aus der geheimen Variable BOT_TOKEN (auf der Render-Website eintragen).
 # In dieser Datei steht KEIN echter Token - so ist sie sicher fuer GitHub.
@@ -174,7 +180,7 @@ def set_live_master(uid, val):
     s = load_settings(); s.setdefault(str(uid), {}); s[str(uid)].setdefault("live", {})["master"] = bool(val); save_settings(s)
 def get_live_team(uid, team_full):
     d = _live_cfg(uid).get("teams", {}).get(team_full, {})
-    return {"score": bool(d.get("score", False)), "period": bool(d.get("period", False)), "final": bool(d.get("final", False)), "crunch": bool(d.get("crunch", False))}
+    return {"score": bool(d.get("score", False)), "period": bool(d.get("period", False)), "final": bool(d.get("final", False)), "crunch": bool(d.get("crunch", False)), "start": bool(d.get("start", False))}
 def set_live_team_toggle(uid, team_full, kind):
     s = load_settings(); s.setdefault(str(uid), {}); s[str(uid)].setdefault("live", {}).setdefault("teams", {}).setdefault(team_full, {})
     cur = bool(s[str(uid)]["live"]["teams"][team_full].get(kind, False))
@@ -186,6 +192,29 @@ def live_period_label(league, period):
     if league=="NHL": return f"{per}. Drittel" if per<=3 else "Overtime"
     if league=="MLB": return f"{per}. Inning"
     return f"Abschnitt {per}"
+
+def game_start_label(league):
+    # V118: Spielstart pro Liga anders! Nicht überall "Anpfiff"!
+    # NFL/NCAAF: Kickoff, NBA: Tip-Off, NHL: Puck Drop, MLB: First Pitch
+    if league in ("NFL","NCAAF"): return "🏈 Kickoff!"
+    if league=="NBA": return "🏀 Tip-Off!"
+    if league=="NHL": return "🏒 Puck Drop!"
+    if league=="MLB": return "⚾ First Pitch!"
+    return "🚨 Spielstart!"
+
+def period_word(league):
+    # V117: Pro Liga das richtige Wort! Nicht überall "Perioden"!
+    # NFL/NCAAF: Quarter, NBA: Viertel, NHL: Drittel, MLB: Inning
+    if league in ("NFL","NCAAF"): return "Quarter"
+    if league=="NBA": return "Viertel"
+    if league=="NHL": return "Drittel"
+    if league=="MLB": return "Inning"
+    return "Abschnitt"
+def period_toggle_label(league):
+    # V119: V120 KURZ: Start + Quarter = Spielstart + Quarter-Ende + Quarter-Beginn, nur kürzer! Spielstart gehört zum Perioden-Schalter! Wer Quarter-Ende + Beginn will, will auch Spielstart wissen!
+    # "Spielstart + Quarter-Ende + Quarter-Beginn" - 1 Schalter, alles drin!
+    w = period_word(league)
+    return f"Start + {w}"
 
 
 def fmt_dt(iso):
@@ -2309,7 +2338,7 @@ async def notif_cmd(update, ctx):
         [InlineKeyboardButton("🔴 Live-Scores pro Team einstellen", callback_data="notif_teams")],
         [InlineKeyboardButton("⬅️ Zurück zu Einstellungen", callback_data="settings")],
     ])
-    await _cb_edit(update, "🔔 Benachrichtigungen\n\n⏰ Reminder: vor dem Spiel.\n🔴 Live-Scores: Favoriten + Meine Live-Spiele! Pro Team einzeln: Jeder Score / Perioden-Ende + Weiter / Endstand.\n\nAlles aus = kein Spam - du entscheidest!", kb)
+    await _cb_edit(update, "🔔 Benachrichtigungen\n\n⏰ Reminder: vor dem Spiel.\n🔴 Live-Scores: Favoriten + Meine Live-Spiele! Pro Team einzeln: Score / Start + Quarter / Endstand.\n\nAlles aus = kein Spam - du entscheidest!", kb)
 async def notif_teams_cmd(update, ctx):
     target = update.message or update.callback_query.message
     uid = update.effective_user.id if update.effective_user else 0
@@ -2324,7 +2353,7 @@ async def notif_teams_cmd(update, ctx):
     # V112: Meine Live-Spiele - alle einzelnen Spiele, die du bei Nächste Spiele angemacht hast!
     rows.append([InlineKeyboardButton("🔴 Meine Live-Spiele", callback_data="my_live_games")])
     rows.append([InlineKeyboardButton("⬅️ Zurück zu Benachrichtigungen", callback_data="notif")])
-    await _cb_edit(update, "🔴 Live-Scores pro Team\n\nTippe ein Team an, dann kannst du pro Team einstellen: Jeder Score / Perioden-Ende + Weiter / Endstand!\n\n🔴 Meine Live-Spiele = deine einzelnen Spiele (z.B. München), die du bei Nächste Spiele angemacht hast!", InlineKeyboardMarkup(rows))
+    await _cb_edit(update, "🔴 Live-Scores pro Team\n\nTippe ein Team an, dann kannst du pro Team einstellen: Score / Start + Quarter / Endstand!\n\n🔴 Meine Live-Spiele = deine einzelnen Spiele (z.B. München), die du bei Nächste Spiele angemacht hast!", InlineKeyboardMarkup(rows))
 async def my_live_games_cmd(update, ctx):
     uid = update.effective_user.id if update.effective_user else 0
     try: oo = load_settings().get(str(uid), {}).get("oneoff_live", {}) or {}
@@ -2333,7 +2362,7 @@ async def my_live_games_cmd(update, ctx):
     active = []
     for eid, d in oo.items():
         if not d: continue
-        if any([d.get("score"), d.get("period"), d.get("final"), d.get("crunch")]): active.append((str(eid), d.get("lg",""), d.get("name","") or f"Spiel {eid}", d))
+        if any([d.get("score"), d.get("period"), d.get("final"), d.get("crunch"), d.get("start")]): active.append((str(eid), d.get("lg",""), d.get("name","") or f"Spiel {eid}", d))
     if not active:
         await _cb_edit(update, "🔴 Meine Live-Spiele\n\nNoch keine einzelnen Spiele angemacht.\nGeh zu Nächste Spiele → 🔴 Live für ein Spiel, dann tauchen sie hier auf!", InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Zurück zu Teams", callback_data="notif_teams")]])); return
     try: ctx.user_data["my_live_list"] = [(eid, lg) for eid, lg, nm, d in active]
@@ -2342,10 +2371,15 @@ async def my_live_games_cmd(update, ctx):
     for i, (eid, lg, nm, d) in enumerate(active, start=1):
         _on = []
         if d.get("score"): _on.append("Score")
-        if d.get("period"): _on.append("Perioden-Ende")
+        if d.get("period"): _on.append(period_toggle_label(lg))
         if d.get("final"): _on.append("Endstand")
         if d.get("crunch"): _on.append("Crunch-Time")
-        lines.append(f"{i}. {nm} • {' + '.join(_on) if _on else 'an'}")
+        # V117: Kompakt! Stadion-Name kürzen: "FC Bayern Munich Stadium, Munich" -> "München", Zeilenumbrüche weg!
+        _nm_clean = (nm or "").replace("\n"," ").replace("FC Bayern Munich Stadium, Munich","München").replace("FC Bayern Munich Stadium","München")
+        # Kurz-Namen: "New England Patriots" -> "Patriots" in der Liste (nur Anzeige, nicht speichern!)
+        for _full,_short in [("New England Patriots","Patriots"),("Detroit Lions","Lions")]:
+            _nm_clean = _nm_clean.replace(_full,_short)
+        lines.append(f"{i}. {_nm_clean} • {' + '.join(_on) if _on else 'an'}")
     lines.append("\n✏️ Tippe die Zahl ein, bei dem Spiel wo du was ändern willst!")
     lines.append("Dann ploppt genau das Fenster auf und du kannst nachträglich was an / aus machen!")
     await _cb_edit(update, "\n".join(lines), InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Zurück zu Teams", callback_data="notif_teams")]]))
@@ -2357,15 +2391,15 @@ async def notif_team_cmd(update, ctx, idx):
     if idx < 0 or idx >= len(favs):
         await notif_teams_cmd(update, ctx); return
     f = favs[idx]; cfg = get_live_team(uid, f)
+    _lg_team = f.split(" (")[-1].replace(")", "").strip() if " (" in f else ""
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton(f"{'✅' if cfg['score'] else '❌'} Jeder Score (TD / FG / Tor / Run)", callback_data=f"notif_toggle:{idx}:score")],
-        [InlineKeyboardButton(f"{'✅' if cfg['period'] else '❌'} Perioden-Ende + Weiter (Quarter / Drittel)", callback_data=f"notif_toggle:{idx}:period")],
+        [InlineKeyboardButton(f"{'✅' if cfg['period'] else '❌'} {period_toggle_label(_lg_team if _lg_team in ('NFL','NCAAF','NBA','NHL','MLB') else 'NFL')}", callback_data=f"notif_toggle:{idx}:period")],
         [InlineKeyboardButton(f"{'✅' if cfg['final'] else '❌'} Endstand", callback_data=f"notif_toggle:{idx}:final")],
         [InlineKeyboardButton(f"{'✅' if cfg.get('crunch') else '❌'} Crunch-Time (8 Min, knapp!)", callback_data=f"notif_toggle:{idx}:crunch")],
         [InlineKeyboardButton("⬅️ Zurück zu Teams", callback_data="notif_teams")],
     ])
-    _lg_team = f.split(" (")[-1].replace(")", "").strip() if " (" in f else ""
-    _hint = "\nHinweis: NBA = jeder Korb = viele Nachrichten! Da lieber nur Perioden-Ende + Endstand!" if _lg_team == "NBA" else ""
+    _hint = "\nHinweis: NBA = jeder Korb = viele Nachrichten! Da lieber nur Viertel-Ende + Beginn + Endstand!" if _lg_team == "NBA" else ""
     await _cb_edit(update, f"🔴 Live-Scores - {f}\n\nTippe an / aus. Nur was du anmachst, schicke ich dir!{_hint}", kb)
 def _score_only(ev):
     try:
@@ -2529,7 +2563,7 @@ async def live_score_job(context):
             for _uid2, _sd in _sett.items():
                 _oo2 = (_sd or {}).get("oneoff_live", {}) or {}
                 for _eid2, _od in _oo2.items():
-                    if not _od or not any([_od.get("score"), _od.get("period"), _od.get("final"), _od.get("crunch")]): continue
+                    if not _od or not any([_od.get("score"), _od.get("period"), _od.get("final"), _od.get("crunch"), _od.get("start")]): continue
                     _lg2 = _od.get("lg",""); _nm2 = _od.get("name","") or f"Spiel {_eid2}"
                     if _lg2 not in LEAGUES: continue
                     # Pseudo-Fav: ONEOFF:<eid> ( <LG> ) - im Loop erkennen wir das!
@@ -2552,7 +2586,7 @@ async def live_score_job(context):
                     lg = fav.split(" (")[-1].replace(")", "").strip() if " (" in fav else None
                     if lg not in LEAGUES: continue
                     cfg = get_oneoff_live(uid, _eid_one)
-                    if not any([cfg.get("score"), cfg.get("period"), cfg.get("final"), cfg.get("crunch")]): continue
+                    if not any([cfg.get("score"), cfg.get("period"), cfg.get("final"), cfg.get("crunch"), cfg.get("start")]): continue
                     name = ""  # One-Off matcht per EID, nicht per Name!
                 else:
                     cfg = get_live_team(uid, fav)
@@ -2570,12 +2604,25 @@ async def live_score_job(context):
                     eid = str(ev.get("id", ""))
                     _fav_disp = game_line(ev, lg) if _is_oneoff else fav
                     state = (ev.get("status", {}) or {}).get("type", {}).get("state", "")
-                    if state not in ("in", "post"): continue
                     scores = _live_scores_of(ev); period = (ev.get("status", {}) or {}).get("period")
+                    # V118: PRE-Spiele merken, wenn Spielstart an! Sonst sehen wir den Kickoff-Übergang nie!
+                    if state not in ("in", "post"):
+                        if cfg.get("period") or cfg.get("start"):
+                            _k2 = (uid, str(ev.get("id","")), fav)
+                            _prev2 = _LIVE_SEEN.get(_k2)
+                            if _prev2 is None or _prev2.get("state") != "pre":
+                                _LIVE_SEEN[_k2] = {"scores": scores, "period": period, "state": "pre", "last_td": {}, "awaiting_resume": None, "halftime_sent": False, "crunch_sent": False, "start_sent": False}
+                        continue
                     key = (uid, eid, fav)
                     prev = _LIVE_SEEN.get(key)
                     if prev is None:
-                        _LIVE_SEEN[key] = {"scores": scores, "period": period, "state": state, "last_td": {}, "awaiting_resume": None, "halftime_sent": False, "crunch_sent": False}; continue
+                        _LIVE_SEEN[key] = {"scores": scores, "period": period, "state": state, "last_td": {}, "awaiting_resume": None, "halftime_sent": False, "crunch_sent": False, "start_sent": False}; continue
+                    # V119: SPIELSTART gehört zu PERIOD! Wer Quarter-Ende + Beginn will, will auch Spielstart!
+                    # (cfg.start noch drin für alle, die V118 schon an hatten - sonst geht nix verloren!)
+                    if (cfg.get("period") or cfg.get("start")) and state == "in" and prev.get("state") == "pre" and not prev.get("start_sent"):
+                        try: await _live_send(context, uid, eid, f"🚨 Spielstart! {game_start_label(lg)}\n{LEAGUES[lg]['emoji']} {game_line(ev, lg)}\nEs geht los! 🔥")
+                        except: pass
+                        prev["start_sent"] = True
                     # Score geaendert?
                     if cfg.get("score") and state == "in" and scores != prev["scores"]:
                         diffs = {k: scores.get(k, 0) - prev["scores"].get(k, 0) for k in scores}
@@ -2659,7 +2706,7 @@ async def live_score_job(context):
                     # V103: Wenn Halbzeit schon geschickt (2->3), kein doppeltes Perioden-Ende mehr! Weiter kommt unten!
                     _skip_pe = bool(prev.get("halftime_sent") and prev["period"] is not None and int(prev["period"]) == 2 and period is not None and int(period) == 3)
                     if cfg.get("period") and state == "in" and prev["period"] is not None and period is not None and int(period) > int(prev["period"]) and not _skip_pe:
-                        try: await _live_send(context, uid, eid, f"⏸️ Perioden-Ende: {live_period_label(lg, prev['period'])} vorbei!\n{LEAGUES[lg]['emoji']} {_score_only(ev)} \u2022 Stand nach {live_period_label(lg, prev['period'])} \u2022 Pause!")
+                        try: await _live_send(context, uid, eid, f"⏸️ {period_word(lg)}-Ende: {live_period_label(lg, prev['period'])} vorbei!\n{LEAGUES[lg]['emoji']} {_score_only(ev)} \u2022 Stand nach {live_period_label(lg, prev['period'])} \u2022 Pause!")
                         except: pass
                         try: prev["awaiting_resume"] = int(period)
                         except: pass
@@ -2669,7 +2716,7 @@ async def live_score_job(context):
                             _cs = _clock_secs(ev)
                             _max = 1200 if lg == "NHL" else 900 if lg in ("NFL", "NCAAF") else 720 if lg == "NBA" else None
                             if _cs is not None and _max is not None and _cs < _max - 5:
-                                try: await _live_send(context, uid, eid, f"▶️ Weiter gehts! {live_period_label(lg, period)} hat begonnen!\n{LEAGUES[lg]['emoji']} {game_line(ev, lg)}")
+                                try: await _live_send(context, uid, eid, f"▶️ {period_word(lg)}-Beginn: {live_period_label(lg, period)} hat begonnen!\n{LEAGUES[lg]['emoji']} {game_line(ev, lg)}")
                                 except: pass
                                 prev["awaiting_resume"] = None
                         except: pass
@@ -2720,7 +2767,7 @@ async def live_score_job(context):
                             _qm = await context.bot.send_message(chat_id=uid, text=f"🏁 Spiel zu Ende! {_fav_disp}\n\nSoll ich die Live-Nachrichten von diesem Spiel löschen?", reply_markup=_cq)
                             if _qm and getattr(_qm, "message_id", None): _LIVE_MSG_IDS.setdefault((uid, str(eid)), []).append(int(_qm.message_id)); _save_live_msg_ids()
                         except: pass
-                    _LIVE_SEEN[key] = {"scores": scores, "period": period, "state": state, "last_td": prev.get("last_td") or {}, "awaiting_resume": prev.get("awaiting_resume"), "halftime_sent": prev.get("halftime_sent", False), "crunch_sent": prev.get("crunch_sent", False)}
+                    _LIVE_SEEN[key] = {"scores": scores, "period": period, "state": state, "last_td": prev.get("last_td") or {}, "awaiting_resume": prev.get("awaiting_resume"), "halftime_sent": prev.get("halftime_sent", False), "crunch_sent": prev.get("crunch_sent", False), "start_sent": prev.get("start_sent", False)}
     except Exception as e:
         logger.warning(f"live_score_job: {e}")
 _REMEMBER = None
@@ -3040,7 +3087,7 @@ def _oneoff_cfg(uid):
     except: return {}
 def get_oneoff_live(uid, eid):
     d = _oneoff_cfg(uid).get(str(eid), {}) or {}
-    return {"score": bool(d.get("score", False)), "period": bool(d.get("period", False)), "final": bool(d.get("final", False)), "crunch": bool(d.get("crunch", False)), "lg": d.get("lg",""), "name": d.get("name","")}
+    return {"score": bool(d.get("score", False)), "period": bool(d.get("period", False)), "final": bool(d.get("final", False)), "crunch": bool(d.get("crunch", False)), "start": bool(d.get("start", False)), "lg": d.get("lg",""), "name": d.get("name","")}
 def set_oneoff_live_toggle(uid, eid, kind):
     s = load_settings(); s.setdefault(str(uid), {}); s[str(uid)].setdefault("oneoff_live", {}).setdefault(str(eid), {})
     cur = bool(s[str(uid)]["oneoff_live"][str(eid)].get(kind, False))
@@ -3116,7 +3163,7 @@ async def next_live_pick_cmd(update, ctx, league, eid):
     cfg = get_oneoff_live(update.effective_user.id, eid)
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton(f"{'✅' if cfg['score'] else '❌'} Jeder Score", callback_data=f"next_live_toggle:{league}:{eid}:score")],
-        [InlineKeyboardButton(f"{'✅' if cfg['period'] else '❌'} Perioden-Ende + Weiter", callback_data=f"next_live_toggle:{league}:{eid}:period")],
+        [InlineKeyboardButton(f"{'✅' if cfg['period'] else '❌'} {period_toggle_label(league)}", callback_data=f"next_live_toggle:{league}:{eid}:period")],
         [InlineKeyboardButton(f"{'✅' if cfg['final'] else '❌'} Endstand", callback_data=f"next_live_toggle:{league}:{eid}:final")],
         [InlineKeyboardButton(f"{'✅' if cfg.get('crunch') else '❌'} Crunch-Time (8 Min, knapp!)", callback_data=f"next_live_toggle:{league}:{eid}:crunch")],
         [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
@@ -3381,8 +3428,8 @@ def main():
         print("JobQueue:", e)
     app.add_handler(CallbackQueryHandler(on_cb))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
-    print("USA Sport Radar läuft...")
-    logger.info("✅ USA Sport Radar Bot online - V114 - Caching an, Typing an!")
+    print("✅ USA Sport Radar Bot online - V120 - Kurz-Labels!")
+    logger.warning("✅ USA Sport Radar Bot online - V116 - Clean Logs!")
     app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
 
 if __name__=="__main__": main()
