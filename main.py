@@ -1,4 +1,4 @@
-# USA Sport Radar - V147 FINAL - Hauptmenü logisch: Einstellungen + Hilfe ganz unten + Start-Text mit Hilfe!
+# USA Sport Radar - V149 FINAL - Hauptmenü logisch: Einstellungen + Hilfe ganz unten + Start-Text mit Hilfe!
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -2493,6 +2493,103 @@ async def results_league_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, lea
         _chain_add(_uid_r, _rm.message_id)
     except: pass
 
+def _live_situation_line(lg, ev):
+    # V149: ESPN-Stil! Genau wie auf dem Screenshot: „0:09 - 2nd • 1st & 10, PIT 22"!
+    # ESPN: status.displayClock + status.period + situation.downDistanceText + situation.possessionText / yardLine!
+    try:
+        _comps=ev.get("competitions") or [{}]
+        _comp=_comps[0] if _comps else {}
+        _sit=_comp.get("situation") or {}
+        _st=ev.get("status") or {}
+        # --- NFL / NCAAF: ESPN-Stil ---
+        if lg in ("NFL","NCAAF"):
+            _clock=_st.get("displayClock") or ""
+            _per=_st.get("period")
+            # Quarter als „1st / 2nd / 3rd / 4th / OT"!
+            _per_s=""
+            try:
+                _p=int(_per)
+                _per_s={1:"1st",2:"2nd",3:"3rd",4:"4th",5:"OT"}.get(_p, f"Q{_p}")
+            except Exception:
+                _per_s=str(_per or "")
+            _clock_part=""
+            if _clock and _per_s: _clock_part=f"{_clock} - {_per_s}"
+            elif _clock: _clock_part=_clock
+            elif _per_s: _clock_part=_per_s
+            # Down & Distance + Feldposition: ESPN liefert downDistanceText („1st & 10") + possessionText („PIT 22") / yardLine!
+            _dd=str(_sit.get("downDistanceText") or _sit.get("shortDownDistanceText") or "").strip()
+            if not _dd:
+                try:
+                    _d=_sit.get("down"); _dist=_sit.get("distance")
+                    if _d is not None and _dist is not None:
+                        _ord={1:"1st",2:"2nd",3:"3rd",4:"4th"}.get(int(_d), f"{_d}th")
+                        _dd=f"{_ord} & {_dist}"
+                except Exception: pass
+            # Feldposition: possessionText („PIT 22") hat Vorrang, sonst aus possession + yardLine bauen!
+            _pos=str(_sit.get("possessionText") or _sit.get("yardLineText") or "").strip()
+            if not _pos:
+                try:
+                    _poss_abbr=""
+                    _poss_id=str(_sit.get("possession") or _sit.get("possessionId") or "")
+                    for _c in (_comp.get("competitors") or []):
+                        _tid=str((_c.get("team") or {}).get("id") or "")
+                        if _tid and _tid==_poss_id:
+                            _poss_abbr=(_c.get("team") or {}).get("abbreviation") or ""
+                            break
+                    _yl=_sit.get("yardLine")
+                    if _poss_abbr and isinstance(_yl,(int,float)):
+                        _y=int(_yl)
+                        # yardLine 0-50 = eigene Seite, 51-99 = gegnerische Seite (aus Sicht des Ballbesitzers)!
+                        # ESPN: yardLine = Yards von eigener Endzone -> „PIT 22" = PIT an eigener 22!
+                        if 0 <= _y <= 50: _pos=f"{_poss_abbr} {_y}"
+                        elif 50 < _y < 100: _pos=f"{_poss_abbr} {100-_y}"
+                    elif _poss_abbr and isinstance(_yl,str) and _yl.strip():
+                        _pos=_yl.strip()
+                except Exception: pass
+            _parts=[]
+            if _clock_part: _parts.append(f"⏱️ {_clock_part}")
+            if _dd and _pos: _parts.append(f"{_dd}, {_pos}")
+            elif _dd: _parts.append(_dd)
+            elif _pos: _parts.append(_pos)
+            if _parts: return " • ".join(_parts)
+            return ""
+        # --- NBA: Ballbesitz ---
+        if lg=="NBA":
+            try:
+                _poss_id=str(_sit.get("possession") or "")
+                for _c in (_comp.get("competitors") or []):
+                    if str((_c.get("team") or {}).get("id") or "")==_poss_id and _poss_id:
+                        _ab=(_c.get("team") or {}).get("abbreviation") or ""
+                        if _ab: return f"🏀 Ball: {_ab}"
+            except Exception: pass
+            return ""
+        if lg=="NHL":
+            try:
+                if _sit.get("powerPlay"):
+                    _poss_id=str(_sit.get("possession") or "")
+                    _ab=""
+                    for _c in (_comp.get("competitors") or []):
+                        if str((_c.get("team") or {}).get("id") or "")==_poss_id and _poss_id:
+                            _ab=(_c.get("team") or {}).get("abbreviation") or ""
+                    return f"🏒 Power Play: {_ab or '—'}"
+            except Exception: pass
+            return ""
+        if lg=="MLB":
+            _outs=_sit.get("outs"); _balls=_sit.get("balls"); _strikes=_sit.get("strikes")
+            _bases=[]
+            if _sit.get("onFirst"): _bases.append("1st")
+            if _sit.get("onSecond"): _bases.append("2nd")
+            if _sit.get("onThird"): _bases.append("3rd")
+            _p=[]
+            if _outs is not None: _p.append(f"{_outs} Out{'s' if _outs!=1 else ''}")
+            if _balls is not None and _strikes is not None: _p.append(f"Count {_balls}-{_strikes}")
+            if _bases: _p.append("Runner auf " + " & ".join(_bases))
+            if _p: return "⚾ " + " • ".join(_p)
+            return ""
+        return ""
+    except Exception:
+        return ""
+
 async def live_stats_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # V147: Live-Stats Button aus Live-Ansicht!
     target=update.message or update.callback_query.message
@@ -2510,7 +2607,13 @@ async def live_stats_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     lines.append("\nTippe die Zahl ein (z.B. 1) oder tippe auf das Spiel!")
     ctx.user_data["await_live_stats_pick"]=True
     rows.append([InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")])
-    await target.reply_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(rows))
+    # V148: Bei Button-Klick bearbeiten, nicht neue Nachricht!
+    _kb_pick=InlineKeyboardMarkup(rows)
+    _txt_pick="\n".join(lines)
+    if update.callback_query:
+        await _cb_edit(update, _txt_pick, _kb_pick)
+    else:
+        await target.reply_text(_txt_pick, reply_markup=_kb_pick)
 
 async def live_stats_one_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, idx: int):
     target=update.message or update.callback_query.message
@@ -2521,10 +2624,34 @@ async def live_stats_one_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, idx
         await target.reply_text("Spiel nicht mehr gefunden.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")]])); return
     lg,eid,ev=_live[idx]
     _txt=get_live_stats_text(eid, lg)
+    _kb=InlineKeyboardMarkup([[InlineKeyboardButton("🔁 Aktualisieren", callback_data=f"live_stats_one:{idx}")],[InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")]])
     if not _txt:
-        await target.reply_text(f"📊 Live-Stats - {game_line(ev, lg, show_broadcast=True)}\n\nGrade keine Live-Stats verfügbar - ESPN liefert sie erst nach dem nächsten Drive! Versuch's in 2 Min nochmal! ⏳", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📊 Nochmal versuchen", callback_data=f"live_stats_one:{idx}")],[InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")]])); return
-    _kb=InlineKeyboardMarkup([[InlineKeyboardButton("📊 Nochmal / Aktualisieren", callback_data=f"live_stats_one:{idx}")],[InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")]])
-    await target.reply_text(_txt, reply_markup=_kb)
+        _msg=f"📊 Live-Stats - {game_line(ev, lg, show_broadcast=True)}\n\nGrade keine Live-Stats verfügbar - ESPN liefert sie erst nach dem nächsten Drive! Versuch's in 2 Min nochmal! ⏳"
+        # V148: Bei Button-Klick Nachricht bearbeiten, nicht neue schicken!
+        if update.callback_query:
+            await _cb_edit(update, _msg, _kb)
+        else:
+            await target.reply_text(_msg, reply_markup=_kb)
+        return
+    # V148: Frisches Event für Situation (Down & Distance, Feldposition) - gespeichertes ev ist alt!
+    try:
+        _fresh=None
+        for _ev2 in espn_scoreboard(lg):
+            if str(_ev2.get("id",""))==str(eid):
+                _fresh=_ev2; break
+        if _fresh is not None: ev=_fresh
+    except Exception: pass
+    _sit_line=_live_situation_line(lg, ev)
+    if _sit_line:
+        # Nach der ersten Zeile (Titel) einfügen: „Live-Stats: ...\nSituation\nRest"
+        _parts=_txt.split("\n", 1)
+        if len(_parts)==2: _txt=_parts[0] + "\n" + _sit_line + "\n" + _parts[1]
+        else: _txt=_txt + "\n" + _sit_line
+    # V148: Bei Button-Klick BEARBEITEN (Button lädt kurz, gleiche Nachricht aktualisiert sich!), bei getippter Zahl neue Nachricht!
+    if update.callback_query:
+        await _cb_edit(update, _txt, _kb)
+    else:
+        await target.reply_text(_txt, reply_markup=_kb)
 
 async def live_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     target = update.message or update.callback_query.message
