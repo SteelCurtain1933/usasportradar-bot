@@ -1,4 +1,4 @@
-# USA Sport Radar - V140 FINAL - Hauptmenü logisch: Einstellungen + Hilfe ganz unten + Start-Text mit Hilfe!
+# USA Sport Radar - V143 FINAL - Hauptmenü logisch: Einstellungen + Hilfe ganz unten + Start-Text mit Hilfe!
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -1377,6 +1377,51 @@ def _nhl_standings():
         return out
     except Exception:
         return {}
+
+_CFBD_CACHE={"ts":0,"data":None}
+def _cfbd_records():
+    # V141: CollegeFootballData = echte Gesamt-Records für ALLE NCAAF-Teams!
+    # https://api.collegefootballdata.com/records?year=2026 -> [{team, conference, total:{wins,losses}, conferenceGames:{wins,losses}}]
+    # Key: CFBD_API_KEY auf Render (wie BOT_TOKEN). Ohne Key wird es trotzdem probiert!
+    import time as _t
+    try:
+        if _CFBD_CACHE["data"] is not None and (_t.time()-_CFBD_CACHE["ts"])<1800:
+            return _CFBD_CACHE["data"]
+        try: sy=_season_year("NCAAF")
+        except: sy=2026
+        headers={"User-Agent":"USA-Sport-Radar/1.0"}
+        _key=os.getenv("CFBD_API_KEY") or ""
+        if _key: headers["Authorization"]=f"Bearer {_key}"
+        r=requests.get("https://api.collegefootballdata.com/records",params={"year":sy},headers=headers,timeout=12)
+        if r.status_code!=200:
+            return {}
+        d=r.json() or []
+        out={}
+        for e in d:
+            team=str(e.get("team","") or "").strip()
+            tot=e.get("total") or {}
+            try: W=int(tot.get("wins",0) or 0); L=int(tot.get("losses",0) or 0)
+            except: continue
+            if not team or W+L==0: continue
+            out[team.lower()]=(W,L)
+            # Auch Kurzformen: "Pittsburgh" -> Pitt, "Navy" bleibt, Abkürzungen via team-Namen
+            for w in team.split():
+                if w.lower() not in out: out[w.lower()]=(W,L)
+        _CFBD_CACHE["data"]=out; _CFBD_CACHE["ts"]=_t.time()
+        return out
+    except: return {}
+def _cfbd_overall_for(team_full, cfbd=None):
+    try:
+        if cfbd is None: cfbd=_cfbd_records()
+        if not cfbd: return None
+        low=(team_full or "").lower().strip()
+        if low in cfbd: return cfbd[low]
+        # "Pitt" -> "Pittsburgh", "Navy" -> "Navy", "Texas" -> "Texas"
+        for k,v in cfbd.items():
+            if low in k or k in low: return v
+        return None
+    except: return None
+
 def espn_standings(league):
     # V65: NHL zuerst über offizielle NHL-API!
     if league=="NHL":
@@ -1389,8 +1434,28 @@ def espn_standings(league):
     raw=_espn_standings_raw(league)
     if league!="NCAAF" or not raw:
         return raw
-    # V140: NCAAF = IMMER Scoreboard-Gesamt-Record! Raw ist GEMISCHT (Miami Overall, Syracuse Conference)!
-    # Deswegen: NIE raw direkt zurück, IMMER nachzählen!
+    # V141: NCAAF = CFBD ZUERST (echte Gesamt-Records für ALLE!), dann Scoreboard, dann raw!
+    try:
+        cfbd=_cfbd_records()
+        if cfbd:
+            fixed={}
+            for gname, rows in raw.items():
+                nrows=[]
+                for (disp, short, abbr, W, L, T, streak) in rows:
+                    _hit=_cfbd_overall_for(disp, cfbd) or _cfbd_overall_for(short, cfbd) or _cfbd_overall_for(abbr, cfbd)
+                    if _hit:
+                        nrows.append((disp, short, abbr, _hit[0], _hit[1], T, streak))
+                    else:
+                        nrows.append((disp, short, abbr, W, L, T, streak))
+                def _pct2(x):
+                    tot=x[3]+x[4]
+                    return (x[3]/tot if tot else 0, x[3])
+                nrows.sort(key=lambda x: _pct2(x), reverse=True)
+                fixed[gname]=nrows
+            return fixed
+    except Exception:
+        pass
+    # Fallback: Scoreboard-Nachzählen
     try:
         rec=_ncaaf_records_from_scoreboard()
         if rec:
@@ -1406,10 +1471,10 @@ def espn_standings(league):
                         nrows.append((disp, short, abbr, _hit[0], _hit[1], T, streak))
                     else:
                         nrows.append((disp, short, abbr, W, L, T, streak))
-                def _pct2(x):
+                def _pct2b(x):
                     tot=x[3]+x[4]
                     return (x[3]/tot if tot else 0, x[3])
-                nrows.sort(key=lambda x: _pct2(x), reverse=True)
+                nrows.sort(key=lambda x: _pct2b(x), reverse=True)
                 fixed[gname]=nrows
             return fixed
     except Exception:
@@ -1854,17 +1919,18 @@ async def tables_top25_cmd(update, ctx, league: str, divs):
 
 
 def _ncaaf_team_overall(team_full):
-    # V140: Gesamt-Record aus Scoreboard-Records (gleiche Quelle wie Tabelle!) - Schedule hat Navy 3-6 geliefert, falsch!
+    # V141: CFBD zuerst (Navy 8-2, nicht 0-1 / 3-6!), dann Scoreboard, nie Schedule!
     try:
+        _c=_cfbd_overall_for(team_full)
+        if _c: return _c
         rec=_ncaaf_records_from_scoreboard()
-        if not rec: return None
-        low=(team_full or "").lower()
-        for k,v in rec.items():
-            if low in k.lower() or k.lower() in low:
-                if v[0]+v[1]>0: return (v[0],v[1])
+        if rec:
+            low=(team_full or "").lower()
+            for k,v in rec.items():
+                if low in k.lower() or k.lower() in low:
+                    if v[0]+v[1]>0: return (v[0],v[1])
         return None
     except: return None
-
 async def tables_mine_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     target = update.message or update.callback_query.message
     user = update.effective_user or (update.callback_query.from_user if update.callback_query else None)
@@ -1957,8 +2023,12 @@ async def next_mine_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     today=_date.today()
     all_events=[]  # (datum, league, ev, fav_anzeige)
     seen_ids=set()
+    # V143: AUCH GESTERN suchen! SNF 02:20 DE-Zeit = 15.11. USA-Zeit! Bot ab 16.11. DE hätte Bengals sonst verpasst!
+    # Nur Spiele, die wirklich noch nicht angefangen / noch nicht fertig sind (dt >= jetzt - 3h, sonst alte Finals von gestern)!
+    from datetime import datetime as _dt_now
+    _now_berlin=_dt_now.now(BERLIN)
     for league in LEAGUES:
-        for offset in range(0, 15):
+        for offset in range(-1, 15):
             d = today + timedelta(days=offset)
             ds = d.strftime("%Y%m%d")
             for ev in espn_scoreboard(league, dates=ds):
@@ -1968,6 +2038,13 @@ async def next_mine_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 # Nur zukünftige / heutige Spiele, keine fertigen
                 state = ev.get("status",{}).get("type",{}).get("state","")
                 if state=="post": continue
+                # V143: Gestern-Spiele nur, wenn Anpfiff noch nicht 3h+ her ist (sonst alte Spiele von gestern)!
+                try:
+                    _, _dt_ev = fmt_dt(ev.get("date",""))
+                    if _dt_ev and _dt_ev < _now_berlin - timedelta(hours=3) and state!="in":
+                        continue
+                except Exception:
+                    pass
                 teams,_ = event_teams(ev)
                 team_text = " ".join([x[0] for x in teams]).lower()
                 for disp, lg, terms, fullname in fav_list:
@@ -2039,7 +2116,26 @@ async def next_mine_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         wd = ["Mo","Di","Mi","Do","Fr","Sa","So"][dt0.weekday()] if dt0 else ""
         lines.append(f"\n**{wd} {day_key.strftime('%d.%m.')}**")
         for dt, league, ev, disp in items:
-            lines.append(f"⭐ {game_line(ev, league, show_broadcast=True)}")
+            # V142: ⭐ MUSS vor DEINEM Team stehen, nicht immer vor Auswärtsteam!
+            # Blues @ Penguins -> Penguins ist Favorit -> "Blues @ ⭐ Penguins" (vorher falsch: "⭐ Blues @ Penguins")!
+            _line=game_line(ev, league, show_broadcast=True)
+            try:
+                _fav_name=disp.split(" (")[0].strip().lower()
+                _teams2,_c2=event_teams(ev)
+                _away_full=""; _home_full=""
+                for _t in _teams2:
+                    _nm=str(_t[0] or "")
+                    _ha=str(_t[1] or "").lower() if len(_t)>1 else ""
+                    if _ha=="home": _home_full=_nm.lower()
+                    elif _ha=="away": _away_full=_nm.lower()
+                if _fav_name and _fav_name in _home_full and " @ " in _line:
+                    _a,_b=_line.split(" @ ",1)
+                    _line=f"{_a} @ ⭐ {_b}"
+                else:
+                    _line=f"⭐ {_line}"
+            except Exception:
+                _line=f"⭐ {_line}"
+            lines.append(_line)
     if not shown:
         lines.append("Keine kommenden Spiele für deine Favoriten gefunden - auch keine Preseason / Spring Training Daten bei ESPN.")
         lines.append("Aktueller Meister:")
