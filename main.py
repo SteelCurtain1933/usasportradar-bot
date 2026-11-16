@@ -1,4 +1,4 @@
-# USA Sport Radar - V143 FINAL - Hauptmenü logisch: Einstellungen + Hilfe ganz unten + Start-Text mit Hilfe!
+# USA Sport Radar - V145 FINAL - Hauptmenü logisch: Einstellungen + Hilfe ganz unten + Start-Text mit Hilfe!
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -1300,20 +1300,26 @@ def _espn_standings_raw(league):
     return {}
 
 def _ncaaf_records_from_scoreboard():
-    # V139 FIX: Gesamt-Record aus Scoreboard, Wochen 1-15, Season-Param dazu!
-    # Alter Bug: comp.status.type.completed gibt es bei ESPN nicht -> ALLE Spiele wurden übersprungen!
-    # Jetzt: ev.status.type.state == "post" = fertig!
+    # V144: Datums-Bereiche statt Week-Nummern! Week-Param ist bei NCAAF unzuverlässig (zählte nur 1-2 Spiele)!
+    # Saison 29.08. - 15.11. in 30-Tage-Chunks, Scoreboard mit dates=YYYYMMDD-YYYYMMDD!
     rec={}
     try: sy=_season_year("NCAAF")
     except: sy=2026
-    for wk in range(1, 17):
+    from datetime import date as _date, timedelta as _td
+    _start=_date(sy,8,29); _end=_date(sy,11,16)
+    _chunks=[]
+    _cur=_start
+    while _cur<=_end:
+        _nxt=min(_cur+_td(days=29), _end)
+        _chunks.append((_cur,_nxt)); _cur=_nxt+_td(days=1)
+    for _s,_e in _chunks:
         try:
-            u=f"https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?week={wk}&season={sy}&seasontype=2&limit=200"
-            r=requests.get(u, timeout=12, headers={"User-Agent":"Mozilla/5.0"})
+            rng=f"{_s.strftime('%Y%m%d')}-{_e.strftime('%Y%m%d')}"
+            u=f"https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?dates={rng}&limit=500"
+            r=requests.get(u, timeout=15, headers={"User-Agent":"Mozilla/5.0"})
             if r.status_code!=200: continue
             j=r.json()
             for ev in j.get("events", []) or []:
-                # V139: Status steht auf EVENT-Ebene, nicht Competition!
                 _st=((ev.get("status") or {}).get("type") or {}).get("state","")
                 _comp=((ev.get("status") or {}).get("type") or {}).get("completed", False)
                 if _st!="post" and _comp is not True: continue
@@ -1385,7 +1391,7 @@ def _cfbd_records():
     # Key: CFBD_API_KEY auf Render (wie BOT_TOKEN). Ohne Key wird es trotzdem probiert!
     import time as _t
     try:
-        if _CFBD_CACHE["data"] is not None and (_t.time()-_CFBD_CACHE["ts"])<1800:
+        if _CFBD_CACHE["data"] is not None and (_t.time()-_CFBD_CACHE["ts"])<21600:  # V145: 6h Cache! Free Tier 1000/Monat, Records ändern sich nur samstags!
             return _CFBD_CACHE["data"]
         try: sy=_season_year("NCAAF")
         except: sy=2026
@@ -1404,21 +1410,26 @@ def _cfbd_records():
             except: continue
             if not team or W+L==0: continue
             out[team.lower()]=(W,L)
-            # Auch Kurzformen: "Pittsburgh" -> Pitt, "Navy" bleibt, Abkürzungen via team-Namen
-            for w in team.split():
-                if w.lower() not in out: out[w.lower()]=(W,L)
+            # V144: KEIN Wort-Splitting! "Texas" darf NICHT auf "Texas A&M" zeigen!
         _CFBD_CACHE["data"]=out; _CFBD_CACHE["ts"]=_t.time()
         return out
     except: return {}
 def _cfbd_overall_for(team_full, cfbd=None):
+    # V144: EXAKTES Matching! "Pitt" -> "Pittsburgh", "Texas" != "Texas A&M"! Substring war der Bug (Texas -> A&M 2-6)!
+    _ALIAS={"pitt":"pittsburgh","navy":"navy","texas":"texas","texas a&m":"texas a&m","syracuse":"syracuse","clemson":"clemson","miami":"miami","louisville":"louisville","duke":"duke","virginia":"virginia","north carolina":"north carolina","wake forest":"wake forest","smu":"smu","florida state":"florida state","boston college":"boston college","georgia tech":"georgia tech","california":"california","nc state":"nc state","virginia tech":"virginia tech","stanford":"stanford","memphis":"memphis","army":"army","tulane":"tulane","temple":"temple","tulsa":"tulsa","rice":"rice","charlotte":"charlotte","east carolina":"east carolina","south florida":"south florida","north texas":"north texas","utsa":"utsa","uab":"uab","fau":"fau"}
     try:
         if cfbd is None: cfbd=_cfbd_records()
         if not cfbd: return None
         low=(team_full or "").lower().strip()
+        low=_ALIAS.get(low, low)
+        # Exakt: "pittsburgh" in cfbd? CFBD-Keys sind Team-Namen lower, z.B. "pittsburgh", "texas", "texas a&m"
         if low in cfbd: return cfbd[low]
-        # "Pitt" -> "Pittsburgh", "Navy" -> "Navy", "Texas" -> "Texas"
+        # Vollname: "pittsburgh panthers" -> "pittsburgh"
         for k,v in cfbd.items():
-            if low in k or k in low: return v
+            if k==low or low==k: return v
+        # Letzter Fallback: erstes Wort exakt, z.B. "pittsburgh panthers" -> "pittsburgh"
+        _first=low.split()[0] if low.split() else low
+        if _first in cfbd: return cfbd[_first]
         return None
     except: return None
 
@@ -1941,6 +1952,12 @@ async def tables_mine_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try: _load2 = await target.reply_text("📊 Ich hole deine Tabellen... einen Moment ⏳")
     except Exception: pass
     lines=["📊 Deine Teams - Tabellen\n⭐ = Dein Team\n"]
+    # V144: Wenn CFBD-Key fehlt, zeigt ESPN bei NCAAF nur Conference! Warnung anzeigen!
+    try:
+        import os as _os
+        if not _os.getenv("CFBD_API_KEY") and not _cfbd_records():
+            lines.append("⚠️ NCAAF: Ohne CFBD-Key zeigt ESPN nur Conference! Key in Render als CFBD_API_KEY eintragen!\n")
+    except Exception: pass
     # Für jeden Favorit: seine Division finden und zeigen
     for f in favs:
         name = f.split(" (")[0].strip()
