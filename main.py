@@ -1,4 +1,4 @@
-# USA Sport Radar - V159 FINAL - Experten-Stats Fix + YouTube Highlights & Pressekonferenz bei Final Stats!
+# USA Sport Radar - V160 FINAL - Experten-Stats richtig + Nachrichten-loeschen raus + Fav-Bestaetigung Edit + YouTube Highlights & Pressekonferenz bei Final Stats!
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -863,7 +863,7 @@ Spielen 2 deiner Favoriten gleichzeitig, kriegst du 1 Nachricht für beide - mit
 Auswahl = Fenster ändert sich! Detail = neues Fenster! ✖️ = Fenster weg!
 
 🧹 Live
-Nach Spielende fragt der Bot, ob er die Live-Nachrichten löschen soll!
+Nach Spielende: Fenster schließen reicht!
 
 Einfach auf die Knöpfe drücken - kein @, kein Befehl nötig."""
 
@@ -4110,7 +4110,6 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     _del_rows.append([InlineKeyboardButton("🧠 Experten-Stats", callback_data=f"expert_stats:{_eid2}:{_lg2}")])
                 # V158: YouTube Highlights + Pressekonferenz - du entscheidest selbst!
                 _del_rows.extend(_yt_buttons_for_game(_eid2, _lg2, _txt2))
-                _del_rows.append([InlineKeyboardButton("🗑️ Nachrichten löschen", callback_data=f"live_clean_yes:{_eid2}")])
                 _del_rows.append([InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")])
                 _del_kb = InlineKeyboardMarkup(_del_rows)
                 await update.message.reply_text(_txt2, reply_markup=_del_kb)
@@ -4136,7 +4135,6 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 if _lg3 == "NFL":
                     _rows3.append([InlineKeyboardButton("🧠 Experten-Stats", callback_data=f"expert_stats:{_eid3}:{_lg3}")])
                 _rows3.extend(_yt_buttons_for_game(_eid3, _lg3, _txt3))
-                _rows3.append([InlineKeyboardButton("🗑️ Nachrichten löschen", callback_data=f"live_clean_yes:{_eid3}")])
                 _rows3.append([InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")])
                 await update.message.reply_text(_txt3, reply_markup=InlineKeyboardMarkup(_rows3))
             else:
@@ -4225,7 +4223,7 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # V134: Hilfe in Kategorien - nicht mehr ein Batzen Text!
 HELP_CATS = {
  "grund": "❓ Hilfe - Grundlagen\n\n**Gast @ Heim**\nErstes Team = Auswärts, zweites = Heim!\nZ.B. Vikings @ Packers = Vikings spielt bei den Packers!\n\n**⭐ = Dein Team**\nDas ist einer deiner Favoriten!\n\n**📺 = US-Sender**\nSender in den USA (CBS / FOX / ESPN...). Deutsche Sender zeigen wir nicht, Rechte ändern sich ständig!\n\n**📍 / 🏟️ = Stadion / Ort**\nWo das Spiel stattfindet!",
- "spiele": "❓ Hilfe - Spiele / Live / Next Games\n\n**🔴 Live**\nLäuft gerade! Nach Spielende fragt der Bot, ob er Live-Nachrichten löschen soll!\n\n**⏭️ Next Games**\nHeute / Morgen = alle Spiele! Nur Favoriten = nur deine Teams!\nDa kannst du auch 🔴 Live für ein Spiel anmachen (z.B. München)!\n\n**✅ Ergebnisse**\nWie die letzten Spiele ausgingen, mit Final Stats!",
+ "spiele": "❓ Hilfe - Spiele / Live / Next Games\n\n**🔴 Live**\nLäuft gerade! Nach Spielende: Fenster schließen reicht!\n\n**⏭️ Next Games**\nHeute / Morgen = alle Spiele! Nur Favoriten = nur deine Teams!\nDa kannst du auch 🔴 Live für ein Spiel anmachen (z.B. München)!\n\n**✅ Ergebnisse**\nWie die letzten Spiele ausgingen, mit Final Stats!",
  "tabellen": "❓ Hilfe - Tabellen / Top 10\n\n**📊 Tabellen**\nW-L-OTL = Siege - Niederlagen - Overtime-Niederlagen.\nNHL: Sieg = 2 Punkte, Overtime-Niederlage = 1 Punkt!\n\n**🏆 Top 10**\nTippe Zahl 1-10 für Rating + Warum so bewertet!\nRating (z.B. ⭐ 9,9/10) steht nur im Detail!",
  "benach": "❓ Hilfe - Benachrichtigungen\n\nIn ⚙️ Einstellungen → 🔔 Benachrichtigungen:\n**⏰ Reminder** - 3h / 2h / 1h / 30 Min / Aus. 2 Favoriten gleichzeitig = 1 Nachricht für beide, mit Sender!\n**🔴 Live-Scores** - Nur für Favoriten, pro Team: Jeder Score / Spielstart + Quarter-Wechsel / Endstand / Crunch-Time / Spiel-Breaking!\nAlles aus = kein Spam!",
  "news": "❓ Hilfe - News / Verletzungen / Breaking\n\n**📰 News** - Nur deine Favoriten! Nur Headline + Link!\nQuelle: ESPN! Artikel sind auf Englisch!\nKein Push-Spam - du holst dir News, wenn du willst!\n\n**🌍 Liga-Breaking** - In News ganz oben als Toggle! Nur große Sachen: International Series, Schedule, Super Bowl, Playoffs, Trade Deadline! Push, aber nur 1x!\n\n**🚨 Spiel-Breaking** - Bei Favorit / Live-Spiel: Nur OUT / RULED OUT / Ejection! Nur 1x pro Spieler!\n\n**🏥 Verletzungen** - Daten von Sleeper (NFL) / ESPN (NBA, NHL, MLB). Offizielle Team-Apps können bis zu 15 Min schneller sein - Bot holt alle 15 Min neu!",
@@ -4235,7 +4233,7 @@ HELP_SHORT = {
     "top10": "❓ Hilfe - Top 10\n\nTippe eine Zahl 1-10 in den Chat für Rating + Warum!\nRating steht nur im Detail, nicht in der Übersicht!",
     "tables": "❓ Hilfe - Tabellen\n\nW-L-OTL = Siege - Niederlagen - Overtime-Niederlagen.\nBei NHL: Sieg = 2 Punkte, Overtime-Niederlage = 1 Punkt!",
     "next": "❓ Hilfe - Next Games\n\nHeute / Morgen = alle Spiele!\nNur Favoriten = nur deine Teams!",
-    "live": "❓ Hilfe - Live\n\nLäuft gerade!\nNach Spielende fragt der Bot, ob er die Live-Nachrichten löschen soll!",
+    "live": "❓ Hilfe - Live\n\nLäuft gerade!\nNach Spielende: Fenster schließen reicht!",
     "results": "❓ Hilfe - Ergebnisse\n\nWelche Liga? Dann siehst du, wie die letzten Spiele ausgingen!",
     "settings": "❓ Hilfe - Einstellungen\n\nHier: Favoriten + Benachrichtigungen!\nReminder + Live-Scores sind unter Benachrichtigungen!",
     "notif": "❓ Hilfe - Benachrichtigungen\n\nReminder + Live-Scores!\nLive nur für Favoriten, pro Team: Jeder Score / Perioden-Ende + Weiter / Endstand!",
@@ -4286,8 +4284,8 @@ def get_expert_stats_text(eid, lg):
                     except: return 0
             return 0
         def _pick(sd, keys):
-            # V159-FIX: NUR exakter Match! Vorher: Teilstring - 'passing' in 'passing td' -> hat Passing-Yards (120) als TDs zurueckgegeben!
-            # Jetzt: normalisiert (ohne Leerzeichen/_/-//) vergleichen, kein Teilstring mehr!
+            # V160-HYBRID: Erst exakt, dann Teilstring NUR wenn Suchbegriff IN Kandidat steckt (nicht umgekehrt!)
+            # V159-Fehler war: 'passing' in 'passing td' -> 120 als TD. Jetzt: 'passing' darf 'passing touchdowns' NICHT treffen, weil Kandidat kuerzer ist!
             def _norm(s):
                 return str(s).lower().replace(' ', '').replace('_', '').replace('-', '').replace('/', '')
             flat = {_norm(k): v for k, v in (sd or {}).items()}
@@ -4295,6 +4293,12 @@ def get_expert_stats_text(eid, lg):
                 _nk = _norm(_k)
                 if _nk in flat and str(flat[_nk]).strip() not in ('', '-', 'None'):
                     return str(flat[_nk]).strip()
+            # Fallback: Suchbegriff muss IN Kandidat stecken, Kandidat muss mind. so lang sein wie Suchbegriff - verhindert 'passing' -> 'passing touchdowns'
+            for _k in keys:
+                _nk = _norm(_k)
+                for _kk, _vv in flat.items():
+                    if _nk and _nk in _kk and len(_kk) >= len(_nk) and str(_vv).strip() not in ('', '-', 'None'):
+                        return str(_vv).strip()
             return ''
         def _num(v):
             try: return float(str(v).replace(",", "").strip())
@@ -4356,6 +4360,32 @@ def get_expert_stats_text(eid, lg):
                         break
                 if _y is not None and _y >= 20: _info[_dnm]["expl"] += 1
         sca, scb = _score_for(a), _score_for(b)
+        # V160: TDs aus Scoring-Plays! ESPN Team-Stats haben KEINE Passing/Rushing-TDs (darum fehlten sie in V159!)
+        # Verifiziert: PIT 2 Pass-TDs (Rodgers), CIN 4 Pass-TDs (Burrow) + je 1 Rush-TD? Aus Scoring-Plays zaehlen!
+        _td_counts = {a: {'pass': 0, 'rush': 0, 'total': 0}, b: {'pass': 0, 'rush': 0, 'total': 0}}
+        try:
+            _sp = data.get('scoringPlays', []) or []
+            for _play in _sp:
+                if not isinstance(_play, dict): continue
+                _pt = _play.get('team', {}) or {}
+                _pabbr = _pt.get('abbreviation', '') or ''
+                _pname = abbr_to_name.get(_pabbr, '')
+                if _pname not in _td_counts:
+                    _dn = _pt.get('displayName', '') or _pt.get('shortDisplayName', '') or ''
+                    for _cand in (a, b):
+                        if _dn and (_dn in _cand or _cand in _dn): _pname = _cand; break
+                if _pname not in _td_counts: continue
+                _txt = str(_play.get('type', {})).lower() + ' ' + str(_play.get('text', '') or '').lower() + ' ' + str(_play.get('play', {})).lower()
+                _is_td = 'touchdown' in _txt or 'td' in _txt.split()
+                if not _is_td: continue
+                _td_counts[_pname]['total'] += 1
+                if 'pass' in _txt: _td_counts[_pname]['pass'] += 1
+                elif 'rush' in _txt or 'run' in _txt: _td_counts[_pname]['rush'] += 1
+                else:
+                    # Ohne Typ: aus Play-Text raten - 'pass' vs 'rush' steht meist drin, sonst als total lassen
+                    pass
+        except Exception:
+            pass
         lines = [f"\U0001f9e0 Experten-Stats: {a} {int(sca)} @ {b} {int(scb)}", f"{abbrs.get(a,'') or a} - {abbrs.get(b,'') or b}"]
         # Helper: Wert fuer beide Teams holen
         def _both(fn):
@@ -4368,12 +4398,17 @@ def get_expert_stats_text(eid, lg):
         lines.append("--- Offense ---")
         # Touchdowns
         def _td(sd):
-            v = _pick(sd, ["totaltouchdowns", "total touchdowns", "touchdowns"])
-            if v and _int(v) is not None: return str(_int(v))
-            pt = _int(_pick(sd, ["passing touchdowns", "passingTouchdowns"]))
-            rt = _int(_pick(sd, ["rushing touchdowns", "rushingTouchdowns"]))
+            v = _pick(sd, ['totaltouchdowns', 'total touchdowns', 'touchdowns'])
+            if v and _int(v) is not None and int(_int(v)) > 0: return str(_int(v))
+            pt = _int(_pick(sd, ['passing touchdowns', 'passingTouchdowns']))
+            rt = _int(_pick(sd, ['rushing touchdowns', 'rushingTouchdowns']))
             if pt is not None or rt is not None: return str((pt or 0) + (rt or 0))
-            return ""
+            # V160-Fallback: Scoring-Plays! ESPN Team-Stats haben keine TDs!
+            _nm = a if sd is sa else b
+            _c = _td_counts.get(_nm, {})
+            if _c.get('total'): return str(_c['total'])
+            if _c.get('pass') or _c.get('rush'): return str((_c.get('pass') or 0) + (_c.get('rush') or 0))
+            return ''
         va, vb = _both(_td)
         if va or vb: lines.append(f"Touchdowns: {_fmt_pair(va, vb)}")
         # Field Goals
@@ -4447,24 +4482,33 @@ def get_expert_stats_text(eid, lg):
         def _sack_yards(sd):
             v = _pick(sd, ['sacks', 'sack'])
             _, y = _split_pair(v) if v else (None, None)
-            return y or 0
+            if y is not None: return y
+            # Fallback: separate Sack-Yards-Stat (ESPN liefert Sacks mal als '3', mal als '3-25')
+            y2 = _pick(sd, ['sackyards', 'sack yards', 'sacksyardslost', 'yardslost'])
+            try: return int(float(str(y2).strip())) if y2 else 0
+            except: return 0
         def _sack_count(sd):
             v = _pick(sd, ['sacks', 'sack'])
             x, _ = _split_pair(v) if v else (None, None)
             return x or 0
-        # V159: Gross = Net + Sacks ALLOWED = gegnerische Sacks! Eigene Sacks sind Defense-Sacks, nicht kassierte!
+        # V160-KORREKTUR: ESPN 'Sacks' = KASSIERTE Sacks (eigene O-Line)! Covers: PIT 3-25, CIN 1-3 -> Gross = Net + EIGENE Sack-Yards!
+        # V159 hatte versehentlich Gegner-Sacks genommen -> Gross 125-426 war FALSCH, richtig ist 145-409!
         va_n, vb_n = _both(_net)
         try:
             _na = _num(va_n); _nb = _num(vb_n)
-            va_g = str(int(_na + _sack_yards(sb))) if _na is not None else ''
-            vb_g = str(int(_nb + _sack_yards(sa))) if _nb is not None else ''
+            va_g = str(int(_na + _sack_yards(sa))) if _na is not None else ''
+            vb_g = str(int(_nb + _sack_yards(sb))) if _nb is not None else ''
         except:
             va_g, vb_g = '', ''
         if va_n or vb_n: lines.append(f'Net Passing Yards: {_fmt_pair(va_n, vb_n)}')
         if va_g or vb_g: lines.append(f'Gross Passing Yards: {_fmt_pair(va_g, vb_g)}')
         def _ptd(sd):
-            v = _pick(sd, ["passing touchdowns", "passingtouchdowns", "passing td"])
-            return str(_int(v)) if v and _int(v) is not None else ""
+            v = _pick(sd, ['passing touchdowns', 'passingtouchdowns', 'passing td'])
+            if v and _int(v) is not None: return str(_int(v))
+            _nm = a if sd is sa else b
+            _c = _td_counts.get(_nm, {})
+            if _c.get('total'): return str(_c.get('pass', 0))
+            return ''
         va, vb = _both(_ptd)
         if va or vb: lines.append(f"Touchdowns durch Pässe: {_fmt_pair(va, vb)}")
         def _int_thrown(sd):
@@ -4472,7 +4516,7 @@ def get_expert_stats_text(eid, lg):
             return str(_int(v)) if v and _int(v) is not None else ""
         va, vb = _both(_int_thrown)
         if va or vb: lines.append(f"Geworfene Interceptions: {_fmt_pair(va, vb)}")
-        # Yards pro Versuch = Net / (Attempts + Sacks ALLOWED) - V159: Attempts aus Comp/Att, Sacks vom Gegner!
+        # Yards pro Versuch = Net / Attempts - V160: EIGENE Sacks NICHT in Nenner, sonst 3.6 statt 3.8! Verifiziert: 120/32=3.8, 406/44=9.2
         def _att_from_ca(sd):
             v = _pick(sd, ['comp/att', 'completions/attempts', 'compatt'])
             if v and '/' in str(v):
@@ -4486,12 +4530,11 @@ def get_expert_stats_text(eid, lg):
             return None
         def _ypa_pair():
             out = []
-            for _sd, _opp in ((sa, sb), (sb, sa)):
+            for _sd in (sa, sb):
                 n = _num(_net(_sd))
                 att = _att_from_ca(_sd)
-                sacks_allowed = _sack_count(_opp)
-                if n is None or att is None or (att + sacks_allowed) <= 0: out.append('')
-                else: out.append(f'{n/(att+sacks_allowed):.1f}')
+                if n is None or att is None or att <= 0: out.append('')
+                else: out.append(f'{n/att:.1f}')
             return out[0], out[1]
         va, vb = _ypa_pair()
         if va or vb: lines.append(f'Durchschn. Passing Yards pro Versuch: {_fmt_pair(va, vb)}')
@@ -4507,11 +4550,11 @@ def get_expert_stats_text(eid, lg):
             return ""
         va, vb = _both(_ca2)
         if va or vb: lines.append(f"Comp/Att: {_fmt_pair(va, vb)}")
-        # Sack Rate = Sacks ALLOWED / (Attempts + Sacks ALLOWED) - V159: Gegner-Sacks, nicht eigene!
+        # Sack Rate = EIGENE kassierte Sacks / (Attempts + EIGENE Sacks) - V160: ESPN Sacks = kassiert! PIT 3/(32+3)=9%, CIN 1/(44+1)=2%
         def _sackrate_pair():
             out = []
-            for _sd, _opp in ((sa, sb), (sb, sa)):
-                sacks_allowed = _sack_count(_opp)
+            for _sd in (sa, sb):
+                sacks_allowed = _sack_count(_sd)
                 att = _att_from_ca(_sd)
                 if att is None or (att + sacks_allowed) <= 0: out.append('')
                 else: out.append(f'{round(sacks_allowed/(att+sacks_allowed)*100)}%')
@@ -4537,8 +4580,12 @@ def get_expert_stats_text(eid, lg):
         va, vb = _both(_rfd)
         if va or vb: lines.append(f"Rushing 1st Downs: {_fmt_pair(va, vb)}")
         def _rtd(sd):
-            v = _pick(sd, ["rushing touchdowns", "rushingtouchdowns"])
-            return str(_int(v)) if v and _int(v) is not None else ""
+            v = _pick(sd, ['rushing touchdowns', 'rushingtouchdowns'])
+            if v and _int(v) is not None: return str(_int(v))
+            _nm = a if sd is sa else b
+            _c = _td_counts.get(_nm, {})
+            if _c.get('total'): return str(_c.get('rush', 0))
+            return ''
         va, vb = _both(_rtd)
         if va or vb: lines.append(f"Touchdowns durch Lauf: {_fmt_pair(va, vb)}")
         # ============ ANDERE ============
@@ -4664,7 +4711,10 @@ def get_final_stats_text(eid, lg):
                             _s = str(_v or '').strip()
                             if not _s: return _s
                             if '/' in _s or '-' in _s: return _v135_slash(_s)
-                            _y = _pick(_sd, ['penaltyYards', 'penalty yards'])
+                            # V160: penaltyYards per EXAKTEM Match suchen (loose _pick findet 'penaltyYards' sonst nicht, wenn Key 'penaltyyards' ist!)
+                            _flat = {str(k).lower().replace(' ', '').replace('_', ''): v for k, v in (_sd or {}).items()}
+                            _y = _flat.get('penaltyyards', '') or _flat.get('penaltyyard', '') or ''
+                            if not _y: _y = _pick(_sd, ['penaltyYards', 'penalty yards'])
                             if _y and str(_y).strip() not in ('', '-'):
                                 return f'{_s}/{str(_y).strip()}'
                             return _s
@@ -4730,7 +4780,10 @@ def get_final_stats_text(eid, lg):
                             _s = str(_v or '').strip()
                             if not _s: return _s
                             if '/' in _s or '-' in _s: return _v135_slash(_s)
-                            _y = _pick(_sd, ['penaltyYards', 'penalty yards'])
+                            # V160: penaltyYards per EXAKTEM Match suchen (loose _pick findet 'penaltyYards' sonst nicht, wenn Key 'penaltyyards' ist!)
+                            _flat = {str(k).lower().replace(' ', '').replace('_', ''): v for k, v in (_sd or {}).items()}
+                            _y = _flat.get('penaltyyards', '') or _flat.get('penaltyyard', '') or ''
+                            if not _y: _y = _pick(_sd, ['penaltyYards', 'penalty yards'])
                             if _y and str(_y).strip() not in ('', '-'):
                                 return f'{_s}/{str(_y).strip()}'
                             return _s
@@ -4752,7 +4805,10 @@ def get_final_stats_text(eid, lg):
                             _s = str(_v or '').strip()
                             if not _s: return _s
                             if '/' in _s or '-' in _s: return _v135_slash(_s)
-                            _y = _pick(_sd, ['penaltyYards', 'penalty yards'])
+                            # V160: penaltyYards per EXAKTEM Match suchen (loose _pick findet 'penaltyYards' sonst nicht, wenn Key 'penaltyyards' ist!)
+                            _flat = {str(k).lower().replace(' ', '').replace('_', ''): v for k, v in (_sd or {}).items()}
+                            _y = _flat.get('penaltyyards', '') or _flat.get('penaltyyard', '') or ''
+                            if not _y: _y = _pick(_sd, ['penaltyYards', 'penalty yards'])
                             if _y and str(_y).strip() not in ('', '-'):
                                 return f'{_s}/{str(_y).strip()}'
                             return _s
@@ -4774,7 +4830,10 @@ def get_final_stats_text(eid, lg):
                             _s = str(_v or '').strip()
                             if not _s: return _s
                             if '/' in _s or '-' in _s: return _v135_slash(_s)
-                            _y = _pick(_sd, ['penaltyYards', 'penalty yards'])
+                            # V160: penaltyYards per EXAKTEM Match suchen (loose _pick findet 'penaltyYards' sonst nicht, wenn Key 'penaltyyards' ist!)
+                            _flat = {str(k).lower().replace(' ', '').replace('_', ''): v for k, v in (_sd or {}).items()}
+                            _y = _flat.get('penaltyyards', '') or _flat.get('penaltyyard', '') or ''
+                            if not _y: _y = _pick(_sd, ['penaltyYards', 'penalty yards'])
                             if _y and str(_y).strip() not in ('', '-'):
                                 return f'{_s}/{str(_y).strip()}'
                             return _s
@@ -4804,7 +4863,6 @@ async def finalstats_retry_job(context):
             if lg == "NFL":
                 _rows_retry.append([InlineKeyboardButton("🧠 Experten-Stats", callback_data=f"expert_stats:{eid}:{lg}")])
             _rows_retry.extend(_yt_buttons_for_game(eid, lg, _txt))
-            _rows_retry.append([InlineKeyboardButton("🗑️ Nachrichten löschen", callback_data=f"live_clean_yes:{eid}")])
             _fs_del_kb2 = InlineKeyboardMarkup(_rows_retry)
             await context.bot.send_message(chat_id=uid, text=_txt, reply_markup=_fs_del_kb2)
         else:
@@ -4943,7 +5001,6 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 if _lg == "NFL":
                     _fs_rows.append([InlineKeyboardButton("🧠 Experten-Stats", callback_data=f"expert_stats:{_eid}:{_lg}")])
                 _fs_rows.extend(_yt_buttons_for_game(_eid, _lg, _txt))
-                _fs_rows.append([InlineKeyboardButton("🗑️ Nachrichten löschen", callback_data=f"live_clean_yes:{_eid}")])
                 _fs_rows.append([InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")])
                 _fs_del_kb = InlineKeyboardMarkup(_fs_rows)
                 await ctx.bot.send_message(chat_id=_uid, text=_txt, reply_markup=_fs_del_kb)
@@ -4965,7 +5022,6 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if _txt:
                 try: await ctx.bot.delete_message(chat_id=_uid, message_id=_load.message_id)
                 except: pass
-                _ekb = InlineKeyboardMarkup([[InlineKeyboardButton("🗑️ Nachrichten löschen", callback_data=f"live_clean_yes:{_eid}")],[InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")]])
                 await ctx.bot.send_message(chat_id=_uid, text=_txt, reply_markup=_ekb)
             else:
                 try: await ctx.bot.edit_message_text(chat_id=_uid, message_id=_load.message_id, text="😅 Grad keine Experten-Stats da!\nESPN hat noch keine Drives für das Spiel!\nVersuch es nach dem Spiel nochmal!")
@@ -5003,7 +5059,6 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 if _lg2 == "NFL":
                     _del_rows2.append([InlineKeyboardButton("🧠 Experten-Stats", callback_data=f"expert_stats:{_eid2}:{_lg2}")])
                 _del_rows2.extend(_yt_buttons_for_game(_eid2, _lg2, _txt2))
-                _del_rows2.append([InlineKeyboardButton("🗑️ Nachrichten löschen", callback_data=f"live_clean_yes:{_eid2}")])
                 _del_rows2.append([InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")])
                 _del_kb = InlineKeyboardMarkup(_del_rows2)
                 await ctx.bot.send_message(chat_id=_uid2, text=_txt2, reply_markup=_del_kb)
@@ -5162,20 +5217,20 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         _kb=InlineKeyboardMarkup([[InlineKeyboardButton("➕ Favorit hinzufügen", callback_data="fav_add")],[InlineKeyboardButton("🗑️ Favorit entfernen", callback_data="fav_remove")],[InlineKeyboardButton("🗑️ Alle Favoriten löschen", callback_data="fav_clear")],[InlineKeyboardButton("⬅️ Zurück", callback_data="back")]])
         await q.message.reply_text("⭐ Deine Favoriten:\n" + ("\n".join([f"• {f}" for f in favs]) if favs else "Noch keine."), reply_markup=_kb)
     elif data=="fav_clear":
-        # V159: BESTAETIGUNG! Nicht sofort loeschen - sonst ist alles weg wenn man aus Versehen draufkommt!
+        # V160: KEINE Liste mehr! Nur fragen + SELBES Fenster editieren, keine neue Nachricht!
         _favs_c = favs_for(update.effective_user.id) if update.effective_user else []
         if not _favs_c:
-            await q.message.reply_text("Noch keine Favoriten zum Loeschen.", reply_markup=main_kb());
+            await _cb_edit(update, "Noch keine Favoriten zum Loeschen.", main_kb())
         else:
             _kb_c = InlineKeyboardMarkup([[InlineKeyboardButton("✅ Ja, alle loeschen!", callback_data="fav_clear_yes")],[InlineKeyboardButton("❌ Nein, behalten!", callback_data="fav_clear_no")]])
-            _list_c = "\n".join([f"• {f}" for f in _favs_c])
-            await q.message.reply_text(f"⚠️ Wirklich ALLE Favoriten loeschen?\n\n{_list_c}\n\nDas kann man NICHT rueckgaengig machen!", reply_markup=_kb_c)
+            await _cb_edit(update, "⚠️ Wirklich alle Favoriten löschen?", _kb_c)
     elif data=="fav_clear_yes":
         favs=load_favs(); favs[str(update.effective_user.id)]=[]; save_favs(favs)
-        await q.message.reply_text("🗑️ Alle Favoriten geloescht.", reply_markup=main_kb())
+        # V160: Selbes Fenster editieren, keine neue Nachricht!
+        await _cb_edit(update, "🗑️ Alle Favoriten gelöscht.", main_kb())
     elif data=="fav_clear_no":
-        _favs_n = favs_for(update.effective_user.id) if update.effective_user else []
-        await q.message.reply_text("✅ Puh, Glueck gehabt! Alle Favoriten behalten:\n" + ("\n".join([f"• {f}" for f in _favs_n]) if _favs_n else "Noch keine."), reply_markup=main_kb())
+        # V160: Selbes Fenster editieren, keine neue Nachricht, keine Liste!
+        await _cb_edit(update, "✅ Puh, Glück gehabt! Alle Favoriten behalten!", main_kb())
     elif data.startswith("fav_pick:"):
         idx=int(data.split(":")[1]); cands=ctx.user_data.get("fav_candidates",[])
         if idx < len(cands):
