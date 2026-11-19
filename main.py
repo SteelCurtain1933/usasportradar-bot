@@ -1,4 +1,4 @@
-# USA Sport Radar - V183 FINAL - CFP Pfeile mit echtem Startwert 10.11. + Naechstes Ranking-Datum
+# USA Sport Radar - V184 FINAL - CFP kompakt Kurz-Namen + Mover-Zeile + Playoffs ohne Doppel
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -1842,9 +1842,7 @@ async def playoffs_league_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, le
                                 if _is_fav_team(_r, [_f], league): _fav_raus.append(_r); break
                 else:
                     _fav_raus = [_r for _r in _raus if _is_fav_team(_r, _favs_r, league)]
-                if _fav_raus:
-                    lines.append("Deine Favoriten raus:")
-                    lines.extend([f"• {_s}" for _s in _fav_raus])
+                # V184: GELÖSCHT! Stand schon im Favoriten-Block unten doppelt!
             except: pass
     # V182: ⭐ Deine Favoriten - Was brauchen sie noch?
     try:
@@ -1866,13 +1864,13 @@ async def playoffs_league_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, le
                     _ov2=_cfbd_overall_for(_fname2, _cfbd2)
                     if _rank2 and _rank2<=12:
                         _rem2=max(0,12-((_ov2[0]+_ov2[1]) if _ov2 else 10))
-                        _f_lines.append(f"• {_fname2} - Top 12 (#{_rank2}) - noch drin! {_rem2} Spiel(e) noch")
+                        _f_lines.append(f"• {_cfp_short(_fname2, '')} - Top 12 (#{_rank2}) - noch drin! {_rem2} Spiel(e) noch")
                     elif _rank2 and _rank2<=25:
-                        _f_lines.append(f"• {_fname2} - CFP #{_rank2} - noch im Rennen, braucht Siege + Hilfe!")
+                        _f_lines.append(f"• {_cfp_short(_fname2, '')} - CFP #{_rank2} - noch im Rennen, braucht Siege + Hilfe!")
                     elif _ov2 and _ov2[1]>=3:
-                        _f_lines.append(f"• {_fname2} ({_ov2[0]}-{_ov2[1]}) - raus 😔")
+                        _f_lines.append(f"• {_cfp_short(_fname2, '')} ({_ov2[0]}-{_ov2[1]}) - raus 😔")
                     else:
-                        _f_lines.append(f"• {_fname2} - noch im Rennen!")
+                        _f_lines.append(f"• {_cfp_short(_fname2, '')} - noch im Rennen!")
             else:
                 for _f in _favs2:
                     _flg2=_f.split(" (")[-1].replace(")","").strip() if " (" in _f else ""
@@ -3413,6 +3411,14 @@ def _cfp_next_text():
             if _dt>=_today: return f"\n📅 Nächstes Ranking: {_label}"
         return "\n📅 Nächstes Ranking: Nächste Season (ab Anfang Nov)!"
     except: return ""
+# V184: Kurz-Namen! Texas=Longhorns, Texas A&M=Aggies - KEINE Verwechslung! Nur Miami (FL) braucht Zusatz!
+_CFP_SHORT={"georgia bulldogs":"Georgia","utah utes":"Utah","alabama crimson tide":"Alabama","ucla bruins":"UCLA","texas longhorns":"Texas","notre dame fighting irish":"Notre Dame","miami hurricanes":"Miami (FL)","indiana hoosiers":"Indiana","tennessee volunteers":"Tennessee","byu cougars":"BYU","wake forest demon deacons":"Wake Forest","texas tech red raiders":"Texas Tech","oregon ducks":"Oregon","ohio state buckeyes":"Ohio State","iowa hawkeyes":"Iowa","kentucky wildcats":"Kentucky","boise state broncos":"Boise State","usc trojans":"USC","arizona wildcats":"Arizona","houston cougars":"Houston","south carolina gamecocks":"South Carolina","oklahoma sooners":"Oklahoma","louisville cardinals":"Louisville","florida gators":"Florida","ole miss rebels":"Ole Miss","texas a&m aggies":"Texas A&M","lsu tigers":"LSU","missouri tigers":"Missouri","oklahoma state cowboys":"Oklahoma State","florida state seminoles":"Florida State","georgia tech yellow jackets":"Georgia Tech","miami (oh) redhawks":"Miami (OH)","arizona state sun devils":"Arizona State","mississippi state bulldogs":"Mississippi State","north carolina tar heels":"North Carolina","penn state nittany lions":"Penn State","michigan wolverines":"Michigan","wisconsin badgers":"Wisconsin","nebraska cornhuskers":"Nebraska","clemson tigers":"Clemson","smu mustangs":"SMU","vanderbilt commodores":"Vanderbilt","auburn tigers":"Auburn","northwestern wildcats":"Northwestern","duke blue devils":"Duke","pittsburgh panthers":"Pitt","navy midshipmen":"Navy","illinois fighting illini":"Illinois","tcu horned frogs":"TCU","kansas state wildcats":"Kansas State","kansas jayhawks":"Kansas","west virginia mountaineers":"West Virginia","colorado buffaloes":"Colorado","utah state aggies":"Utah State"}
+def _cfp_short(disp, short=""):
+    _k=(disp or "").lower().strip()
+    if _k in _CFP_SHORT: return _CFP_SHORT[_k]
+    # Fallback: Kurzform von ESPN (z.B. "Texas") oder Schul-Name ohne Maskottchen
+    if short and short not in (disp or ""): return short
+    return disp or short or ""
 async def cfp_top25_cmd(update, ctx):
     target = update.message or update.callback_query.message
     user = update.effective_user or (update.callback_query.from_user if update.callback_query else None)
@@ -3440,23 +3446,31 @@ async def cfp_top25_cmd(update, ctx):
     except: pass
     if not rows:
         await _cb_edit(update, "🏆 CFP Top 25\n\nGerade kein CFP-Ranking verfügbar.\nCheck später nochmal!", InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Zurück", callback_data="playoffs_league:NCAAF")]])); return
-    lines=["🏆 CFP Top 25 - Offizielles Committee-Ranking\n⭐ = Dein Favorit"+_cfp_next_text()+"\n"]
+    lines=["🏆 CFP Top 25 | Nächstes: Di 24.11.\n⭐ = Favorit\n"]
+    # V184: KEINE Pfeile pro Zeile mehr! Stattdessen unten 3 kompakte Zeilen: Mover / Neu / Raus!
+    _movers=[]; _news=[]; _outs=[]
+    _cur_keys=set()
     for i,(disp, short, rec) in enumerate(rows,1):
         is_fav=_is_fav_team(disp, favs, "NCAAF")
         star=" ⭐" if is_fav else ""
-        _show=disp or short
+        _show=_cfp_short(disp, short)  # V184: Kurz-Name! Texas=Longhorns, Texas A&M=Aggies!
         _rec=f" {rec}" if rec else ""
-        # V182/V183: Pfeil vs. letzte Woche! Neu in Top 25 = 🆕! Matcht auch Kurzform (Texas = Texas Longhorns)!
-        _key=(disp or "").lower()
+        lines.append(f"{i}. {_show}{_rec}{star}")
+        _key=(disp or "").lower(); _cur_keys.add(_key)
         _old=_prev.get(_key)
         if _old is None:
             for _k,_v in _prev.items():
                 if _key.startswith(_k) or _k.startswith(_key): _old=_v; break
-        if _old is None: _arrow=" 🆕"
-        elif _old==i: _arrow=""
-        elif _old>i: _arrow=f" ↑{_old-i}"
-        else: _arrow=f" ↓{i-_old}"
-        lines.append(f"{i}. {_show}{_rec}{star}{_arrow}")
+        if _old is None: _news.append(_show)
+        elif abs(_old-i)>=2: _movers.append((_old-i, f"{_show} {'↑'+str(_old-i) if _old>i else '↓'+str(i-_old)}"))
+    # Raus: war letzte Woche drin, jetzt nicht mehr!
+    for _k,_v in _prev.items():
+        if _k not in _cur_keys and not any(_k.startswith(_c) or _c.startswith(_k) for _c in _cur_keys):
+            _outs.append(_cfp_short(_k, ""))
+    _movers.sort(key=lambda x: -abs(x[0]))
+    if _movers: lines.append("\n📈 Mover: "+", ".join(_m[1] for _m in _movers))
+    if _news: lines.append("🆕 Neu: "+", ".join(_news))
+    if _outs: lines.append("👋 Raus: "+", ".join(dict.fromkeys([_o for _o in _outs if _o]))[:6])
     kb=InlineKeyboardMarkup([[InlineKeyboardButton("🏆 CFP Playoffs", callback_data="playoffs_cfp:NCAAF")],[InlineKeyboardButton("🥣 Bowl Games", callback_data="playoffs_bowls:NCAAF")],[InlineKeyboardButton("⬅️ Zurück", callback_data="playoffs_league:NCAAF")]])
     await _cb_edit(update, "\n".join(lines), kb)
 
@@ -5825,8 +5839,8 @@ def main():
         print("JobQueue:", e)
     app.add_handler(CallbackQueryHandler(on_cb))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
-    print("✅ USA Sport Radar Bot online - V183 - is live")
-    logger.info("✅ USA Sport Radar Bot online - V183 - is live")
+    print("✅ USA Sport Radar Bot online - V184 - is live")
+    logger.info("✅ USA Sport Radar Bot online - V184 - is live")
     app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
 
 if __name__=="__main__": main()
