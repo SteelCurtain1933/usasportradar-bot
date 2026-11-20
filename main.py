@@ -1,4 +1,4 @@
-# USA Sport Radar - V207 FINAL - Meine Woche: Unter-Fenster als neue Nachricht + 5-Min-Cache + Aktualisieren
+# USA Sport Radar - V208 FINAL - Meine Woche: Unter-Fenster als neue Nachricht + 5-Min-Cache + Aktualisieren
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -2580,7 +2580,7 @@ async def heute_morgen(update: Update, ctx: ContextTypes.DEFAULT_TYPE, morgen=Fa
     lines=[f"📅 {'Morgen' if morgen else 'Heute'} ({want.strftime('%d.%m.')})" + (f" – {lg_filter}" if lg_filter and lg_filter != "ALL" else "") + "\n"]
     # Überall: "Gast @ Heim" - erstes Team ist Heimteam!
 
-    live_lines=[]; upcoming_lines=[]
+    live_lines=[]; _up_hm=[]  # V208: (dt, zeile) fuer Zeit-Gruppen!
     # V204: Explizite Datums-Abfrage! Vorher: espn_scoreboard() OHNE Datum -> ESPN liefert nur den US-Heute-Slate -> Nacht-Spiele 00:00-03:00 DE-Zeit (US-Abend!) fielen raus (Iowa State 00:00, Clemson 01:30 usw. fehlten in Next Games)! Jetzt: -1 bis +2 Tage abfragen + Dedupe!
     _seen_hm=set()
     for league in LEAGUES:
@@ -2597,17 +2597,28 @@ async def heute_morgen(update: Update, ctx: ContextTypes.DEFAULT_TYPE, morgen=Fa
                     # Heute: NUR Live + Noch heute! Finals kommen bei ✅ Ergebnisse rein, sonst ewige Liste!
                     if not morgen and state=="post":
                         continue
+                    _line_hm = f"{LEAGUES[league]['emoji']} {game_line(ev, league, show_broadcast=True)}"
+                    # V208: Kompakt! Datum steht schon oben in der Ueberschrift - nicht 50x wiederholen!
+                    _line_hm = _line_hm.replace(f" {want.strftime('%d.%m.')} ", " ").replace("  ", " ")
                     if state=="in":
-                        live_lines.append(f"{LEAGUES[league]['emoji']} {game_line(ev, league, show_broadcast=True)}")
+                        live_lines.append(_line_hm)
                     else:
-                        upcoming_lines.append(f"{LEAGUES[league]['emoji']} {game_line(ev, league, show_broadcast=True)}")
+                        _up_hm.append((dt, _line_hm))
     if live_lines:
         lines.append("🔴 Live:")
         lines.extend(live_lines)
-    if upcoming_lines:
-        lines.append("\n⏰ Noch heute:" if not morgen else "\n⏰ Morgen:")
-        lines.extend(upcoming_lines)
-    if not live_lines and not upcoming_lines:
+    if _up_hm:
+        # V208: Nach Zeit gruppiert - Nacht / Tag / Abend! Viel uebersichtlicher als eine 50er-Wand!
+        _groups_hm = [("🌙 Nacht", []), ("☀️ Tag", []), ("🌇 Abend", [])]
+        for _dt_hm, _ln_hm in sorted(_up_hm, key=lambda x: x[0] or datetime.now(BERLIN)):
+            _hh_hm = _dt_hm.hour if _dt_hm else 12
+            _gi_hm = 0 if _hh_hm < 6 else 1 if _hh_hm < 18 else 2
+            _groups_hm[_gi_hm][1].append(_ln_hm)
+        for _gt_hm, _items_hm in _groups_hm:
+            if _items_hm:
+                lines.append(f"\n{_gt_hm}:")
+                lines.extend(_items_hm)
+    if not live_lines and not _up_hm:
         if morgen:
             lines.append(f"Keine {lg_filter}-Spiele morgen. Tipp oben auf eine andere Liga!" if lg_filter and lg_filter != "ALL" else "Morgen keine Spiele in den Ligen. Schau mal bei /top10 oder /next vorbei.")
         else:
@@ -3357,7 +3368,21 @@ async def dnd_pick_cmd(update, ctx, which):
     for _r in range(6):  # V207: 4 pro Reihe statt 6! Vorher war "00:00" abgeschnitten!
         rows.append([InlineKeyboardButton(f"{'✅ ' if _cur_h == _h or _cur_h == f'{_h:02d}:00' else ''}{_h:02d}:00", callback_data=f"dnd_set_{which}:{_h}") for _h in range(_r*4, _r*4+4)])
     rows.append([InlineKeyboardButton("⬅️ Zurück", callback_data="dnd")])
-    _txt = "⏰ Von wann soll Nicht-Stören starten?" if which == "start" else "⏰ Bis wann soll Nicht-Stören laufen?"
+    # V208: Aktuelle Einstellung + Dauer anzeigen - sofort uebersichtlich!
+    try:
+        _dd208 = get_dnd(update.effective_user.id if update.effective_user else 0) or {}
+        def _norm208(_v):
+            try:
+                if isinstance(_v, int): return f"{_v:02d}:00"
+                return str(_v)
+            except: return "?"
+        _s208 = _norm208(_dd208.get("start", "?")); _e208 = _norm208(_dd208.get("end", "?"))
+        try:
+            _dur208 = (int(str(_e208).split(":")[0]) - int(str(_s208).split(":")[0])) % 24 or 24
+            _cur208 = f"\nAktuell: {_s208} → {_e208} ({_dur208} Std. Ruhe 😴)"
+        except: _cur208 = f"\nAktuell: {_s208} → {_e208}"
+    except: _cur208 = ""
+    _txt = ("⏰ Von wann soll Nicht-Stören starten?" if which == "start" else "⏰ Bis wann soll Nicht-Stören laufen?") + _cur208
     await _cb_edit(update, _txt + "\n\nEinfach die Stunde antippen!", InlineKeyboardMarkup(rows))
 async def dnd_summary_cmd(update, ctx):
     uid = update.effective_user.id if update.effective_user else 0
@@ -4395,7 +4420,6 @@ async def news_breaking_job(context):
 
 async def notif_cmd(update, ctx):
     target = update.message or update.callback_query.message
-    _load_news = await _loading_start(target, "⏳ Ich hole die News... einen Moment")
     uid = update.effective_user.id if update.effective_user else 0
     rm = get_reminder_minutes(uid); master = get_live_master(uid)
     kb = InlineKeyboardMarkup([
@@ -6532,8 +6556,8 @@ def main():
         print("JobQueue:", e)
     app.add_handler(CallbackQueryHandler(on_cb))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
-    print("✅ USA Sport Radar Bot online - V207 - is live")
-    logger.info("✅ USA Sport Radar Bot online - V207 - is live")
+    print("✅ USA Sport Radar Bot online - V208 - is live")
+    logger.info("✅ USA Sport Radar Bot online - V208 - is live")
     app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
 
 if __name__=="__main__": main()
