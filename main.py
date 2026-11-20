@@ -1,4 +1,4 @@
-# USA Sport Radar - V198 FINAL - Meine Woche: Unter-Fenster als neue Nachricht + 5-Min-Cache + Aktualisieren
+# USA Sport Radar - V199 FINAL - Meine Woche: Unter-Fenster als neue Nachricht + 5-Min-Cache + Aktualisieren
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -2686,7 +2686,7 @@ async def results_league_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, lea
     finals = finals[:limit]
     _favs_r = favs_for(update.effective_user.id) if update.effective_user else []
     _fav_names_r = [f.split(" (")[0].strip().lower() for f in _favs_r if f.split(" (")[-1].replace(")","").strip()==league or " (" not in f]
-    # V198 FIX 2: CFP-Rangliste EINMAL holen (nicht pro Spiel - sonst 20 Calls)! Für Live-Bedeutung in der Liste!
+    # V199 FIX 2: CFP-Rangliste EINMAL holen (nicht pro Spiel - sonst 20 Calls)! Für Live-Bedeutung in der Liste!
     _cfp_rank_map={}
     if league=="NCAAF":
         try:
@@ -2766,7 +2766,7 @@ async def results_league_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, lea
                 _star_h = " ⭐" if _is_fav_r(h_name) else ""
                 _star_a = " ⭐" if _is_fav_r(a_name) else ""
                 lines.append(f"{_num}. {h_name}{_star_h} {h_score} - {a_score} {a_name}{_star_a}{suffix}")
-                # V198 FIX 2: Live-Bedeutung DIREKT in der Liste, unter Favoriten-Spielen! Vorher nur in Detail-Ansicht!
+                # V199 FIX 2: Live-Bedeutung DIREKT in der Liste, unter Favoriten-Spielen! Vorher nur in Detail-Ansicht!
                 if league=="NCAAF" and (_star_h or _star_a) and _cfp_rank_map:
                     try:
                         _hs=int(h_score) if str(h_score).strip().lstrip("-").isdigit() else 0
@@ -3161,6 +3161,7 @@ _REMINDER_SENT = set()
 # --- V89: Benachrichtigungen Hub + Live-Scores ---
 # V113: Schließen-Kette: Fenster + deine getippten Nachrichten dazu (1en) + Listen dazwischen!
 _CLOSE_CHAIN = {}
+_CLOSE_NUM_MAP = {}  # V199: (uid, bot_fenster_mid) -> user_zahlen_mid - damit 'Fenster schliessen' die Zahl mitloescht!
 _MYWEEK_SUB={}  # (uid, kind) -> message_id des Unter-Fensters aus Meine Woche (News/Next/Tabellen/CFP)
 _MYWEEK_CACHE={}  # uid -> (timestamp, lines, has_ncaaf)
 def _chain_add(uid, mid):
@@ -3169,7 +3170,8 @@ def _chain_add(uid, mid):
         _CLOSE_CHAIN.setdefault(int(uid), [])
         if int(mid) not in _CLOSE_CHAIN[int(uid)]: _CLOSE_CHAIN[int(uid)].append(int(mid))
         # Nur letzte 20 merken, sonst wirds ewig lang!
-        _CLOSE_CHAIN[int(uid)] = _CLOSE_CHAIN[int(uid)][-20:]
+                # V199: Cap 20 -> 100! Vorher fielen nach 6-7 Spielen alte Zahlen + Fenster raus -> 'Alle schliessen' brauchte 2x Druecken!
+        _CLOSE_CHAIN[int(uid)] = _CLOSE_CHAIN[int(uid)][-100:]
     except: pass
 def _chain_clear(uid):
     try: _CLOSE_CHAIN[int(uid)] = []
@@ -3187,6 +3189,14 @@ async def _chain_delete_all(ctx, uid, current_mid=None):
         for _mid in _ids:
             try: await ctx.bot.delete_message(chat_id=int(uid), message_id=int(_mid))
             except: pass
+        # V199: Auch alle gemappten Zahlen loeschen (Falls eine Zahl nicht in der Kette steht)!
+        try:
+            _num_ids = [v for (u, b), v in list(_CLOSE_NUM_MAP.items()) if int(u) == int(uid)]
+            for _nid in _num_ids:
+                try: await ctx.bot.delete_message(chat_id=int(uid), message_id=int(_nid))
+                except: pass
+            for _k in [k for k in list(_CLOSE_NUM_MAP.keys()) if int(k[0]) == int(uid)]: _CLOSE_NUM_MAP.pop(_k, None)
+        except: pass
         _chain_clear(uid)
     except: pass
 
@@ -3204,7 +3214,7 @@ async def _cb_edit(update, text, kb):
                 try: _chain_add(_uid_cb, _m.message_id)
                 except: pass
                 return
-            # V198: Klick AUS Meine Woche (News/Next/Tabellen/CFP) -> NEUE Nachricht, Meine Woche bleibt stehen! Vorher wurde Meine Woche ueberschrieben -> weg!
+            # V199: Klick AUS Meine Woche (News/Next/Tabellen/CFP) -> NEUE Nachricht, Meine Woche bleibt stehen! Vorher wurde Meine Woche ueberschrieben -> weg!
             if _mt.startswith("\U0001f4c5 Meine Woche"):
                 try:
                     _data196 = (update.callback_query.data or "") if update.callback_query else ""
@@ -3727,11 +3737,11 @@ def _news_is_filler(title):
         tl=(title or "").lower().strip().replace("\u2019","'").replace("\u2018","'").replace("\u201c",'"').replace("\u201d",'"')
         # V175: Practice Squad ist Kleinkram - IMMER raus, auch wenn "signed" drin steht!
         if "practice squad" in tl: return True
-        # V198: 'Why ...' am Anfang = fast immer Meinung/Analyse! Keine echte News!
+        # V199: 'Why ...' am Anfang = fast immer Meinung/Analyse! Keine echte News!
         if tl.startswith("why "): return True
-        # V198 HARTE BLOCKS - schlagen ALLE Ausnahmen (auch CFP/Free Agency)! Grund: "College Football Playoff odd..." ist Betting, obwohl CFP drin steht!
+        # V199 HARTE BLOCKS - schlagen ALLE Ausnahmen (auch CFP/Free Agency)! Grund: "College Football Playoff odd..." ist Betting, obwohl CFP drin steht!
         # Echte Signings ("signs with", "agrees to") sind NICHT in dieser Liste - die bleiben erlaubt!
-        # V198: Neue Luecken aus Screenshots! Prognose/Analyse/Insider/Preview-Woerter, die V192 noch durchgelassen hat!
+        # V199: Neue Luecken aus Screenshots! Prognose/Analyse/Insider/Preview-Woerter, die V192 noch durchgelassen hat!
         # "visit" (ohne s!) faengt auch "visits"! "face " mit Leerzeichen, damit "surface" nicht trifft! "stay for" faengt "Will Core Stay for..."!
         for _hb in ("odds","oddsmakers","sportsbook","betting","trade target","trade rumors","trade rumor","to host","will host","preview","pregame","pre-game","what to watch","how to watch","be the answer","mock draft","projected","projection","predicted","breakdown","opponent breakdown","insider","will stay","stay for","going into","biggest test","visit","face ","matchup","facing","lineup","lineup notes","game notes","girlfriend","boyfriend","dating","fiancee","great match for","jeff capel","jeff cap","ncaab","march madness","final four"):
             if _hb in tl: return True
@@ -4745,7 +4755,10 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 _del_rows.extend(_yt_buttons_for_game(_eid2, _lg2, _txt2))
                 _del_rows.append([InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")])
                 _del_kb = InlineKeyboardMarkup(_del_rows)
-                await update.message.reply_text(_txt2, reply_markup=_del_kb)
+                _m2 = await update.message.reply_text(_txt2, reply_markup=_del_kb)
+                # V199: Fenster in Kette + Zahl mappen (sonst blieb Fenster bei 'Alle schliessen' uebrig)!
+                try: _chain_add(_uid2, _m2.message_id); _CLOSE_NUM_MAP[(int(_uid2), int(_m2.message_id))] = int(update.message.message_id)
+                except: pass
             else:
                 _kb2 = InlineKeyboardMarkup([[InlineKeyboardButton("✅ Ja, nochmal schauen!", callback_data=f"finalstats_retry:{_eid2}:{_lg2}"), InlineKeyboardButton("❌ Nein, danke!", callback_data=f"finalstats_no:{_eid2}:{_lg2}")]])
                 try: await ctx.bot.edit_message_text(chat_id=_uid2, message_id=_load.message_id, text="😅 Grad noch keine Stats vorhanden!\nESPN ist noch langsam!\nSoll ich in 5 Min nochmal schauen?", reply_markup=_kb2)
@@ -4769,7 +4782,10 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     _rows3.append([InlineKeyboardButton("🧠 Experten-Stats", callback_data=f"expert_stats:{_eid3}:{_lg3}")])
                 _rows3.extend(_yt_buttons_for_game(_eid3, _lg3, _txt3))
                 _rows3.append([InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")])
-                await update.message.reply_text(_txt3, reply_markup=InlineKeyboardMarkup(_rows3))
+                _m3 = await update.message.reply_text(_txt3, reply_markup=InlineKeyboardMarkup(_rows3))
+                # V199: Fenster in Kette + Zahl mappen!
+                try: _chain_add(_uid3, _m3.message_id); _CLOSE_NUM_MAP[(int(_uid3), int(_m3.message_id))] = int(update.message.message_id)
+                except: pass
             else:
                 _kb3 = InlineKeyboardMarkup([[InlineKeyboardButton("✅ Ja, nochmal schauen!", callback_data=f"finalstats_retry:{_eid3}:{_lg3}"), InlineKeyboardButton("❌ Nein, danke!", callback_data=f"finalstats_no:{_eid3}:{_lg3}")]])
                 try: await ctx.bot.edit_message_text(chat_id=_uid3, message_id=_load3.message_id, text="😅 Grad noch keine Stats vorhanden!\nESPN ist noch langsam!\nSoll ich in 5 Min nochmal schauen?", reply_markup=_kb3)
@@ -4877,7 +4893,7 @@ HELP_SHORT = {
 
 
 def get_expert_stats_text(eid, lg):
-    # V198: SofaScore-Style! NFL/NCAAF: Offense / Passen / Laufspiel. NHL/NBA/MLB: eigene Gruppen (siehe _expert_generic).
+    # V199: SofaScore-Style! NFL/NCAAF: Offense / Passen / Laufspiel. NHL/NBA/MLB: eigene Gruppen (siehe _expert_generic).
     # Final Stats bleiben wie sie sind! Nur Experten-Stats wird SofaScore-Style!
     # Alles aus ESPN Boxscore + Drives. Kein EPA/CPOE. Kein neuer Key!
     # Unsere 5 alten Experten-Werte (Points per Drive, 3-and-Out, Explosive, Sack Rate) bleiben drin, in Offense!
@@ -5283,7 +5299,7 @@ def get_live_stats_text(eid, lg):
 
 
 def _pick_norm_global(sd, keys):
-    # V198: Normalisierte Suche - ESPN-Feldnamen variieren (shotsOnGoal vs shots)!
+    # V199: Normalisierte Suche - ESPN-Feldnamen variieren (shotsOnGoal vs shots)!
     def _n2(s): return str(s).lower().replace(' ', '').replace('_', '').replace('-', '').replace('/', '')
     flat = {_n2(kk): vv for kk, vv in (sd or {}).items()}
     for _k in keys:
@@ -5296,7 +5312,7 @@ def _pick_norm_global(sd, keys):
     return ''
 
 def _expert_generic(eid, lg):
-    # V198: Experten-Stats fuer NHL / NBA / MLB - gleiche Struktur wie NFL, Gruppen pro Liga, alles aus ESPN Boxscore!
+    # V199: Experten-Stats fuer NHL / NBA / MLB - gleiche Struktur wie NFL, Gruppen pro Liga, alles aus ESPN Boxscore!
     try:
         key = LEAGUES[lg]["espn"]
         sport = 'hockey' if lg=='NHL' else 'basketball' if lg=='NBA' else 'baseball'
@@ -5345,7 +5361,7 @@ def _expert_generic(eid, lg):
             _group("Überzahl / Disziplin", [(["powerplaygoals","power play goals"],"PP Tore"), (["powerplayopportunities","power play opportunities"],"PP Chancen"), (["penaltyminutes","penalty minutes"],"Strafminuten"), (["penalties","penalty"],"Strafen")])
             _group("Zweikampf", [(["faceoffwinpct","faceoffs won","faceoffswon","faceoffs"],"Faceoffs"), (["giveaways"],"Giveaways"), (["takeaways"],"Takeaways")])
         elif lg == "NBA":
-            # V198: Punkte-Zeile RAUS! ESPN liefert da falsche Werte (35-19 statt 98-126)! Endstand steht schon im Titel!
+            # V199: Punkte-Zeile RAUS! ESPN liefert da falsche Werte (35-19 statt 98-126)! Endstand steht schon im Titel!
             _group("Wurf", [(["fieldgoalpct","field goal pct"],"FG%"), (["threepointfieldgoalpct","three point pct"],"3PT%"), (["freethrowpct","free throw pct"],"FT%")])
             _group("Rebounds / Ball", [(["rebounds"],"Rebounds"), (["offensiverebounds","offensive rebounds"],"Off. Rebounds"), (["defensiverebounds","defensive rebounds"],"Def. Rebounds"), (["assists"],"Assists"), (["turnovers"],"Turnovers")])
             _group("Defense", [(["steals"],"Steals"), (["blocks"],"Blocks"), (["fouls","personal fouls"],"Fouls")])
@@ -5521,7 +5537,7 @@ def get_final_stats_text(eid, lg):
                 elif _lbl=="Sacks":
                     lines.append("Sacks: - - -")
         elif lg == "NHL":
-            # V198: Robuste Picks (ESPN-Feldnamen variieren!) + mehr Werte! Vorher kamen nur Hits + PP an!
+            # V199: Robuste Picks (ESPN-Feldnamen variieren!) + mehr Werte! Vorher kamen nur Hits + PP an!
             for _keys,_lbl in [(["shotsongoal","shots","shots on goal"],"Schüsse"),(["hits"],"Hits"),(["faceoffwinpct","faceoffs won","faceoffswon","faceoffs"],"Faceoffs"),(["powerplaygoals","power play goals"],"PP Tore"),(["powerplayopportunities","power play opportunities"],"PP Chancen"),(["penaltyminutes","penalty minutes"],"Strafminuten"),(["blockedshots","blocked shots"],"Blocked Shots"),(["giveaways"],"Giveaways"),(["takeaways"],"Takeaways")]:
                 va = _pick_norm_global(sa, _keys)
                 vb = _pick_norm_global(sb, _keys)
@@ -5707,7 +5723,7 @@ def _myweek_kb(_has_ncaaf):
     return InlineKeyboardMarkup(_rows)
 
 async def myweek_cmd(update, ctx, force=False):
-    # V198 CACHE: Innerhalb von 5 Min sofort aus Cache, ohne neu zu laden! Stand-Zeit steht in Zeile 1! force=True via Aktualisieren-Knopf!
+    # V199 CACHE: Innerhalb von 5 Min sofort aus Cache, ohne neu zu laden! Stand-Zeit steht in Zeile 1! force=True via Aktualisieren-Knopf!
     try:
         _uid_c = update.effective_user.id if update.effective_user else 0
         if not force and _uid_c in _MYWEEK_CACHE:
@@ -5716,7 +5732,7 @@ async def myweek_cmd(update, ctx, force=False):
             if _time_c.time() - _ts_c < 300:
                 await _cb_edit(update, "\n".join(_lines_c), _myweek_kb(_ncaaf_c)); return
     except: pass
-    # V198 MEINE WOCHE: Pro Liga das, was da zählt! Nur Ligen, die man als Favorit hat! + News pro Team! + Dynamische Knöpfe!
+    # V199 MEINE WOCHE: Pro Liga das, was da zählt! Nur Ligen, die man als Favorit hat! + News pro Team! + Dynamische Knöpfe!
     try: _load=await _loading_start(update.callback_query.message if update.callback_query else update.message, "⏳ Ich hole deine Woche... einen Moment")
     except: _load=None
     user=update.effective_user or (update.callback_query.from_user if update.callback_query else None)
@@ -5749,13 +5765,13 @@ async def myweek_cmd(update, ctx, force=False):
             elif _ov and _ov[1]>=3: lines.append(f"{_em} {_short}{_rec} - raus 😔")
             else: lines.append(f"{_em} {_short}{_rec} - noch im Rennen!")
         else:
-            # V198: Pro Liga Ranking aus Tabelle! _standings_row_for = (Division, Platz in Division, W, L, T, Rows)!
+            # V199: Pro Liga Ranking aus Tabelle! _standings_row_for = (Division, Platz in Division, W, L, T, Rows)!
             _row=None
             try: _row=_standings_row_for(_flg, _name)
             except: _row=None
             if _row:
                 _div,_rk,_w,_l,_tt,_rows2=_row
-                # V198 FIX 3: MLB gibt ESPN nur Liga-Gruppen (National League #7)! Division + Divisions-Rang selbst rechnen!
+                # V199 FIX 3: MLB gibt ESPN nur Liga-Gruppen (National League #7)! Division + Divisions-Rang selbst rechnen!
                 if _flg=="MLB":
                     try:
                         _d2=_mlb_div_for(_name)
@@ -5790,7 +5806,7 @@ async def myweek_cmd(update, ctx, force=False):
                     lines.append(f"{_em} {_name}{_rec} - {_div} #{_rk}{_extra}{_kurs}")
             else:
                 lines.append(f"{_em} {_name} ({_flg})")
-        # V198: KEINE Schlagzeile mehr im Teaser! Nur Zaehler + 24h-Verweis! Grund: Google-Blog-Schlagzeilen haben Meine Woche zugemuellt! Details gibt es erst bei News!
+        # V199: KEINE Schlagzeile mehr im Teaser! Nur Zaehler + 24h-Verweis! Grund: Google-Blog-Schlagzeilen haben Meine Woche zugemuellt! Details gibt es erst bei News!
         # Neu = wirklich letzte 24 Std.! _news_is_fresh(pub, 1)! Ohne Datum = als neu zaehlen (ESPN liefert oft kein Datum)!
         try:
             _news_all,_src2=_team_news_all(_flg, _name, limit=8) or ([], "")
@@ -5806,7 +5822,7 @@ async def myweek_cmd(update, ctx, force=False):
         except:
             lines.append("   📰 Keine neuen News (24 Std.)")
         lines.append("")
-    # V198: Verweis, was 'neu' heisst! Nur 1 Zeile, kein Knopf-Wahnsinn!
+    # V199: Verweis, was 'neu' heisst! Nur 1 Zeile, kein Knopf-Wahnsinn!
     lines.append("📰 Neu = letzte 24 Std. Details bei 📰 News!")
     # CFP-Zeile NUR wenn NCAAF-Favorit da ist!
     if _has_ncaaf:
@@ -5814,9 +5830,9 @@ async def myweek_cmd(update, ctx, force=False):
     try:
         if _load: await _loading_done(ctx, user.id if user else 0, _load)
     except: pass
-    # V198: KB aus Helper (mit Aktualisieren-Knopf)!
+    # V199: KB aus Helper (mit Aktualisieren-Knopf)!
     kb=_myweek_kb(_has_ncaaf)
-    # V198: Frisch gebaut -> cachen!
+    # V199: Frisch gebaut -> cachen!
     try:
         import time as _time_s
         _uid_s = update.effective_user.id if update.effective_user else 0
@@ -5863,6 +5879,14 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         except:
             try: await q.message.edit_text("✖️ Fenster geschlossen!\n\nDein Hauptmenü nach /start ist noch da! 👆", reply_markup=None)
             except: pass
+        # V199: Zahl zum Fenster mitloeschen! Wenn das Fenster per Zahl geoeffnet wurde (z.B. '1' -> Final Stats), fliegt die Zahl gleich mit weg!
+        try:
+            _mid_c = q.message.message_id if q.message else None
+            _num_mid = _CLOSE_NUM_MAP.pop((_uid_c, int(_mid_c)), None) if _mid_c else None
+            if _num_mid:
+                try: await ctx.bot.delete_message(chat_id=_uid_c, message_id=int(_num_mid))
+                except: pass
+        except: pass
     elif data.startswith("finalstats:"):
         # V106: Final Stats Button!
         try:
@@ -5887,11 +5911,11 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 except: pass
         except: pass
     elif data.startswith("expert_stats:"):
-        # V198: Experten-Stats fuer alle Ligen!
+        # V199: Experten-Stats fuer alle Ligen!
         try:
             _parts = data.split(":"); _eid = _parts[1]; _lg = _parts[2] if len(_parts)>2 else ""
             _uid = update.effective_user.id if update.effective_user else 0
-            # V198: Experten-Stats jetzt fuer alle Ligen!
+            # V199: Experten-Stats jetzt fuer alle Ligen!
             _load = await ctx.bot.send_message(chat_id=_uid, text="🧠 Experten-Stats werden berechnet...\nEinen Moment, ich hol die Stats von ESPN!")
             _txt = get_expert_stats_text(_eid, _lg)
             if _txt:
@@ -5900,7 +5924,10 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 try: await ctx.bot.delete_message(chat_id=_uid, message_id=_load.message_id)
                 except: pass
                 try:
-                    await ctx.bot.send_message(chat_id=_uid, text=_txt, reply_markup=_ekb)
+                    _me = await ctx.bot.send_message(chat_id=_uid, text=_txt, reply_markup=_ekb)
+                    # V199: Experten-Fenster in Kette, sonst bleibt es bei 'Alle schliessen' stehen!
+                    try: _chain_add(_uid, _me.message_id)
+                    except: pass
                 except Exception as _e:
                     # Nie lautlos verschwinden: wenn Senden klappt nicht, Lade-Nachricht editieren statt loeschen!
                     try: await ctx.bot.edit_message_text(chat_id=_uid, message_id=_load.message_id, text=_txt, reply_markup=_ekb)
@@ -6178,8 +6205,8 @@ def main():
         print("JobQueue:", e)
     app.add_handler(CallbackQueryHandler(on_cb))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
-    print("✅ USA Sport Radar Bot online - V198 - is live")
-    logger.info("✅ USA Sport Radar Bot online - V198 - is live")
+    print("✅ USA Sport Radar Bot online - V199 - is live")
+    logger.info("✅ USA Sport Radar Bot online - V199 - is live")
     app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
 
 if __name__=="__main__": main()
