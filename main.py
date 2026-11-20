@@ -1,4 +1,4 @@
-# USA Sport Radar - V200 FINAL - Meine Woche: Unter-Fenster als neue Nachricht + 5-Min-Cache + Aktualisieren
+# USA Sport Radar - V201 FINAL - Meine Woche: Unter-Fenster als neue Nachricht + 5-Min-Cache + Aktualisieren
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -1014,7 +1014,10 @@ async def top10_league_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, leagu
             try:
                 if _load: await ctx.bot.delete_message(chat_id=update.effective_user.id, message_id=_load.message_id)
             except Exception: pass
-            await target.reply_text("\n".join(lines), reply_markup=_live_kb); return
+            _m201 = await target.reply_text("\n".join(lines), reply_markup=_live_kb)
+            try: _chain_add(update.effective_user.id if update.effective_user else 0, _m201.message_id)
+            except: pass
+            return
         for rank, (score, lg, ev, bd) in enumerate(top, 1):
             try:
                 teams,_ = event_teams(ev)
@@ -1044,7 +1047,9 @@ async def top10_league_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, leagu
         try:
             if _load: await ctx.bot.delete_message(chat_id=update.effective_user.id, message_id=_load.message_id)
         except Exception: pass
-        await target.reply_text("\n".join(lines), reply_markup=kb)
+        _m201 = await target.reply_text("\n".join(lines), reply_markup=kb)
+        try: _chain_add(update.effective_user.id if update.effective_user else 0, _m201.message_id)
+        except: pass
     except Exception as e:
         try:
             if _load: await ctx.bot.delete_message(chat_id=update.effective_user.id, message_id=_load.message_id)
@@ -1225,9 +1230,9 @@ async def top10_detail_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, idx: 
         [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
     ])
     lines.append("\n💡 Schreib eine andere Zahl (z.B. 5) in den Chat für ein anderes Spiel!")
-    await target.reply_text("\n".join(lines), reply_markup=kb)
-
-
+    _m201 = await target.reply_text("\n".join(lines), reply_markup=kb)
+    try: _chain_add(update.effective_user.id if update.effective_user else 0, _m201.message_id)
+    except: pass
 # --- Tabellen / Standings via ESPN ---
 STANDINGS_URL = {
     "NFL": "https://site.api.espn.com/apis/site/v2/sports/football/nfl/standings",
@@ -1673,7 +1678,9 @@ async def playoffs_bowls_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, lea
         _bn_txt = f" — {_bn}" if _bn else " — Bowl Game"
         lines.append(f"{LEAGUES[league]['emoji']} {game_line(ev, league, show_broadcast=True)}{_bn_txt}")
     kb = InlineKeyboardMarkup([[InlineKeyboardButton("🏆 CFP Playoffs", callback_data="playoffs_cfp:NCAAF")], [InlineKeyboardButton("🏆 Andere Liga", callback_data="playoffs")], [InlineKeyboardButton("⬅️ Zurück", callback_data="back")]])
-    await target.reply_text("\n".join(lines), reply_markup=kb)
+    _m201 = await target.reply_text("\n".join(lines), reply_markup=kb)
+    try: _chain_add(update.effective_user.id if update.effective_user else 0, _m201.message_id)
+    except: pass
 async def playoffs_league_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, league: str, force_cfp: bool = False):
     target = update.message or update.callback_query.message
     # V83: NCAAF -> erst Auswahl! CFP Playoffs vs. Bowl Games! Bowls sind keine Playoffs!
@@ -1726,7 +1733,10 @@ async def playoffs_league_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, le
                 lines.append(f"{LEAGUES[league]['emoji']} {game_line(ev, league, show_broadcast=True)}{_bn_txt}")
             kb = InlineKeyboardMarkup([[InlineKeyboardButton("🥣 Bowl Games", callback_data="playoffs_bowls:NCAAF")], [InlineKeyboardButton("🏆 Andere Liga", callback_data="playoffs")], [InlineKeyboardButton("⬅️ Zurück", callback_data="back")]])
             await _loading_done(ctx, _uid_pl, _load_pl)
-            await target.reply_text("\n".join(lines), reply_markup=kb); return
+            _m201 = await target.reply_text("\n".join(lines), reply_markup=kb)
+            try: _chain_add(update.effective_user.id if update.effective_user else 0, _m201.message_id)
+            except: pass
+            return
     if _post:
         _post.sort(key=lambda x: x[0])
         lines = [f"🏆 Playoffs - {LEAGUES[league]['emoji']} {league}\n"]
@@ -1738,7 +1748,10 @@ async def playoffs_league_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, le
             lines.append(f"{LEAGUES[league]['emoji']} {game_line(ev, league, show_broadcast=True)}")
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("🏆 Andere Liga", callback_data="playoffs")], [InlineKeyboardButton("⬅️ Zurück", callback_data="back")]])
         await _loading_done(ctx, _uid_pl, _load_pl)
-        await target.reply_text("\n".join(lines), reply_markup=kb); return
+        _m201 = await target.reply_text("\n".join(lines), reply_markup=kb)
+        try: _chain_add(update.effective_user.id if update.effective_user else 0, _m201.message_id)
+        except: pass
+        return
     # --- Saison vorbei? Keine Spiele in den nächsten 30 Tagen + keine in den letzten 7 Tagen + Champion bekannt? ---
     _future = []
     for _off in range(0, 31):
@@ -1754,12 +1767,18 @@ async def playoffs_league_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, le
         _note = f"\n💡 {ch['note']}" if ch.get("note") else ""
         lines = [f"🏆 Playoffs - {LEAGUES[league]['emoji']} {league}\nSaison vorbei! {LEAGUES[league]['emoji']}\n\n🏆 **{_ch_label}:**\n{ch['team']} ({ch['year']})\n{ch['result']}{_note}"]
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("🏆 Andere Liga", callback_data="playoffs")], [InlineKeyboardButton("⬅️ Zurück", callback_data="back")]])
-        await target.reply_text("\n".join(lines), reply_markup=kb); return
+        _m201 = await target.reply_text("\n".join(lines), reply_markup=kb)
+        try: _chain_add(update.effective_user.id if update.effective_user else 0, _m201.message_id)
+        except: pass
+        return
     # --- Phase 1: Vor den Playoffs ---
     if not _playoff_mode(league):
         lines = [f"🏆 Playoffs - {LEAGUES[league]['emoji']} {league}\n\nNoch nix fest! 😅\nNoch kein Team ist sicher in den Playoffs oder raus!\nSchau später nochmal vorbei!"]
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("🏆 Andere Liga", callback_data="playoffs")], [InlineKeyboardButton("⬅️ Zurück", callback_data="back")]])
-        await target.reply_text("\n".join(lines), reply_markup=kb); return
+        _m201 = await target.reply_text("\n".join(lines), reply_markup=kb)
+        try: _chain_add(update.effective_user.id if update.effective_user else 0, _m201.message_id)
+        except: pass
+        return
     # Spät in der Saison: Sicher / Rennen / Raus - einfach gedacht, kein Tiebreaker!
     # Conference-Listen aus Divisionen bauen!
     divs = espn_standings(league) or {}
@@ -1905,10 +1924,15 @@ async def playoffs_league_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, le
     if league == "NCAAF" and force_cfp:
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("🥣 Bowl Games", callback_data="playoffs_bowls:NCAAF")], [InlineKeyboardButton("🏆 Andere Liga", callback_data="playoffs")], [InlineKeyboardButton("⬅️ Zurück", callback_data="back")]])
         await _loading_done(ctx, _uid_pl, _load_pl)
-        await target.reply_text("\n".join(lines), reply_markup=kb); return
+        _m201 = await target.reply_text("\n".join(lines), reply_markup=kb)
+        try: _chain_add(update.effective_user.id if update.effective_user else 0, _m201.message_id)
+        except: pass
+        return
     kb = InlineKeyboardMarkup([[InlineKeyboardButton("🏆 Andere Liga", callback_data="playoffs")], [InlineKeyboardButton("⬅️ Zurück", callback_data="back")]])
     await _loading_done(ctx, _uid_pl, _load_pl)
-    await target.reply_text("\n".join(lines), reply_markup=kb)
+    _m201 = await target.reply_text("\n".join(lines), reply_markup=kb)
+    try: _chain_add(update.effective_user.id if update.effective_user else 0, _m201.message_id)
+    except: pass
 async def tables_all_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     target = update.message or update.callback_query.message
     kb = InlineKeyboardMarkup([
@@ -2002,7 +2026,9 @@ async def tables_div_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, league:
         _kb_rows.append([InlineKeyboardButton("❓ Was bedeutet W-L-OTL / OT1?", callback_data="nhl_help")])
     _kb_rows.append([InlineKeyboardButton("⬅️ Zurück", callback_data="back")])
     kb = InlineKeyboardMarkup(_kb_rows)
-    await target.reply_text("\n".join(lines), reply_markup=kb)
+    _m201 = await target.reply_text("\n".join(lines), reply_markup=kb)
+    try: _chain_add(update.effective_user.id if update.effective_user else 0, _m201.message_id)
+    except: pass
 async def tables_conf_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, league: str, conf: str):
     target = update.message or update.callback_query.message
     divs = ctx.user_data.get("tables_divs_"+league)
@@ -2039,7 +2065,9 @@ async def tables_conf_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, league
         _kb_rows2.append([InlineKeyboardButton("❓ Was bedeutet W-L-OTL / OT1?", callback_data="nhl_help")])
     _kb_rows2.append([InlineKeyboardButton("⬅️ Zurück", callback_data="back")])
     kb = InlineKeyboardMarkup(_kb_rows2)
-    await target.reply_text("\n".join(lines), reply_markup=kb)
+    _m201 = await target.reply_text("\n".join(lines), reply_markup=kb)
+    try: _chain_add(update.effective_user.id if update.effective_user else 0, _m201.message_id)
+    except: pass
 async def tables_top25_cmd(update, ctx, league: str, divs):
     target = update.message or update.callback_query.message
     top = _espn_ap_top25()
@@ -2064,9 +2092,9 @@ async def tables_top25_cmd(update, ctx, league: str, divs):
         _show = short or disp
         lines.append(f"{i}. {_show} {rec}{star}")
     kb = InlineKeyboardMarkup([[InlineKeyboardButton("⭐ Meine Teams", callback_data="tables_mine")],[InlineKeyboardButton("⬅️ Zurück", callback_data="back")],[InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")],])
-    await target.reply_text("\n".join(lines), reply_markup=kb)
-
-
+    _m201 = await target.reply_text("\n".join(lines), reply_markup=kb)
+    try: _chain_add(update.effective_user.id if update.effective_user else 0, _m201.message_id)
+    except: pass
 def _ncaaf_team_overall(team_full):
     # V141: CFBD zuerst (Navy 8-2, nicht 0-1 / 3-6!), dann Scoreboard, nie Schedule!
     try:
@@ -2142,8 +2170,9 @@ async def tables_mine_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         if _load2: await ctx.bot.delete_message(chat_id=update.effective_user.id, message_id=_load2.message_id)
     except Exception: pass
-    await target.reply_text("\n".join(lines), reply_markup=kb)
-
+    _m201 = await target.reply_text("\n".join(lines), reply_markup=kb)
+    try: _chain_add(update.effective_user.id if update.effective_user else 0, _m201.message_id)
+    except: pass
 async def next_hub_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     target = update.message or update.callback_query.message
     kb = InlineKeyboardMarkup([
@@ -2298,8 +2327,9 @@ async def next_mine_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if any(lg in f for f in favs):
                 lines.append(f"{LEAGUES[lg]['emoji']} {lg}: {ch['team']} ({ch['year']}) - {ch['result']}")
     _kb = InlineKeyboardMarkup([[InlineKeyboardButton("🏥 Verletzungen meiner Teams", callback_data="injuries_mine")], [InlineKeyboardButton("ℹ️ Mehr Infos zu den Spielen", callback_data="game_info_leagues")], [InlineKeyboardButton("⬅️ Zurück", callback_data="back")]])
-    await target.reply_text("\n".join(lines), reply_markup=_kb)
-
+    _m201 = await target.reply_text("\n".join(lines), reply_markup=_kb)
+    try: _chain_add(update.effective_user.id if update.effective_user else 0, _m201.message_id)
+    except: pass
 async def injuries_mine_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     target = update.message or update.callback_query.message
     user = update.effective_user or (update.callback_query.from_user if update.callback_query else None)
@@ -2332,7 +2362,9 @@ async def injuries_mine_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 _ir_buttons.append([InlineKeyboardButton(f"🏥 IR-Liste {_name} ({len(_ir2)})", callback_data=f"injuries_ir:NFL:{_name}")])
     if _has_ncaaf: lines.append("\nℹ️ NCAAF: Keine Liste! Für College gibt's keinen offiziellen Injury Report, deswegen listen wir da nix auf!")
     _kb_rows = _ir_buttons + [[InlineKeyboardButton("⏭️ Nächste Spiele", callback_data="next_mine")], [InlineKeyboardButton("⬅️ Zurück", callback_data="back")]]
-    await target.reply_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(_kb_rows))
+    _m201 = await target.reply_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(_kb_rows))
+    try: _chain_add(update.effective_user.id if update.effective_user else 0, _m201.message_id)
+    except: pass
 async def injuries_ir_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, league: str, team_full: str):
     target = update.message or update.callback_query.message
     _g, _ir, _has = _sleeper_split(team_full) if league == "NFL" else ([], [], False)
@@ -2591,7 +2623,7 @@ async def results_mine_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     for _c in _comp.get("competitors", []):
                         _tm = _c.get("team", {}) or {}
                         _full = (_tm.get("displayName","") or "").lower()
-                        # V200: Schule EXAKT pruefen, nicht nur Maskottchen! Vorher: 'panthers' in 'Georgia State Panthers' / 'FIU Panthers' -> beide falsch drin, obwohl nur Pittsburgh Panthers gemeint ist! _is_fav_team vergleicht die Schule (Pittsburgh != Georgia State != FIU) + Liga!
+                        # V201: Schule EXAKT pruefen, nicht nur Maskottchen! Vorher: 'panthers' in 'Georgia State Panthers' / 'FIU Panthers' -> beide falsch drin, obwohl nur Pittsburgh Panthers gemeint ist! _is_fav_team vergleicht die Schule (Pittsburgh != Georgia State != FIU) + Liga!
                         if _is_fav_team(_full, favs, league):
                             _is_fav_game = True
                             break
@@ -2685,7 +2717,7 @@ async def results_league_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, lea
     finals = finals[:limit]
     _favs_r = favs_for(update.effective_user.id) if update.effective_user else []
     _fav_names_r = [f.split(" (")[0].strip().lower() for f in _favs_r if f.split(" (")[-1].replace(")","").strip()==league or " (" not in f]
-    # V200 FIX 2: CFP-Rangliste EINMAL holen (nicht pro Spiel - sonst 20 Calls)! Für Live-Bedeutung in der Liste!
+    # V201 FIX 2: CFP-Rangliste EINMAL holen (nicht pro Spiel - sonst 20 Calls)! Für Live-Bedeutung in der Liste!
     _cfp_rank_map={}
     if league=="NCAAF":
         try:
@@ -2765,7 +2797,7 @@ async def results_league_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, lea
                 _star_h = " ⭐" if _is_fav_r(h_name) else ""
                 _star_a = " ⭐" if _is_fav_r(a_name) else ""
                 lines.append(f"{_num}. {h_name}{_star_h} {h_score} - {a_score} {a_name}{_star_a}{suffix}")
-                # V200 FIX 2: Live-Bedeutung DIREKT in der Liste, unter Favoriten-Spielen! Vorher nur in Detail-Ansicht!
+                # V201 FIX 2: Live-Bedeutung DIREKT in der Liste, unter Favoriten-Spielen! Vorher nur in Detail-Ansicht!
                 if league=="NCAAF" and (_star_h or _star_a) and _cfp_rank_map:
                     try:
                         _hs=int(h_score) if str(h_score).strip().lstrip("-").isdigit() else 0
@@ -2793,7 +2825,9 @@ async def results_league_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, lea
         [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
     ])
     _rm =     await _loading_done(ctx, update.effective_user.id if update.effective_user else 0, _load_resu)
-    await target.reply_text("\n".join(lines) + "\n\n📊 Für Final Stats einfach die Zahl schicken! z.B. 1", reply_markup=_with_close(kb))
+    _m201 = await target.reply_text("\n".join(lines) + "\n\n📊 Für Final Stats einfach die Zahl schicken! z.B. 1", reply_markup=_with_close(kb))
+    try: _chain_add(update.effective_user.id if update.effective_user else 0, _m201.message_id)
+    except: pass
     try:
         _uid_r = update.effective_user.id if update.effective_user else 0
         _chain_add(_uid_r, _rm.message_id)
@@ -2954,8 +2988,9 @@ async def live_stats_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.callback_query:
         await _cb_edit(update, _txt_pick, _kb_pick)
     else:
-        await target.reply_text(_txt_pick, reply_markup=_kb_pick)
-
+        _m201 = await target.reply_text(_txt_pick, reply_markup=_kb_pick)
+        try: _chain_add(update.effective_user.id if update.effective_user else 0, _m201.message_id)
+        except: pass
 async def live_stats_one_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, idx: int):
     target=update.message or update.callback_query.message
     _live=ctx.user_data.get("live_events_v147") or []
@@ -3030,8 +3065,9 @@ async def live_stats_one_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, idx
         try: await update.callback_query.answer()
         except Exception: pass
     else:
-        await target.reply_text(_txt, reply_markup=_kb)
-
+        _m201 = await target.reply_text(_txt, reply_markup=_kb)
+        try: _chain_add(update.effective_user.id if update.effective_user else 0, _m201.message_id)
+        except: pass
 async def live_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     target = update.message or update.callback_query.message
     _load_live = await _loading_start(target, "⏳ Ich hole die Live-Spiele... einen Moment")
@@ -3124,8 +3160,9 @@ async def live_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     else:
         _kb=InlineKeyboardMarkup([[InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")]])
         await _loading_done(ctx, update.effective_user.id if update.effective_user else 0, _load_live)
-    await target.reply_text("\n".join(lines), reply_markup=_kb)
-
+    _m201 = await target.reply_text("\n".join(lines), reply_markup=_kb)
+    try: _chain_add(update.effective_user.id if update.effective_user else 0, _m201.message_id)
+    except: pass
 async def settings_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     target = update.message or update.callback_query.message
     uid = update.effective_user.id if update.effective_user else 0
@@ -3160,7 +3197,7 @@ _REMINDER_SENT = set()
 # --- V89: Benachrichtigungen Hub + Live-Scores ---
 # V113: Schließen-Kette: Fenster + deine getippten Nachrichten dazu (1en) + Listen dazwischen!
 _CLOSE_CHAIN = {}
-_CLOSE_NUM_MAP = {}  # V200: (uid, bot_fenster_mid) -> user_zahlen_mid - damit 'Fenster schliessen' die Zahl mitloescht!
+_CLOSE_NUM_MAP = {}  # V201: (uid, bot_fenster_mid) -> user_zahlen_mid - damit 'Fenster schliessen' die Zahl mitloescht!
 _MYWEEK_SUB={}  # (uid, kind) -> message_id des Unter-Fensters aus Meine Woche (News/Next/Tabellen/CFP)
 _MYWEEK_CACHE={}  # uid -> (timestamp, lines, has_ncaaf)
 def _chain_add(uid, mid):
@@ -3168,8 +3205,8 @@ def _chain_add(uid, mid):
         if not uid or not mid: return
         _CLOSE_CHAIN.setdefault(int(uid), [])
         if int(mid) not in _CLOSE_CHAIN[int(uid)]: _CLOSE_CHAIN[int(uid)].append(int(mid))
-        # V200: Liste bleibt ueber alle Flows bestehen (kein Clear mehr bei neuem Flow)! Cap 100, damit nix rausfaellt!
-                # V200: Cap 20 -> 100! Vorher fielen nach 6-7 Spielen alte Zahlen + Fenster raus -> 'Alle schliessen' brauchte 2x Druecken!
+        # V201: Liste bleibt ueber alle Flows bestehen (kein Clear mehr bei neuem Flow)! Cap 100, damit nix rausfaellt!
+                # V201: Cap 20 -> 100! Vorher fielen nach 6-7 Spielen alte Zahlen + Fenster raus -> 'Alle schliessen' brauchte 2x Druecken!
         _CLOSE_CHAIN[int(uid)] = _CLOSE_CHAIN[int(uid)][-100:]
     except: pass
 def _chain_clear(uid):
@@ -3185,10 +3222,14 @@ async def _chain_delete_all(ctx, uid, current_mid=None):
     try:
         _ids = list(_CLOSE_CHAIN.get(int(uid), []) or [])
         if current_mid: _ids.append(int(current_mid))
+        # V201: Dedupe + Bremse! Vorher: uralte/ doppelte IDs + 50+ Deletes auf einmal -> Telegram Flood-Limit -> nix ging mehr!
+        _seen201 = set(); _ids = [m for m in _ids if not (int(m) in _seen201 or _seen201.add(int(m)))]
         for _mid in _ids:
             try: await ctx.bot.delete_message(chat_id=int(uid), message_id=int(_mid))
             except: pass
-        # V200: Auch alle gemappten Zahlen loeschen (Falls eine Zahl nicht in der Kette steht)!
+            try: await asyncio.sleep(0.05)
+            except: pass
+        # V201: Auch alle gemappten Zahlen loeschen (Falls eine Zahl nicht in der Kette steht)!
         try:
             _num_ids = [v for (u, b), v in list(_CLOSE_NUM_MAP.items()) if int(u) == int(uid)]
             for _nid in _num_ids:
@@ -3207,12 +3248,12 @@ async def _cb_edit(update, text, kb):
             _mt = (update.callback_query.message.text or "") if getattr(update.callback_query.message, "text", None) else ""
             _uid_cb = update.effective_user.id if update.effective_user else 0
             if _mt.startswith("Willkommen beim USA Sport Radar"):
-                # V200: _chain_clear RAUS! Vorher wurde bei jedem neuen Flow aus dem Hauptmenue die ganze Schliessen-Liste geloescht -> 'Alle schliessen' hat nur den letzten Flow erwischt (2 von 3 weg, Rest blieb)! Jetzt bleibt die Liste ueber alle Flows bestehen!
+                # V201: _chain_clear RAUS! Vorher wurde bei jedem neuen Flow aus dem Hauptmenue die ganze Schliessen-Liste geloescht -> 'Alle schliessen' hat nur den letzten Flow erwischt (2 von 3 weg, Rest blieb)! Jetzt bleibt die Liste ueber alle Flows bestehen!
                 _m = await update.callback_query.message.reply_text(text, reply_markup=_with_close(kb))
                 try: _chain_add(_uid_cb, _m.message_id)
                 except: pass
                 return
-            # V200: Klick AUS Meine Woche (News/Next/Tabellen/CFP) -> NEUE Nachricht, Meine Woche bleibt stehen! Vorher wurde Meine Woche ueberschrieben -> weg!
+            # V201: Klick AUS Meine Woche (News/Next/Tabellen/CFP) -> NEUE Nachricht, Meine Woche bleibt stehen! Vorher wurde Meine Woche ueberschrieben -> weg!
             if _mt.startswith("\U0001f4c5 Meine Woche"):
                 try:
                     _data196 = (update.callback_query.data or "") if update.callback_query else ""
@@ -3735,11 +3776,11 @@ def _news_is_filler(title):
         tl=(title or "").lower().strip().replace("\u2019","'").replace("\u2018","'").replace("\u201c",'"').replace("\u201d",'"')
         # V175: Practice Squad ist Kleinkram - IMMER raus, auch wenn "signed" drin steht!
         if "practice squad" in tl: return True
-        # V200: 'Why ...' am Anfang = fast immer Meinung/Analyse! Keine echte News!
+        # V201: 'Why ...' am Anfang = fast immer Meinung/Analyse! Keine echte News!
         if tl.startswith("why "): return True
-        # V200 HARTE BLOCKS - schlagen ALLE Ausnahmen (auch CFP/Free Agency)! Grund: "College Football Playoff odd..." ist Betting, obwohl CFP drin steht!
+        # V201 HARTE BLOCKS - schlagen ALLE Ausnahmen (auch CFP/Free Agency)! Grund: "College Football Playoff odd..." ist Betting, obwohl CFP drin steht!
         # Echte Signings ("signs with", "agrees to") sind NICHT in dieser Liste - die bleiben erlaubt!
-        # V200: Neue Luecken aus Screenshots! Prognose/Analyse/Insider/Preview-Woerter, die V192 noch durchgelassen hat!
+        # V201: Neue Luecken aus Screenshots! Prognose/Analyse/Insider/Preview-Woerter, die V192 noch durchgelassen hat!
         # "visit" (ohne s!) faengt auch "visits"! "face " mit Leerzeichen, damit "surface" nicht trifft! "stay for" faengt "Will Core Stay for..."!
         for _hb in ("odds","oddsmakers","sportsbook","betting","trade target","trade rumors","trade rumor","to host","will host","preview","pregame","pre-game","what to watch","how to watch","be the answer","mock draft","projected","projection","predicted","breakdown","opponent breakdown","insider","will stay","stay for","going into","biggest test","visit","face ","matchup","facing","lineup","lineup notes","game notes","girlfriend","boyfriend","dating","fiancee","great match for","jeff capel","jeff cap","ncaab","march madness","final four"):
             if _hb in tl: return True
@@ -4018,8 +4059,8 @@ async def news_league_cmd(update, ctx, league):
             q=update.callback_query
             if q and q.message:
                 try: await q.message.edit_text(_txt, reply_markup=_kb, parse_mode="HTML", disable_web_page_preview=True)
-                except Exception: await q.message.reply_text(_txt, reply_markup=_kb, parse_mode="HTML", disable_web_page_preview=True)
-            else: await update.message.reply_text(_txt, reply_markup=_kb, parse_mode="HTML", disable_web_page_preview=True)
+                except Exception: _m201 = await q.message.reply_text(_txt, reply_markup=_kb, parse_mode="HTML", disable_web_page_preview=True); _chain_add(update.effective_user.id if update.effective_user else 0, _m201.message_id)
+            else: _m201 = await update.message.reply_text(_txt, reply_markup=_kb, parse_mode="HTML", disable_web_page_preview=True); _chain_add(update.effective_user.id if update.effective_user else 0, _m201.message_id)
         except Exception:
             await _cb_edit(update, "\n".join([f"📰 Liga-News - {league}\n"]+[f"{i}. {a['headline']}" for i,a in enumerate(arts,1)]), _kb)
     except Exception as _e:
@@ -4070,8 +4111,8 @@ async def news_team_cmd(update, ctx, idx):
         q=update.callback_query
         if q and q.message:
             try: await q.message.edit_text(_txt, reply_markup=_kb, parse_mode="HTML", disable_web_page_preview=True)
-            except Exception: await q.message.reply_text(_txt, reply_markup=_kb, parse_mode="HTML", disable_web_page_preview=True)
-        else: await update.message.reply_text(_txt, reply_markup=_kb, parse_mode="HTML", disable_web_page_preview=True)
+            except Exception: _m201 = await q.message.reply_text(_txt, reply_markup=_kb, parse_mode="HTML", disable_web_page_preview=True); _chain_add(update.effective_user.id if update.effective_user else 0, _m201.message_id)
+        else: _m201 = await update.message.reply_text(_txt, reply_markup=_kb, parse_mode="HTML", disable_web_page_preview=True); _chain_add(update.effective_user.id if update.effective_user else 0, _m201.message_id)
     except Exception:
         await _cb_edit(update, "\n".join([f"📰 News - {f}\n"]+[f"{i}. {a['headline']}" for i,a in enumerate(arts,1)]), _kb)
 
@@ -4754,7 +4795,7 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 _del_rows.append([InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")])
                 _del_kb = InlineKeyboardMarkup(_del_rows)
                 _m2 = await update.message.reply_text(_txt2, reply_markup=_del_kb)
-                # V200: Fenster in Kette + Zahl mappen (sonst blieb Fenster bei 'Alle schliessen' uebrig)!
+                # V201: Fenster in Kette + Zahl mappen (sonst blieb Fenster bei 'Alle schliessen' uebrig)!
                 try: _chain_add(_uid2, _m2.message_id); _CLOSE_NUM_MAP[(int(_uid2), int(_m2.message_id))] = int(update.message.message_id)
                 except: pass
             else:
@@ -4781,7 +4822,7 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 _rows3.extend(_yt_buttons_for_game(_eid3, _lg3, _txt3))
                 _rows3.append([InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")])
                 _m3 = await update.message.reply_text(_txt3, reply_markup=InlineKeyboardMarkup(_rows3))
-                # V200: Fenster in Kette + Zahl mappen!
+                # V201: Fenster in Kette + Zahl mappen!
                 try: _chain_add(_uid3, _m3.message_id); _CLOSE_NUM_MAP[(int(_uid3), int(_m3.message_id))] = int(update.message.message_id)
                 except: pass
             else:
@@ -4891,7 +4932,7 @@ HELP_SHORT = {
 
 
 def get_expert_stats_text(eid, lg):
-    # V200: SofaScore-Style! NFL/NCAAF: Offense / Passen / Laufspiel. NHL/NBA/MLB: eigene Gruppen (siehe _expert_generic).
+    # V201: SofaScore-Style! NFL/NCAAF: Offense / Passen / Laufspiel. NHL/NBA/MLB: eigene Gruppen (siehe _expert_generic).
     # Final Stats bleiben wie sie sind! Nur Experten-Stats wird SofaScore-Style!
     # Alles aus ESPN Boxscore + Drives. Kein EPA/CPOE. Kein neuer Key!
     # Unsere 5 alten Experten-Werte (Points per Drive, 3-and-Out, Explosive, Sack Rate) bleiben drin, in Offense!
@@ -5297,7 +5338,7 @@ def get_live_stats_text(eid, lg):
 
 
 def _pick_norm_global(sd, keys):
-    # V200: Normalisierte Suche - ESPN-Feldnamen variieren (shotsOnGoal vs shots)!
+    # V201: Normalisierte Suche - ESPN-Feldnamen variieren (shotsOnGoal vs shots)!
     def _n2(s): return str(s).lower().replace(' ', '').replace('_', '').replace('-', '').replace('/', '')
     flat = {_n2(kk): vv for kk, vv in (sd or {}).items()}
     for _k in keys:
@@ -5310,7 +5351,7 @@ def _pick_norm_global(sd, keys):
     return ''
 
 def _expert_generic(eid, lg):
-    # V200: Experten-Stats fuer NHL / NBA / MLB - gleiche Struktur wie NFL, Gruppen pro Liga, alles aus ESPN Boxscore!
+    # V201: Experten-Stats fuer NHL / NBA / MLB - gleiche Struktur wie NFL, Gruppen pro Liga, alles aus ESPN Boxscore!
     try:
         key = LEAGUES[lg]["espn"]
         sport = 'hockey' if lg=='NHL' else 'basketball' if lg=='NBA' else 'baseball'
@@ -5359,7 +5400,7 @@ def _expert_generic(eid, lg):
             _group("Überzahl / Disziplin", [(["powerplaygoals","power play goals"],"PP Tore"), (["powerplayopportunities","power play opportunities"],"PP Chancen"), (["penaltyminutes","penalty minutes"],"Strafminuten"), (["penalties","penalty"],"Strafen")])
             _group("Zweikampf", [(["faceoffwinpct","faceoffs won","faceoffswon","faceoffs"],"Faceoffs"), (["giveaways"],"Giveaways"), (["takeaways"],"Takeaways")])
         elif lg == "NBA":
-            # V200: Punkte-Zeile RAUS! ESPN liefert da falsche Werte (35-19 statt 98-126)! Endstand steht schon im Titel!
+            # V201: Punkte-Zeile RAUS! ESPN liefert da falsche Werte (35-19 statt 98-126)! Endstand steht schon im Titel!
             _group("Wurf", [(["fieldgoalpct","field goal pct"],"FG%"), (["threepointfieldgoalpct","three point pct"],"3PT%"), (["freethrowpct","free throw pct"],"FT%")])
             _group("Rebounds / Ball", [(["rebounds"],"Rebounds"), (["offensiverebounds","offensive rebounds"],"Off. Rebounds"), (["defensiverebounds","defensive rebounds"],"Def. Rebounds"), (["assists"],"Assists"), (["turnovers"],"Turnovers")])
             _group("Defense", [(["steals"],"Steals"), (["blocks"],"Blocks"), (["fouls","personal fouls"],"Fouls")])
@@ -5535,7 +5576,7 @@ def get_final_stats_text(eid, lg):
                 elif _lbl=="Sacks":
                     lines.append("Sacks: - - -")
         elif lg == "NHL":
-            # V200: Robuste Picks (ESPN-Feldnamen variieren!) + mehr Werte! Vorher kamen nur Hits + PP an!
+            # V201: Robuste Picks (ESPN-Feldnamen variieren!) + mehr Werte! Vorher kamen nur Hits + PP an!
             for _keys,_lbl in [(["shotsongoal","shots","shots on goal"],"Schüsse"),(["hits"],"Hits"),(["faceoffwinpct","faceoffs won","faceoffswon","faceoffs"],"Faceoffs"),(["powerplaygoals","power play goals"],"PP Tore"),(["powerplayopportunities","power play opportunities"],"PP Chancen"),(["penaltyminutes","penalty minutes"],"Strafminuten"),(["blockedshots","blocked shots"],"Blocked Shots"),(["giveaways"],"Giveaways"),(["takeaways"],"Takeaways")]:
                 va = _pick_norm_global(sa, _keys)
                 vb = _pick_norm_global(sb, _keys)
@@ -5721,7 +5762,7 @@ def _myweek_kb(_has_ncaaf):
     return InlineKeyboardMarkup(_rows)
 
 async def myweek_cmd(update, ctx, force=False):
-    # V200 CACHE: Innerhalb von 5 Min sofort aus Cache, ohne neu zu laden! Stand-Zeit steht in Zeile 1! force=True via Aktualisieren-Knopf!
+    # V201 CACHE: Innerhalb von 5 Min sofort aus Cache, ohne neu zu laden! Stand-Zeit steht in Zeile 1! force=True via Aktualisieren-Knopf!
     try:
         _uid_c = update.effective_user.id if update.effective_user else 0
         if not force and _uid_c in _MYWEEK_CACHE:
@@ -5730,7 +5771,7 @@ async def myweek_cmd(update, ctx, force=False):
             if _time_c.time() - _ts_c < 300:
                 await _cb_edit(update, "\n".join(_lines_c), _myweek_kb(_ncaaf_c)); return
     except: pass
-    # V200 MEINE WOCHE: Pro Liga das, was da zählt! Nur Ligen, die man als Favorit hat! + News pro Team! + Dynamische Knöpfe!
+    # V201 MEINE WOCHE: Pro Liga das, was da zählt! Nur Ligen, die man als Favorit hat! + News pro Team! + Dynamische Knöpfe!
     try: _load=await _loading_start(update.callback_query.message if update.callback_query else update.message, "⏳ Ich hole deine Woche... einen Moment")
     except: _load=None
     user=update.effective_user or (update.callback_query.from_user if update.callback_query else None)
@@ -5763,13 +5804,13 @@ async def myweek_cmd(update, ctx, force=False):
             elif _ov and _ov[1]>=3: lines.append(f"{_em} {_short}{_rec} - raus 😔")
             else: lines.append(f"{_em} {_short}{_rec} - noch im Rennen!")
         else:
-            # V200: Pro Liga Ranking aus Tabelle! _standings_row_for = (Division, Platz in Division, W, L, T, Rows)!
+            # V201: Pro Liga Ranking aus Tabelle! _standings_row_for = (Division, Platz in Division, W, L, T, Rows)!
             _row=None
             try: _row=_standings_row_for(_flg, _name)
             except: _row=None
             if _row:
                 _div,_rk,_w,_l,_tt,_rows2=_row
-                # V200 FIX 3: MLB gibt ESPN nur Liga-Gruppen (National League #7)! Division + Divisions-Rang selbst rechnen!
+                # V201 FIX 3: MLB gibt ESPN nur Liga-Gruppen (National League #7)! Division + Divisions-Rang selbst rechnen!
                 if _flg=="MLB":
                     try:
                         _d2=_mlb_div_for(_name)
@@ -5804,7 +5845,7 @@ async def myweek_cmd(update, ctx, force=False):
                     lines.append(f"{_em} {_name}{_rec} - {_div} #{_rk}{_extra}{_kurs}")
             else:
                 lines.append(f"{_em} {_name} ({_flg})")
-        # V200: KEINE Schlagzeile mehr im Teaser! Nur Zaehler + 24h-Verweis! Grund: Google-Blog-Schlagzeilen haben Meine Woche zugemuellt! Details gibt es erst bei News!
+        # V201: KEINE Schlagzeile mehr im Teaser! Nur Zaehler + 24h-Verweis! Grund: Google-Blog-Schlagzeilen haben Meine Woche zugemuellt! Details gibt es erst bei News!
         # Neu = wirklich letzte 24 Std.! _news_is_fresh(pub, 1)! Ohne Datum = als neu zaehlen (ESPN liefert oft kein Datum)!
         try:
             _news_all,_src2=_team_news_all(_flg, _name, limit=8) or ([], "")
@@ -5820,7 +5861,7 @@ async def myweek_cmd(update, ctx, force=False):
         except:
             lines.append("   📰 Keine neuen News (24 Std.)")
         lines.append("")
-    # V200: Verweis, was 'neu' heisst! Nur 1 Zeile, kein Knopf-Wahnsinn!
+    # V201: Verweis, was 'neu' heisst! Nur 1 Zeile, kein Knopf-Wahnsinn!
     lines.append("📰 Neu = letzte 24 Std. Details bei 📰 News!")
     # CFP-Zeile NUR wenn NCAAF-Favorit da ist!
     if _has_ncaaf:
@@ -5828,9 +5869,9 @@ async def myweek_cmd(update, ctx, force=False):
     try:
         if _load: await _loading_done(ctx, user.id if user else 0, _load)
     except: pass
-    # V200: KB aus Helper (mit Aktualisieren-Knopf)!
+    # V201: KB aus Helper (mit Aktualisieren-Knopf)!
     kb=_myweek_kb(_has_ncaaf)
-    # V200: Frisch gebaut -> cachen!
+    # V201: Frisch gebaut -> cachen!
     try:
         import time as _time_s
         _uid_s = update.effective_user.id if update.effective_user else 0
@@ -5877,7 +5918,7 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         except:
             try: await q.message.edit_text("✖️ Fenster geschlossen!\n\nDein Hauptmenü nach /start ist noch da! 👆", reply_markup=None)
             except: pass
-        # V200: Zahl zum Fenster mitloeschen! Wenn das Fenster per Zahl geoeffnet wurde (z.B. '1' -> Final Stats), fliegt die Zahl gleich mit weg!
+        # V201: Zahl zum Fenster mitloeschen! Wenn das Fenster per Zahl geoeffnet wurde (z.B. '1' -> Final Stats), fliegt die Zahl gleich mit weg!
         try:
             _mid_c = q.message.message_id if q.message else None
             _num_mid = _CLOSE_NUM_MAP.pop((_uid_c, int(_mid_c)), None) if _mid_c else None
@@ -5909,11 +5950,11 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 except: pass
         except: pass
     elif data.startswith("expert_stats:"):
-        # V200: Experten-Stats fuer alle Ligen!
+        # V201: Experten-Stats fuer alle Ligen!
         try:
             _parts = data.split(":"); _eid = _parts[1]; _lg = _parts[2] if len(_parts)>2 else ""
             _uid = update.effective_user.id if update.effective_user else 0
-            # V200: Experten-Stats jetzt fuer alle Ligen!
+            # V201: Experten-Stats jetzt fuer alle Ligen!
             _load = await ctx.bot.send_message(chat_id=_uid, text="🧠 Experten-Stats werden berechnet...\nEinen Moment, ich hol die Stats von ESPN!")
             _txt = get_expert_stats_text(_eid, _lg)
             if _txt:
@@ -5923,7 +5964,7 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 except: pass
                 try:
                     _me = await ctx.bot.send_message(chat_id=_uid, text=_txt, reply_markup=_ekb)
-                    # V200: Experten-Fenster in Kette, sonst bleibt es bei 'Alle schliessen' stehen!
+                    # V201: Experten-Fenster in Kette, sonst bleibt es bei 'Alle schliessen' stehen!
                     try: _chain_add(_uid, _me.message_id)
                     except: pass
                 except Exception as _e:
@@ -6203,8 +6244,8 @@ def main():
         print("JobQueue:", e)
     app.add_handler(CallbackQueryHandler(on_cb))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
-    print("✅ USA Sport Radar Bot online - V200 - is live")
-    logger.info("✅ USA Sport Radar Bot online - V200 - is live")
+    print("✅ USA Sport Radar Bot online - V201 - is live")
+    logger.info("✅ USA Sport Radar Bot online - V201 - is live")
     app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
 
 if __name__=="__main__": main()
