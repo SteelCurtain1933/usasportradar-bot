@@ -1,4 +1,4 @@
-# USA Sport Radar - V206 FINAL - Meine Woche: Unter-Fenster als neue Nachricht + 5-Min-Cache + Aktualisieren
+# USA Sport Radar - V207 FINAL - Meine Woche: Unter-Fenster als neue Nachricht + 5-Min-Cache + Aktualisieren
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -2574,16 +2574,17 @@ async def fav_remove_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     _rows=[[InlineKeyboardButton(f"❌ {_f}", callback_data=f"fav_del:{_i}")] for _i,_f in enumerate(_favs)]
     _rows.append([InlineKeyboardButton("⬅️ Zurück", callback_data="back")])
     await target.reply_text("🗑️ Welchen Favorit willst du entfernen?", reply_markup=InlineKeyboardMarkup(_rows))
-async def heute_morgen(update: Update, ctx: ContextTypes.DEFAULT_TYPE, morgen=False):
+async def heute_morgen(update: Update, ctx: ContextTypes.DEFAULT_TYPE, morgen=False, lg_filter=None, edit=False):
     target = update.message or update.callback_query.message
     want = (datetime.now(BERLIN)+timedelta(days=1 if morgen else 0)).date()
-    lines=[f"📅 {'Morgen' if morgen else 'Heute'} ({want.strftime('%d.%m.')})\n"]
+    lines=[f"📅 {'Morgen' if morgen else 'Heute'} ({want.strftime('%d.%m.')})" + (f" – {lg_filter}" if lg_filter and lg_filter != "ALL" else "") + "\n"]
     # Überall: "Gast @ Heim" - erstes Team ist Heimteam!
 
     live_lines=[]; upcoming_lines=[]
     # V204: Explizite Datums-Abfrage! Vorher: espn_scoreboard() OHNE Datum -> ESPN liefert nur den US-Heute-Slate -> Nacht-Spiele 00:00-03:00 DE-Zeit (US-Abend!) fielen raus (Iowa State 00:00, Clemson 01:30 usw. fehlten in Next Games)! Jetzt: -1 bis +2 Tage abfragen + Dedupe!
     _seen_hm=set()
     for league in LEAGUES:
+        if lg_filter and lg_filter != "ALL" and league != lg_filter: continue  # V207: Liga-Fach!
         for _off_hm in (-1, 0, 1, 2):
             _d_hm = datetime.now(BERLIN).date() + timedelta(days=_off_hm)
             for ev in espn_scoreboard(league, dates=_d_hm.strftime("%Y%m%d")):
@@ -2608,11 +2609,36 @@ async def heute_morgen(update: Update, ctx: ContextTypes.DEFAULT_TYPE, morgen=Fa
         lines.extend(upcoming_lines)
     if not live_lines and not upcoming_lines:
         if morgen:
-            lines.append("Morgen keine Spiele in den Ligen. Schau mal bei /top10 oder /next vorbei.")
+            lines.append(f"Keine {lg_filter}-Spiele morgen. Tipp oben auf eine andere Liga!" if lg_filter and lg_filter != "ALL" else "Morgen keine Spiele in den Ligen. Schau mal bei /top10 oder /next vorbei.")
         else:
             lines.append("Heute kein Spiel mehr - alles schon vorbei! Schau mal bei ✅ Ergebnisse für die Endergebnisse von letzter Nacht.")
             lines.append("Oder bei ⏭️ Next Games für die nächsten Spiele deiner Favoriten.")
-    await target.reply_text("\n".join(lines), reply_markup=small_kb())
+    # V207: Liga-Faecher oben dran + Sicherheits-Cap (Telegram-Limit 4096 Zeichen)!
+    _cb_hm = "next_tomorrow" if morgen else "next_today"
+    def _flbl_hm(_lg):
+        return f"{'✅ ' if lg_filter == _lg else ''}{LEAGUES[_lg]['emoji']} {_lg}"
+    _kb_hm = InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"{'✅ ' if not lg_filter or lg_filter == 'ALL' else ''}📅 Alle", callback_data=f"{_cb_hm}:ALL"),
+         InlineKeyboardButton(_flbl_hm("NFL"), callback_data=f"{_cb_hm}:NFL"),
+         InlineKeyboardButton(_flbl_hm("NCAAF"), callback_data=f"{_cb_hm}:NCAAF")],
+        [InlineKeyboardButton(_flbl_hm("NBA"), callback_data=f"{_cb_hm}:NBA"),
+         InlineKeyboardButton(_flbl_hm("NHL"), callback_data=f"{_cb_hm}:NHL"),
+         InlineKeyboardButton(_flbl_hm("MLB"), callback_data=f"{_cb_hm}:MLB")],
+        [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+        [InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")],
+    ])
+    _txt_hm = "\n".join(lines)
+    if len(_txt_hm) > 4000:
+        _cut = []
+        for _ln in lines:
+            if sum(len(x) + 1 for x in _cut) + len(_ln) > 3900: break
+            _cut.append(_ln)
+        _cut.append("\n… zu viele Spiele! Tipp oben auf eine Liga, um zu filtern! 👆")
+        _txt_hm = "\n".join(_cut)
+    if edit:
+        await _cb_edit(update, _txt_hm, _kb_hm)
+    else:
+        await target.reply_text(_txt_hm, reply_markup=_kb_hm)
 
 
 
@@ -3325,8 +3351,11 @@ async def dnd_cmd(update, ctx):
     await _cb_edit(update, f"🔕 Nicht stören\n\nAktuell: {'AN' if d['on'] else 'AUS'} • {d['start']:02d}:00 – {d['end']:02d}:00 Uhr\nSpoiler-Schutz: {'AN' if d['spoiler'] else 'AUS'}\n\nWenn AN: Keine Live-Nachrichten + keine Reminder in der Zeit - stattdessen sammle ich alles still und zeige es dir danach in '🌅 Während du weg warst'!\n\nSpoiler-Schutz AN = Ergebnisse erst auf Knopfdruck, damit du erst Highlights gucken kannst! 🤫", InlineKeyboardMarkup(rows))
 async def dnd_pick_cmd(update, ctx, which):
     rows = []
-    for _r in range(4):
-        rows.append([InlineKeyboardButton(f"{_h:02d}:00", callback_data=f"dnd_set_{which}:{_h}") for _h in range(_r*6, _r*6+6)])
+    try: _cur_dnd = get_dnd(update.effective_user.id if update.effective_user else 0) or {}
+    except: _cur_dnd = {}
+    _cur_h = _cur_dnd.get("start" if which == "start" else "end")
+    for _r in range(6):  # V207: 4 pro Reihe statt 6! Vorher war "00:00" abgeschnitten!
+        rows.append([InlineKeyboardButton(f"{'✅ ' if _cur_h == _h or _cur_h == f'{_h:02d}:00' else ''}{_h:02d}:00", callback_data=f"dnd_set_{which}:{_h}") for _h in range(_r*4, _r*4+4)])
     rows.append([InlineKeyboardButton("⬅️ Zurück", callback_data="dnd")])
     _txt = "⏰ Von wann soll Nicht-Stören starten?" if which == "start" else "⏰ Bis wann soll Nicht-Stören laufen?"
     await _cb_edit(update, _txt + "\n\nEinfach die Stunde antippen!", InlineKeyboardMarkup(rows))
@@ -4381,8 +4410,7 @@ async def notif_teams_cmd(update, ctx):
     uid = update.effective_user.id if update.effective_user else 0
     favs = favs_for(uid)
     if not favs:
-            await _loading_done(ctx, update.effective_user.id if update.effective_user else 0, _load_news)
-    await target.reply_text("Du hast noch keine Favoriten. Füge erst ein Team hinzu!", reply_markup=small_kb()); return
+        await target.reply_text("Du hast noch keine Favoriten. Füge erst ein Team hinzu!", reply_markup=small_kb()); return
     rows = []
     for i, f in enumerate(favs):
         cfg = get_live_team(uid, f)
@@ -6398,6 +6426,8 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif data=="next": await next_hub_cmd(update, ctx)
     elif data=="next_today": await heute_morgen(update, ctx, False)
     elif data=="next_tomorrow": await heute_morgen(update, ctx, True)
+    elif data.startswith("next_today:"): await heute_morgen(update, ctx, False, lg_filter=data.split(":")[1], edit=True)
+    elif data.startswith("next_tomorrow:"): await heute_morgen(update, ctx, True, lg_filter=data.split(":")[1], edit=True)
     elif data=="next_mine": await next_mine_cmd(update, ctx)
     elif data=="injuries_mine": await injuries_mine_cmd(update, ctx)
     elif data.startswith("injuries_ir:"): _p=data.split(":"); await injuries_ir_cmd(update, ctx, _p[1], ":".join(_p[2:]))
@@ -6502,8 +6532,8 @@ def main():
         print("JobQueue:", e)
     app.add_handler(CallbackQueryHandler(on_cb))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
-    print("✅ USA Sport Radar Bot online - V206 - is live")
-    logger.info("✅ USA Sport Radar Bot online - V206 - is live")
+    print("✅ USA Sport Radar Bot online - V207 - is live")
+    logger.info("✅ USA Sport Radar Bot online - V207 - is live")
     app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
 
 if __name__=="__main__": main()
