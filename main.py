@@ -1,4 +1,4 @@
-# USA Sport Radar - V212 FINAL - Meine Woche: Unter-Fenster als neue Nachricht + 5-Min-Cache + Aktualisieren
+# USA Sport Radar - V213 FINAL - Meine Woche: Unter-Fenster als neue Nachricht + 5-Min-Cache + Aktualisieren
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -4527,8 +4527,8 @@ async def my_live_games_cmd(update, ctx):
             if _state209 == "post":
                 try:
                     _, _dt209 = fmt_dt(_fresh209.get("date",""))
-                    if _dt209 and (datetime.now(BERLIN) - _dt209).total_seconds() > 30*3600:
-                        # V209: Fertig seit >24h -> Altlast! Raus aus der Liste!
+                    if _dt209 and (datetime.now(BERLIN) - _dt209).total_seconds() > 5*3600:
+                        # V213: Fertig + Anpfiff >5h her -> Altlast! Raus aus der Liste! (Vorher: 30h - viel zu lang!)
                         _to_delete209.append(eid); _skip209 = True
                 except: pass
             if not _skip209:
@@ -6094,6 +6094,7 @@ async def next_live_list_cmd(update, ctx, league):
 async def next_live_pick_cmd(update, ctx, league, eid, num_mid=None):
     # Spiel-Name finden
     _name = f"Spiel {eid}"
+    _post213 = False  # V213: Spiel schon vorbei?
     try:
         from datetime import date as _date
         today = _date.today()
@@ -6103,8 +6104,24 @@ async def next_live_pick_cmd(update, ctx, league, eid, num_mid=None):
                 if str(ev.get("id","")) == str(eid):
                     _teams,_ = event_teams(ev)
                     _name = game_line(ev, league)
+                    try: _post213 = (ev.get("status",{}).get("type",{}).get("state","") == "post")
+                    except: pass
                     break
     except: pass
+    # V213: Spiel schon vorbei? -> Keine Schalter mehr! Nur "Spiel vorbei" + Entfernen!
+    if _post213:
+        _rm_kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🗑️ Aus Liste entfernen", callback_data=f"next_live_remove:{league}:{eid}")],
+            [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+        ])
+        _win213 = await _cb_edit(update, f"🔴 Live für ein Spiel\n\n{_name}\n\n🏁 Spiel schon vorbei! Da gibt's nix mehr einzustellen! 😁", _rm_kb)
+        # V213: Fenster -> Zahl mappen (wie V210), damit die getippte Zahl mitgeloescht wird!
+        try:
+            if num_mid and _win213 is not None and getattr(_win213, "message_id", None):
+                _uid213 = update.effective_user.id if update.effective_user else 0
+                _CLOSE_NUM_MAP[(int(_uid213), int(_win213.message_id))] = int(num_mid)
+        except: pass
+        return
     # In Settings speichern (Name + Liga), damit live_job es findet!
     try:
         s = load_settings(); s.setdefault(str(update.effective_user.id), {}); s[str(update.effective_user.id)].setdefault("oneoff_live", {}).setdefault(str(eid), {})
@@ -6412,6 +6429,14 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         _pp = data.split(":"); _lg3 = _pp[1]; _eid3 = _pp[2]; _kind3 = _pp[3]
         set_oneoff_live_toggle(update.effective_user.id, _eid3, _kind3)
         await next_live_pick_cmd(update, ctx, _lg3, _eid3)
+    elif data.startswith("next_live_remove:"):
+        # V213: Fertiges Spiel aus "Meine Live-Spiele" werfen!
+        _pp = data.split(":"); _eid3 = _pp[2]
+        try:
+            _s213 = load_settings(); _s213.get(str(update.effective_user.id), {}).get("oneoff_live", {}).pop(str(_eid3), None); save_settings(_s213)
+        except: pass
+        try: await q.message.edit_text("✅ Raus aus der Liste! 🗑️\n\nTippe /start für ein neues Fenster!")
+        except: pass
     elif data.startswith("live_clean_yes:"):
         _eid = data.split(":")[1]; _uid = update.effective_user.id if update.effective_user else 0
         _ids = list(_LIVE_MSG_IDS.get((_uid, str(_eid)), []))
