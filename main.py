@@ -1,4 +1,4 @@
-# USA Sport Radar - V209 FINAL - Meine Woche: Unter-Fenster als neue Nachricht + 5-Min-Cache + Aktualisieren
+# USA Sport Radar - V212 FINAL - Meine Woche: Unter-Fenster als neue Nachricht + 5-Min-Cache + Aktualisieren
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -2273,8 +2273,8 @@ async def tables_mine_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def next_hub_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     target = update.message or update.callback_query.message
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📅 Heute - Alle Spiele", callback_data="next_today")],
-        [InlineKeyboardButton("📅 Morgen - Alle Spiele", callback_data="next_tomorrow")],
+        [InlineKeyboardButton("📅 Heute", callback_data="next_today")],  # V210: Liga wird danach gewaehlt!
+        [InlineKeyboardButton("📅 Morgen", callback_data="next_tomorrow")],
         [InlineKeyboardButton("⭐ Nur meine Favoriten", callback_data="next_mine")],
         [InlineKeyboardButton("🔴 Live für ein Spiel (nicht Favorit)", callback_data="next_live_league")],
         [InlineKeyboardButton("❓ Hilfe", callback_data="help")],
@@ -2578,6 +2578,24 @@ async def heute_morgen(update: Update, ctx: ContextTypes.DEFAULT_TYPE, morgen=Fa
     target = update.message or update.callback_query.message
     want = (datetime.now(BERLIN)+timedelta(days=1 if morgen else 0)).date()
     lines=[f"📅 {'Morgen' if morgen else 'Heute'} ({want.strftime('%d.%m.')})" + (f" – {lg_filter}" if lg_filter and lg_filter != "ALL" else "") + "\n"]
+    # V210: Kein 'Alle' mehr! Ohne Liga -> Liga-Auswahl zeigen (College-Wand am Wochenende war zu viel)!
+    if not lg_filter or lg_filter == "ALL":
+        _cb210 = "next_tomorrow" if morgen else "next_today"
+        _kb210 = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🏈 NFL", callback_data=f"{_cb210}:NFL"),
+             InlineKeyboardButton("🏈 NCAAF", callback_data=f"{_cb210}:NCAAF")],
+            [InlineKeyboardButton("🏀 NBA", callback_data=f"{_cb210}:NBA"),
+             InlineKeyboardButton("🏒 NHL", callback_data=f"{_cb210}:NHL")],
+            [InlineKeyboardButton("⚾ MLB", callback_data=f"{_cb210}:MLB")],
+            [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+            [InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")],
+        ])
+        _txt210 = f"📅 {'Morgen' if morgen else 'Heute'} ({want.strftime('%d.%m.')})\n\nWelche Liga?\nTipp oben auf eine Liga! 👆"
+        if edit:
+            await _cb_edit(update, _txt210, _kb210)
+        else:
+            await target.reply_text(_txt210, reply_markup=_kb210)
+        return
     # Überall: "Gast @ Heim" - erstes Team ist Heimteam!
 
     live_lines=[]; _up_hm=[]  # V208: (dt, zeile) fuer Zeit-Gruppen!
@@ -2599,7 +2617,7 @@ async def heute_morgen(update: Update, ctx: ContextTypes.DEFAULT_TYPE, morgen=Fa
                     # Heute: NUR Live + Noch heute! Finals kommen bei ✅ Ergebnisse rein, sonst ewige Liste!
                     if not morgen and state=="post":
                         continue
-                    _line_hm = f"{LEAGUES[league]['emoji']} {game_line(ev, league, show_broadcast=True)}"
+                    _line_hm = game_line(ev, league, show_broadcast=True)  # V210: Kein Liga-Emoji mehr vor dem Spiel -> passt in eine Zeile!
                     # V208: Kompakt! Datum steht schon oben in der Ueberschrift - nicht 50x wiederholen!
                     _line_hm = _line_hm.replace(f" {want.strftime('%d.%m.')} ", " ").replace("  ", " ")
                     # V209: ⭐ bei Favoriten-Spielen! Gleiches exaktes Matching wie Ergebnisse/Live!
@@ -2645,14 +2663,13 @@ async def heute_morgen(update: Update, ctx: ContextTypes.DEFAULT_TYPE, morgen=Fa
     # V207: Liga-Faecher oben dran + Sicherheits-Cap (Telegram-Limit 4096 Zeichen)!
     _cb_hm = "next_tomorrow" if morgen else "next_today"
     def _flbl_hm(_lg):
-        return f"{'✅ ' if lg_filter == _lg else ''}{LEAGUES[_lg]['emoji']} {_lg}"
+        return f"{'✅ ' if lg_filter == _lg else ''}{_lg}"  # V210: Kein Emoji im Knopf mehr -> nix abgeschnitten!
     _kb_hm = InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"{'✅ ' if not lg_filter or lg_filter == 'ALL' else ''}📅 Alle", callback_data=f"{_cb_hm}:ALL"),
-         InlineKeyboardButton(_flbl_hm("NFL"), callback_data=f"{_cb_hm}:NFL"),
-         InlineKeyboardButton(_flbl_hm("NCAAF"), callback_data=f"{_cb_hm}:NCAAF")],
-        [InlineKeyboardButton(_flbl_hm("NBA"), callback_data=f"{_cb_hm}:NBA"),
-         InlineKeyboardButton(_flbl_hm("NHL"), callback_data=f"{_cb_hm}:NHL"),
-         InlineKeyboardButton(_flbl_hm("MLB"), callback_data=f"{_cb_hm}:MLB")],
+        [InlineKeyboardButton(_flbl_hm("NFL"), callback_data=f"{_cb_hm}:NFL"),
+         InlineKeyboardButton(_flbl_hm("NCAAF"), callback_data=f"{_cb_hm}:NCAAF"),
+         InlineKeyboardButton(_flbl_hm("NBA"), callback_data=f"{_cb_hm}:NBA")],
+        [InlineKeyboardButton(_flbl_hm("NHL"), callback_data=f"{_cb_hm}:NHL"),
+         InlineKeyboardButton(_flbl_hm("MLB"), callback_data=f"{_cb_hm}:MLB")],  # V210: 'Alle' RAUS!
         [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
         [InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")],
     ])
@@ -3232,9 +3249,10 @@ async def live_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("🔴 Alle Live-Spiele", callback_data="live_all")],
         [InlineKeyboardButton("⭐ Nur meine Favoriten", callback_data="live_mine")],
+        [InlineKeyboardButton("🔴 Meine Live-Spiele", callback_data="my_live_games")],  # V210: Eingestellte Einzel-Spiele!
         [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
     ])
-    await _cb_edit(update, "🔴 Live\n\nWas willst du sehen?\n🔴 Alle Live-Spiele = alles was GERADE läuft, auch ohne Favoriten!\n⭐ Nur meine Favoriten = nur deine Teams live + letzte Endergebnisse!", kb)
+    await _cb_edit(update, "🔴 Live\n\nWas willst du sehen?\n🔴 Alle Live-Spiele = alles was GERADE läuft, auch ohne Favoriten!\n⭐ Nur meine Favoriten = nur deine Teams live + letzte Endergebnisse!\n🔴 Meine Live-Spiele = deine eingestellten Einzel-Spiele!", kb)
 
 async def live_all_cmd(update, ctx):
     # V206: ALLE Spiele die gerade live sind - egal ob Favorit oder nicht!
@@ -3384,7 +3402,7 @@ async def dnd_pick_cmd(update, ctx, which):
     except: _cur_dnd = {}
     _cur_h = _cur_dnd.get("start" if which == "start" else "end")
     for _r in range(6):  # V207: 4 pro Reihe statt 6! Vorher war "00:00" abgeschnitten!
-        rows.append([InlineKeyboardButton(f"{'✅ ' if _cur_h == _h or _cur_h == f'{_h:02d}:00' else ''}{_h:02d}:00", callback_data=f"dnd_set_{which}:{_h}") for _h in range(_r*4, _r*4+4)])
+        rows.append([InlineKeyboardButton(f"{'✅' if _cur_h == _h or _cur_h == f'{_h:02d}:00' else ''}{_h:02d}:00", callback_data=f"dnd_set_{which}:{_h}") for _h in range(_r*4, _r*4+4)])
     rows.append([InlineKeyboardButton("⬅️ Zurück", callback_data="dnd")])
     # V208: Aktuelle Einstellung + Dauer anzeigen - sofort uebersichtlich!
     try:
@@ -3431,24 +3449,30 @@ async def dnd_reveal_all_cmd(update, ctx):
     try: _chain_add(update.effective_user.id if update.effective_user else 0, _m.message_id)
     except: pass
 async def dnd_summary_job(context):
-    # V203: Laeuft alle 5 Min - schickt die Zusammenfassung automatisch, wenn DND gerade geendet hat!
+    # V212: Laeuft alle 5 Min - schickt die Zusammenfassung automatisch, sobald DND AUS ist UND was auf dem Zettel steht!
+    # V212: Kein 10-Min-Fenster mehr! Vorher: Fenster verpasst (Neustart) = Zusammenfassung nie gekommen, /start noetig!
+    # V212: Marker ist jetzt pro Spiele-Batch (nicht pro Tag) - sonst wuerde ein 2. DND-Test am selben Tag blockiert!
     try:
         sett = load_settings() or {}
         now = datetime.now(BERLIN)
         for uid_str, sd in sett.items():
             try: uid = int(uid_str)
             except: continue
-            d = get_dnd(uid)
-            if not d["on"]: continue
             pend = get_pending(uid)
             if not pend: continue
-            if _redis_get(f"dnd_sent_{uid}") == now.strftime("%Y-%m-%d"): continue
-            _end = datetime.combine(now.date(), datetime.min.time(), tzinfo=BERLIN).replace(hour=d["end"])
-            if not (_end <= now <= _end + timedelta(minutes=10)): continue
+            # V212: DND gerade aktiv? -> Noch sammeln, NIX schicken!
+            try:
+                if dnd_active(uid): continue
+            except: pass
+            # V212: Gleicher Batch schon geschickt? -> Nicht doppelt! (Neuer Batch = neue Spiele = schicken!)
+            try: _batch = ",".join(sorted(str(x.get("eid")) for x in pend))
+            except: _batch = ""
+            if _batch and _redis_get(f"dnd_sent_{uid}") == _batch: continue
+            d = get_dnd(uid)
             txt, kb = _dnd_summary_build(uid, pend, d["spoiler"])
             try: await context.bot.send_message(chat_id=uid, text=txt, reply_markup=kb)
             except: continue
-            _redis_set(f"dnd_sent_{uid}", now.strftime("%Y-%m-%d"))
+            if _batch: _redis_set(f"dnd_sent_{uid}", _batch)
             clear_pending(uid)
     except Exception as e:
         logger.warning(f"dnd_summary_job: {e}")
@@ -3531,7 +3555,7 @@ async def _cb_edit(update, text, kb):
                 _m = await update.callback_query.message.reply_text(text, reply_markup=_with_close(kb))
                 try: _chain_add(_uid_cb, _m.message_id)
                 except: pass
-                return
+                return _m  # V210: Fenster zurueckgeben, damit Aufrufer die ID mappen kann!
             # V201: Klick AUS Meine Woche (News/Next/Tabellen/CFP) -> NEUE Nachricht, Meine Woche bleibt stehen! Vorher wurde Meine Woche ueberschrieben -> weg!
             if _mt.startswith("\U0001f4c5 Meine Woche"):
                 try:
@@ -3542,18 +3566,18 @@ async def _cb_edit(update, text, kb):
                         _mid196 = _MYWEEK_SUB.get(_key196)
                         if _mid196:
                             try:
-                                await update.callback_query.bot.edit_message_text(chat_id=_uid_cb, message_id=_mid196, text=text, reply_markup=_with_close(kb)); return
+                                await update.callback_query.bot.edit_message_text(chat_id=_uid_cb, message_id=_mid196, text=text, reply_markup=_with_close(kb)); return update.callback_query.message  # V210
                             except: pass
                         _m196 = await update.callback_query.message.reply_text(text, reply_markup=_with_close(kb))
                         try:
                             _chain_add(_uid_cb, _m196.message_id); _MYWEEK_SUB[_key196] = _m196.message_id
                         except: pass
-                        return
+                        return _m196  # V210
                 except: pass
             # Fenster wird bearbeitet (gleiche Nachricht) -> ID merken!
             try: _chain_add(_uid_cb, update.callback_query.message.message_id)
             except: pass
-            await update.callback_query.message.edit_text(text, reply_markup=_with_close(kb)); return
+            await update.callback_query.message.edit_text(text, reply_markup=_with_close(kb)); return update.callback_query.message  # V210
     except Exception:
         pass
     try:
@@ -3564,6 +3588,7 @@ async def _cb_edit(update, text, kb):
                 _uid2 = update.effective_user.id if update.effective_user else 0
                 _chain_add(_uid2, _m2.message_id)
             except: pass
+            return _m2  # V210: Fenster zurueckgeben (Zahl-Flow!)
     except Exception: pass
 def _is_main_msg(msg):
     try:
@@ -4774,7 +4799,9 @@ async def live_score_job(context):
                     key = (uid, eid, fav)
                     prev = _LIVE_SEEN.get(key)
                     if prev is None:
-                        _LIVE_SEEN[key] = {"scores": scores, "period": period, "state": state, "last_td": {}, "awaiting_resume": None, "halftime_sent": False, "crunch_sent": False, "start_sent": False}; continue
+                        # V211: Spiel schon fertig beim ersten Sehen? -> Als 'pre' merken, damit der Endstand trotzdem feuert! Vorher: Neustart + fertiges Spiel = Endstand still verloren!
+                        _LIVE_SEEN[key] = {"scores": scores, "period": period, "state": ("pre" if state == "post" else state), "last_td": {}, "awaiting_resume": None, "halftime_sent": False, "crunch_sent": False, "start_sent": False}
+                        if state != "post": continue
                     # V119: SPIELSTART gehört zu PERIOD! Wer Quarter-Ende + Beginn will, will auch Spielstart!
                     # (cfg.start noch drin für alle, die V118 schon an hatten - sonst geht nix verloren!)
                     if (cfg.get("period") or cfg.get("start")) and state == "in" and prev.get("state") == "pre" and not prev.get("start_sent"):
@@ -4874,7 +4901,7 @@ async def live_score_job(context):
                                 _ht_txt = f"⏸️ Halbzeit!\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n\nKurze Pause! 🥤"
                             else:
                                 _ht_txt = f"⏸️ Pause!\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}"
-                            try: await _live_send(context, uid, eid, _ht_txt)
+                            try: await _live_send_dnd(context, uid, eid, lg, _fav_disp, _ht_txt)  # V211: DND!
                             except: pass
                             prev["halftime_sent"] = True
                             try: prev["awaiting_resume"] = int(period) + 1 if period is not None else None
@@ -4889,7 +4916,7 @@ async def live_score_job(context):
                     # V103: Wenn Halbzeit schon geschickt (2->3), kein doppeltes Perioden-Ende mehr! Weiter kommt unten!
                     _skip_pe = bool(prev.get("halftime_sent") and prev["period"] is not None and int(prev["period"]) == 2 and period is not None and int(period) == 3)
                     if cfg.get("period") and state == "in" and prev["period"] is not None and period is not None and int(period) > int(prev["period"]) and not _skip_pe:
-                        try: await _live_send(context, uid, eid, f"⏸️ {live_period_label(lg, prev['period'])} vorbei!\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}")
+                        try: await _live_send_dnd(context, uid, eid, lg, _fav_disp, f"⏸️ {live_period_label(lg, prev['period'])} vorbei!\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}")  # V211: DND!
                         except: pass
                         try: prev["awaiting_resume"] = int(period)
                         except: pass
@@ -4900,7 +4927,7 @@ async def live_score_job(context):
                             _max = 1200 if lg == "NHL" else 900 if lg in ("NFL", "NCAAF") else 720 if lg == "NBA" else None
                             if _cs is not None and _max is not None and _cs < _max - 5:
                                 # V127: Nur Zeit dazu! Kurz bleibt kurz! 14:17 zeigt: schon 43 Sek gespielt, weil ESPN 50 Sek braucht!
-                                try: await _live_send(context, uid, eid, f"▶️ {live_period_label(lg, period)} läuft!\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n⏰ {live_clock(ev, lg) or ''}")
+                                try: await _live_send_dnd(context, uid, eid, lg, _fav_disp, f"▶️ {live_period_label(lg, period)} läuft!\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n⏰ {live_clock(ev, lg) or ''}")  # V211: DND!
                                 except: pass
                                 prev["awaiting_resume"] = None
                         except: pass
@@ -4933,7 +4960,7 @@ async def live_score_job(context):
                                 elif _behind < 0: _ct = f"🔥🔥🔥 CRUNCH-TIME!!! 🔥🔥🔥\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n⏰ Noch {_mm}:{_ss:02d} zu spielen!\n\nNur {abs(_behind)} vorne — HALT DICH FEST! 😱🔥"
                                 else: _ct = f"🔥🔥🔥 CRUNCH-TIME!!! 🔥🔥🔥\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n⏰ Noch {_mm}:{_ss:02d} zu spielen!\n\nUnentschieden — JETZT WIRD\'S WILD! 👀🔥"
                                 if lg == "MLB": _ct = f"🔥🔥🔥 CRUNCH-TIME!!! 🔥🔥🔥\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n{int(period)}. Inning!\n\nJETZT WIRD\'S WILD! 👀🔥"
-                                try: await _live_send(context, uid, eid, _ct)
+                                try: await _live_send_dnd(context, uid, eid, lg, _fav_disp, _ct)  # V211: DND!
                                 except: pass
                                 prev["crunch_sent"] = True
                     except: pass
@@ -4943,7 +4970,7 @@ async def live_score_job(context):
                             _cs2=_clock_secs(ev)
                             _diff2=abs(list(scores.values())[0]-list(scores.values())[1]) if len(scores)>=2 else 999
                             if _cs2 is not None and 0 < _cs2 <= 120 and _diff2 <= 8:
-                                try: await _live_send(context, uid, eid, f"⏰ 2-Minute Warning!\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n⏰ Noch 2:00 im 4. Quarter!\n\nJetzt wird\'s ernst! 👀")
+                                try: await _live_send_dnd(context, uid, eid, lg, _fav_disp, f"⏰ 2-Minute Warning!\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n⏰ Noch 2:00 im 4. Quarter!\n\nJetzt wird\'s ernst! 👀")  # V211: DND!
                                 except: pass
                                 prev["2min_sent"]=True
                     except: pass
@@ -4955,7 +4982,11 @@ async def live_score_job(context):
                             prev["breaking_sent_ids"]=[]
                     except: pass
                     # Endstand?
-                    if cfg.get("final") and state == "post" and prev["state"] != "post":
+                    # V211: DND an? -> Endstand nur sammeln, NIX schicken! Vorher ging der Endstand direkt raus - nie auf dem Zettel!
+                    if dnd_active(uid) and cfg.get("final") and state == "post" and prev["state"] != "post":
+                        try: add_pending(uid, eid, lg, _fav_disp)
+                        except: pass
+                    elif cfg.get("final") and state == "post" and prev["state"] != "post":
                         try:
                             _fs_kb = InlineKeyboardMarkup([[InlineKeyboardButton("📊 Final Stats", callback_data=f"finalstats:{eid}:{lg}")]])
                             # V124: Endstand custom! Fav gewonnen/verloren? Bye Week?
@@ -4992,7 +5023,7 @@ async def live_score_job(context):
                         except:
                             try: await _live_send(context, uid, eid, f"✅ Endstand: {_fav_disp}\n{LEAGUES[lg]['emoji']} {game_line(ev, lg)}")
                             except: pass
-                    if state == "post" and prev["state"] != "post" and _LIVE_MSG_IDS.get((uid, str(eid))):
+                    if state == "post" and prev["state"] != "post" and _LIVE_MSG_IDS.get((uid, str(eid))) and not dnd_active(uid):  # V211: Bei DND nicht nachts aufpoppen!
                         try:
                             _cq = InlineKeyboardMarkup([[InlineKeyboardButton("✅ Ja, löschen", callback_data=f"live_clean_yes:{eid}"), InlineKeyboardButton("❌ Nein, behalten", callback_data=f"live_clean_no:{eid}")]])
                             _qm = await context.bot.send_message(chat_id=uid, text=f"🏁 Spiel zu Ende! {_fav_disp}\n\nSoll ich die Live-Nachrichten von diesem Spiel löschen?", reply_markup=_cq)
@@ -5110,7 +5141,7 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if 1 <= _nm <= len(_ml):
             _eid_m, _lg_m = _ml[_nm-1]
             ctx.user_data["my_live_list"] = None
-            await next_live_pick_cmd(update, ctx, _lg_m, _eid_m); return
+            await next_live_pick_cmd(update, ctx, _lg_m, _eid_m, num_mid=update.message.message_id); return
     # V110: Zahl für Nächste Spiele Live (wie bei Favoriten!)
     if txt.isdigit() and ctx.user_data.get("next_live_list") and not ctx.user_data.get("awaiting_fav"):
         _nl = ctx.user_data.get("next_live_list") or []
@@ -5118,7 +5149,7 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if 1 <= _n <= len(_nl):
             _lg, _eid = _nl[_n-1]
             ctx.user_data["next_live_list"] = None
-            await next_live_pick_cmd(update, ctx, _lg, _eid); return
+            await next_live_pick_cmd(update, ctx, _lg, _eid, num_mid=update.message.message_id); return
     # V110: Zahl für Ergebnisse Final Stats!
     if txt.isdigit() and ctx.user_data.get("results_list") and not ctx.user_data.get("awaiting_fav"):
         _rl = ctx.user_data.get("results_list") or []
@@ -6060,7 +6091,7 @@ async def next_live_list_cmd(update, ctx, league):
     rows = [[InlineKeyboardButton("⬅️ Zurück", callback_data="back")]]
     await _cb_edit(update, "\n".join(lines), InlineKeyboardMarkup(rows))
 
-async def next_live_pick_cmd(update, ctx, league, eid):
+async def next_live_pick_cmd(update, ctx, league, eid, num_mid=None):
     # Spiel-Name finden
     _name = f"Spiel {eid}"
     try:
@@ -6091,7 +6122,13 @@ async def next_live_pick_cmd(update, ctx, league, eid):
         [InlineKeyboardButton(f"{'✅' if cfg.get('reminder') else '❌'} ⏰ Reminder", callback_data=f"next_live_toggle:{league}:{eid}:reminder")],
         [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
     ])
-    await _cb_edit(update, f"🔴 Live für ein Spiel\n\n{_name}\n\nTippe an / aus. Nur was du anmachst, schicke ich dir!\nNach dem Spiel wird es automatisch wieder aus!", kb)
+    _win210 = await _cb_edit(update, f"🔴 Live für ein Spiel\n\n{_name}\n\nTippe an / aus. Nur was du anmachst, schicke ich dir!\nNach dem Spiel wird es automatisch wieder aus!", kb)
+    # V210: Fenster -> Zahl mappen! Damit 'Fenster schliessen' die getippte Zahl mitloescht!
+    try:
+        if num_mid and _win210 is not None and getattr(_win210, "message_id", None):
+            _uid210 = update.effective_user.id if update.effective_user else 0
+            _CLOSE_NUM_MAP[(int(_uid210), int(_win210.message_id))] = int(num_mid)
+    except: pass
 
 _MLB_DIV={"Yankees":"AL East","Red Sox":"AL East","Rays":"AL East","Blue Jays":"AL East","Orioles":"AL East","Guardians":"AL Central","Tigers":"AL Central","Royals":"AL Central","Twins":"AL Central","White Sox":"AL Central","Astros":"AL West","Mariners":"AL West","Rangers":"AL West","Angels":"AL West","Athletics":"AL West","Braves":"NL East","Mets":"NL East","Phillies":"NL East","Marlins":"NL East","Nationals":"NL East","Brewers":"NL Central","Cubs":"NL Central","Reds":"NL Central","Pirates":"NL Central","Cardinals":"NL Central","Dodgers":"NL West","Padres":"NL West","Giants":"NL West","Diamondbacks":"NL West","Rockies":"NL West"}
 def _mlb_div_for(team_full):
