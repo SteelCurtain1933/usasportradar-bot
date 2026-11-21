@@ -1,4 +1,4 @@
-# USA Sport Radar - V221 FINAL - Live-Ansichten mit expliziten Berlin-Daten (Navy @ Memphis Fix!)
+# USA Sport Radar - V222 FINAL - Rollende Live-Nachrichten + Spoiler-Fix + Echte Reminder-Zeit!
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -243,6 +243,28 @@ def _dnd_final_text(lg, eid, name):
         if scorers: txt += "\n\u26bd Torschuetzen: " + ", ".join(scorers[-6:])
         return txt
     except: return None
+def _dnd_game_state(lg, eid):
+    # V222: Frischer Status + Matchup OHNE Score fuer die Spoiler-Ansicht!
+    # Gibt (state, matchup) zurueck: state = "in" / "post" / "pre" / "", matchup = "Away @ Home" (ohne Score!)
+    # Vorher: Zettel zeigte den gespeicherten Namen (bei One-Off inkl. Score!) + kein Status -> Spoiler-Leak!
+    try:
+        key = LEAGUES[lg]["espn"]
+        sport = 'hockey' if lg=='NHL' else 'basketball' if lg=='NBA' else 'football' if lg in ('NFL','NCAAF') else 'baseball'
+        r = requests.get(f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{key}/summary", params={"event": eid}, timeout=10)
+        j = r.json()
+        comp = ((j.get("header", {}) or {}).get("competitions", [{}]) or [{}])[0]
+        comps = comp.get("competitors", []) or []
+        state = ((comp.get("status", {}) or {}).get("type", {}) or {}).get("state", "")
+        away = ""; home = ""
+        for c in comps:
+            nm = ((c.get("team", {}) or {}).get("shortDisplayName") or (c.get("team", {}) or {}).get("displayName", ""))
+            ha = (c.get("homeAway") or "").lower()
+            if ha == "away": away = nm
+            elif ha == "home": home = nm
+        matchup = f"{away} @ {home}" if away and home else ""
+        return state, matchup
+    except:
+        return "", ""
 def _dnd_summary_build(uid, pend, spoiler):
     lines = ["\U0001f305 Waehrend du weg warst\n"]
     rows = []
@@ -250,10 +272,20 @@ def _dnd_summary_build(uid, pend, spoiler):
         lines.append("Nix verpasst - kein Spiel deiner Favoriten in der Zeit! \U0001f60a")
     elif spoiler:
         lines.append(f"{len(pend)} Spiel(e) lief(en), waehrend Nicht-Stoeren an war - Ergebnisse versteckt, damit du erst Highlights gucken kannst! \U0001f92b\n")
+        _any_live = False
         for q in pend:
-            lines.append(f"\U0001f92b {q['name']}")
-            rows.append([InlineKeyboardButton(f"\U0001f440 Ergebnis: {q['name']}", callback_data=f"dnd_reveal:{q['eid']}:{q['lg']}")])
-        rows.append([InlineKeyboardButton("\U0001f440 Alle Ergebnisse zeigen", callback_data="dnd_reveal_all")])
+            # V222: Frisch von ESPN + Matchup OHNE Score! Kein gespeicherter Name mehr (da konnte Score drinstehen)!
+            _st, _match = _dnd_game_state(q["lg"], q["eid"])
+            _name = _match or q["name"]
+            if _st == "in":
+                _any_live = True
+                lines.append(f"\U0001f92b {_name} • \U0001f534 LIVE")
+                rows.append([InlineKeyboardButton(f"\U0001f440 Spielstand: {_name}", callback_data=f"dnd_reveal:{q['eid']}:{q['lg']}")])
+            else:
+                _status = " • \U0001f3c1 Endstand" if _st == "post" else ""
+                lines.append(f"\U0001f92b {_name}{_status}")
+                rows.append([InlineKeyboardButton(f"\U0001f440 Ergebnis: {_name}", callback_data=f"dnd_reveal:{q['eid']}:{q['lg']}")])
+        rows.append([InlineKeyboardButton("\U0001f440 Alle Spielstände zeigen" if _any_live else "\U0001f440 Alle Ergebnisse zeigen", callback_data="dnd_reveal_all")])
     else:
         lines.append(f"{len(pend)} Spiel(e) lief(en), waehrend Nicht-Stoeren an war:\n")
         for q in pend:
@@ -3732,6 +3764,19 @@ def _with_close(kb):
         return InlineKeyboardMarkup(rows)
     except: return kb
 _LIVE_MSG_IDS = {}
+# V222: Letzter Live-Text pro Spiel - damit der XP-Edit die TD-Nachricht findet!
+_LIVE_LAST_TXT = {}
+async def _live_delete_prev(context, uid, eid):
+    # V222: Rollende Live-Nachrichten! Alte Nachricht(en) dieses Spiels loeschen, damit nur die neueste steht!
+    try:
+        _ids = list(_LIVE_MSG_IDS.get((uid, str(eid)), []))
+        for _mid in _ids:
+            try: await context.bot.delete_message(chat_id=uid, message_id=_mid)
+            except: pass
+        if _ids:
+            _LIVE_MSG_IDS[(uid, str(eid))] = []
+            _save_live_msg_ids()
+    except: pass
 _LIVE_MSG_FILE = '/tmp/live_msg_ids.json'
 try:
     import json as _json_msg
@@ -3746,13 +3791,23 @@ def _save_live_msg_ids():
         open(_LIVE_MSG_FILE,'w').write(_json2.dumps(_d))
     except: pass
 async def _live_send(context, uid, eid, text):
+    # V222: Rollend! Vor jeder neuen Live-Nachricht die alte(n) dieses Spiels loeschen - nur die neueste steht im Chat!
+    # (Nur TD->XP wird NICHT hier geloescht, sondern per Edit geaendert - siehe Poller + Scorer-Job!)
     try:
+        try: await _live_delete_prev(context, uid, eid)
+        except: pass
         m = await context.bot.send_message(chat_id=uid, text=text)
         if m and getattr(m, "message_id", None):
             _LIVE_MSG_IDS.setdefault((uid, str(eid)), []).append(int(m.message_id))
+        _LIVE_LAST_TXT[(uid, str(eid))] = text
         return m
     except Exception:
-        try: return await context.bot.send_message(chat_id=uid, text=text)
+        try:
+            m2 = await context.bot.send_message(chat_id=uid, text=text)
+            if m2 and getattr(m2, "message_id", None):
+                _LIVE_MSG_IDS.setdefault((uid, str(eid)), []).append(int(m2.message_id))
+            _LIVE_LAST_TXT[(uid, str(eid))] = text
+            return m2
         except: return None
 
 
@@ -4854,7 +4909,9 @@ async def _scorer_update_job(context):
             return
         if _sc.strip() in orig: return
         # V102: Wenn bis zum Scorer-Edit schon der XP / 2PC drin ist (+1 / +2), dann TD-Nachricht auf Endstand bringen!
-        # z.B. orig "TOUCHDOWN! 7-13" -> "TOUCHDOWN + EXTRA POINT! 7-14" + Scorer! Wenn schon wieder ein TD (+6+) gefallen ist, NICHT updaten!
+        # V222: One-Liner-Format! orig ist jetzt "🔴 Touchdown... Tigers • Tigers 33 : 24 Midshipmen • 12:38 Q4"
+        # Alter Parser suchte "Team X @ Team Y" (V102-Format) -> fand im neuen Format NIX -> XP-Merge nie passiert! Jetzt: "AWAY <n> : <m> HOME"!
+        # V222: Merge NUR bei TD-Nachrichten! Sonst wuerde ein FG-Text den Score eines spaeteren Safety uebernehmen!
         _final_txt = orig + "\n" + _sc.strip()
         try:
             # Aktuellen Score holen (Scoreboard)
@@ -4864,20 +4921,26 @@ async def _scorer_update_job(context):
                     if str(_ev3.get("id", "")) == eid:
                         _cur_scores = _live_scores_of(_ev3); break
             except: _cur_scores = {}
-            # Orig-Score aus orig parsen: suche "Team X @ Team Y" - wir nehmen die Team-Namen aus _sc? Einfacher: Vergleiche _cur_scores mit prev? Wir kennen orig-Score nicht direkt, also: Wenn _cur_scores fuer das Scorer-Team um genau +1/+2 groesser ist als der Score in orig, dann updaten.
-            # Orig-Score extrahieren: Muster "AWAY <num> @ HOME <num>" - suche alle " <num>" vor " @ " und am Ende vor " •"
             import re as _re2
-            _m = _re2.search(r"(\S.+?)\s(\d+)\s@\s(\S.+?)\s(\d+)", orig)
+            # V222: Score aus One-Liner parsen: "33 : 24" (mit Leerzeichen um den Doppelpunkt - Uhr "12:38" hat keine und matcht nicht!)
+            _m = _re2.search(r"(\d+)\s:\s(\d+)", orig) if ("TOUCHDOWN" in orig or "Touchdown" in orig) else None
             if _m and _cur_scores:
-                _away_nm, _away_sc, _home_nm, _home_sc = _m.group(1), int(_m.group(2)), _m.group(3), int(_m.group(4))
+                _away_sc, _home_sc = int(_m.group(1)), int(_m.group(2))
                 # Finde welches Team gescored hat (aus _sc Team in Klammern)
                 _tm = _re2.search(r"\((.+?)\)", _sc)
                 _sc_team = _tm.group(1) if _tm else ""
-                # Cur Score fuer Scorer-Team finden (Name enthaelt Scorer-Team oder umgekehrt)
+                # Away/Home-Namen aus Job-Data (V222: Poller uebergibt sie!)
+                _away_nm = (context.job.data or {}).get("away", "") or ""
+                _home_nm = (context.job.data or {}).get("home", "") or ""
                 _cur = None; _is_away = False
                 for _k, _v in _cur_scores.items():
                     if _sc_team and (_sc_team.lower() in _k.lower() or _k.lower() in _sc_team.lower()):
-                        _cur = _v; _is_away = (_away_nm.lower() in _k.lower() or _k.lower() in _away_nm.lower()); break
+                        _cur = _v
+                        # Ist Scorer-Team Away oder Home?
+                        if _away_nm and (_sc_team.lower() in _away_nm.lower() or _away_nm.lower() in _sc_team.lower()): _is_away = True
+                        elif _home_nm and (_sc_team.lower() in _home_nm.lower() or _home_nm.lower() in _sc_team.lower()): _is_away = False
+                        else: _is_away = (_away_nm.lower() in _k.lower() or _k.lower() in _away_nm.lower()) if _away_nm else False
+                        break
                 if _cur is not None:
                     _orig_sc = _away_sc if _is_away else _home_sc
                     _diff = _cur - _orig_sc
@@ -4885,14 +4948,16 @@ async def _scorer_update_job(context):
                         # XP ist drin! Score in orig ersetzen + Label auf TOUCHDOWN + EXTRA POINT!
                         _new_away = _away_sc + 1 if _is_away else _away_sc
                         _new_home = _home_sc + 1 if not _is_away else _home_sc
-                        _final_txt = _re2.sub(r"(\S.+?)\s\d+\s@\s(\S.+?)\s\d+", f"{_away_nm} {_new_away} @ {_home_nm} {_new_home}", orig, count=1)
+                        _final_txt = _re2.sub(r"\d+\s:\s\d+", f"{_new_away} : {_new_home}", orig, count=1)
                         _final_txt = _final_txt.replace("TOUCHDOWN!", "TOUCHDOWN + EXTRA POINT!")
+                        _final_txt = _final_txt.replace("Touchdown...", "Touchdown + Extra Point...")
                         _final_txt = _final_txt + "\n" + _sc.strip()
                     elif _diff == 2:
                         _new_away = _away_sc + 2 if _is_away else _away_sc
                         _new_home = _home_sc + 2 if not _is_away else _home_sc
-                        _final_txt = _re2.sub(r"(\S.+?)\s\d+\s@\s(\S.+?)\s\d+", f"{_away_nm} {_new_away} @ {_home_nm} {_new_home}", orig, count=1)
+                        _final_txt = _re2.sub(r"\d+\s:\s\d+", f"{_new_away} : {_new_home}", orig, count=1)
                         _final_txt = _final_txt.replace("TOUCHDOWN!", "TOUCHDOWN + 2-POINT!")
+                        _final_txt = _final_txt.replace("Touchdown...", "Touchdown + 2-Point...")
                         _final_txt = _final_txt + "\n" + _sc.strip()
         except: _final_txt = orig + "\n" + _sc.strip()
         try: await context.bot.edit_message_text(chat_id=uid, message_id=mid, text=_final_txt)
@@ -4968,7 +5033,7 @@ async def live_score_job(context):
                     # V119: SPIELSTART gehört zu PERIOD! Wer Quarter-Ende + Beginn will, will auch Spielstart!
                     # (cfg.start noch drin für alle, die V118 schon an hatten - sonst geht nix verloren!)
                     if (cfg.get("period") or cfg.get("start")) and state == "in" and prev.get("state") == "pre" and not prev.get("start_sent"):
-                        try: await _live_send_dnd(context, uid, eid, lg, _fav_disp, f"🚨 Es geht los! {game_start_label(lg)}\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg) if _score_line_short(ev, lg) else game_line(ev, lg)}\n\nViel Spaß! 🔥")
+                        try: await _live_send_dnd(context, uid, eid, lg, _fav_disp, f"🚨 Es geht los! {game_start_label(lg)} • {LEAGUES[lg]['emoji']} {_score_line_short(ev, lg) if _score_line_short(ev, lg) else game_line(ev, lg)} • Viel Spaß! 🔥")
                         except: pass
                         prev["start_sent"] = True
                     # Score geaendert?
@@ -4983,7 +5048,7 @@ async def live_score_job(context):
                             elif lg == "MLB": _label_neg = "RUN ABERKANNT"
                             elif lg == "NBA": _label_neg = "KORB ABERKANNT"
                             else: _label_neg = "PUNKT ABERKANNT"
-                            try: await _live_send_dnd(context, uid, eid, lg, _fav_disp, f"❌ {_label_neg}! {_team_neg}\n{LEAGUES[lg]['emoji']} {game_line(ev, lg)}\nWieder {scores.get(_team_neg, 0)} - wurde zurückgenommen!")
+                            try: await _live_send_dnd(context, uid, eid, lg, _fav_disp, f"❌ {_label_neg}! {_team_neg} • {LEAGUES[lg]['emoji']} {game_line(ev, lg)} • Wieder {scores.get(_team_neg, 0)} - zurückgenommen!")
                             except: pass
                         scorer = max(diffs, key=lambda k: diffs[k]) if diffs else ""
                         d = diffs.get(scorer, 0)
@@ -5010,6 +5075,20 @@ async def live_score_job(context):
                             elif lg == "NHL": label = "TOR"
                             elif lg == "MLB": label = "RUN"
                             else: label = "KORB"
+                            # V222: XP / 2PC kurz nach TD = KEIN eigener Push! TD-Nachricht aendert sich per Edit (Scorer-Job)!
+                            # Vorher: TD-Push + extra XP-Push untereinander = Stapel! Jetzt: TD-Nachricht wird zu "TD + XP" editiert!
+                            _skip_xp222 = (lg in ("NFL", "NCAAF") and label in ("EXTRA POINT", "2-POINT CONVERSION") and _recent_td)
+                            if _skip_xp222:
+                                try:
+                                    _last_ids222 = _LIVE_MSG_IDS.get((uid, str(eid)), [])
+                                    _last_txt222 = _LIVE_LAST_TXT.get((uid, str(eid)), "")
+                                    if _last_ids222 and _last_txt222 and context.job_queue:
+                                        _et222 = event_teams(ev)
+                                        _teams222 = _et222[0] if _et222 else []
+                                        _away222 = next((x[0] for x in _teams222 if (x[1] or "").lower()=="away"), "")
+                                        _home222 = next((x[0] for x in _teams222 if (x[1] or "").lower()=="home"), "")
+                                        context.job_queue.run_once(_scorer_update_job, 30, data={"uid": uid, "eid": eid, "lg": lg, "mid": int(_last_ids222[-1]), "orig": _last_txt222, "away": _away222, "home": _home222}, name=f"scorer_xp_{eid}_{_last_ids222[-1]}")
+                                except: pass
                             # V89-FIX2: Scorer dazu, wenn ESPN ihn schon hat! Sonst Nachricht trotzdem ohne Scorer schicken!
                             _scorer_line = ""
                             try:
@@ -5034,16 +5113,23 @@ async def live_score_job(context):
                             _clk = ""
                             try: _clk = live_clock(ev, lg) or ""
                             except: _clk = ""
-                            _time_line = f"\n⏰ {_clk}" if _clk else ""
-                            _live_txt = f"{_emoji2} {_lbl2} {_short_scorer}\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}{_time_line}{_scorer_line}"
-                            try:
-                                _lm = await _live_send_dnd(context, uid, eid, lg, _fav_disp, _live_txt)
-                                # V98-A: In 2 Min Scorer nachladen und reineditieren (wenn ESPN ihn dann hat)!
+                            # V222: Einzeiler! Vorher 3 Zeilen (Label + Score + Uhr) = Stapel im Chat!
+                            _time_line = f" • ⏰ {_clk}" if _clk else ""
+                            _live_txt = f"{_emoji2} {_lbl2} {_short_scorer} • {LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}{_time_line}{_scorer_line}"
+                            # V222: XP nach TD = kein eigener Push (siehe _skip_xp222 oben - TD-Nachricht wird per Edit aktualisiert)!
+                            if not _skip_xp222:
                                 try:
-                                    if _lm and getattr(_lm, "message_id", None) and context.job_queue:
-                                        context.job_queue.run_once(_scorer_update_job, 120, data={"uid": uid, "eid": eid, "lg": lg, "mid": int(_lm.message_id), "orig": _live_txt}, name=f"scorer_{eid}_{_lm.message_id}")
+                                    _lm = await _live_send_dnd(context, uid, eid, lg, _fav_disp, _live_txt)
+                                    # V98-A: In 2 Min Scorer nachladen und reineditieren (wenn ESPN ihn dann hat)!
+                                    try:
+                                        if _lm and getattr(_lm, "message_id", None) and context.job_queue:
+                                            _et222b = event_teams(ev)
+                                            _teams222b = _et222b[0] if _et222b else []
+                                            _away222b = next((x[0] for x in _teams222b if (x[1] or "").lower()=="away"), "")
+                                            _home222b = next((x[0] for x in _teams222b if (x[1] or "").lower()=="home"), "")
+                                            context.job_queue.run_once(_scorer_update_job, 120, data={"uid": uid, "eid": eid, "lg": lg, "mid": int(_lm.message_id), "orig": _live_txt, "away": _away222b, "home": _home222b}, name=f"scorer_{eid}_{_lm.message_id}")
+                                    except: pass
                                 except: pass
-                            except: pass
                     # V103: Halbzeit / Intermission extra! ESPN bleibt bei NCAAF in der Halbzeit bei Q2 + Detail Halftime, Period springt erst bei Q3!
                     try:
                         _detail = ((ev.get("status", {}) or {}).get("type", {}) or {}).get("detail", "") or ((ev.get("status", {}) or {}).get("type", {}) or {}).get("shortDetail", "") or ""
@@ -5057,13 +5143,13 @@ async def live_score_job(context):
                             except: pass
                             _ort = " in München!" if _is_muc else "!"
                             if lg in ("NFL", "NCAAF"):
-                                _ht_txt = f"⏸️ Halbzeit{_ort}\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n\nKurze Pause! 🥤"
+                                _ht_txt = f"⏸️ Halbzeit{_ort} • {LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)} • Kurze Pause! 🥤"
                             elif lg == "NHL":
-                                _ht_txt = f"⏸️ Pause!\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n\nKurze Pause! 🥤"
+                                _ht_txt = f"⏸️ Pause! • {LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)} • Kurze Pause! 🥤"
                             elif lg == "NBA":
-                                _ht_txt = f"⏸️ Halbzeit!\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n\nKurze Pause! 🥤"
+                                _ht_txt = f"⏸️ Halbzeit! • {LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)} • Kurze Pause! 🥤"
                             else:
-                                _ht_txt = f"⏸️ Pause!\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}"
+                                _ht_txt = f"⏸️ Pause! • {LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}"
                             try: await _live_send_dnd(context, uid, eid, lg, _fav_disp, _ht_txt)  # V211: DND!
                             except: pass
                             prev["halftime_sent"] = True
@@ -5079,7 +5165,7 @@ async def live_score_job(context):
                     # V103: Wenn Halbzeit schon geschickt (2->3), kein doppeltes Perioden-Ende mehr! Weiter kommt unten!
                     _skip_pe = bool(prev.get("halftime_sent") and prev["period"] is not None and int(prev["period"]) == 2 and period is not None and int(period) == 3)
                     if cfg.get("period") and state == "in" and prev["period"] is not None and period is not None and int(period) > int(prev["period"]) and not _skip_pe:
-                        try: await _live_send_dnd(context, uid, eid, lg, _fav_disp, f"⏸️ {live_period_label(lg, prev['period'])} vorbei!\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}")  # V211: DND!
+                        try: await _live_send_dnd(context, uid, eid, lg, _fav_disp, f"⏸️ {live_period_label(lg, prev['period'])} vorbei! • {LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}")  # V211: DND!
                         except: pass
                         try: prev["awaiting_resume"] = int(period)
                         except: pass
@@ -5090,7 +5176,7 @@ async def live_score_job(context):
                             _max = 1200 if lg == "NHL" else 900 if lg in ("NFL", "NCAAF") else 720 if lg == "NBA" else None
                             if _cs is not None and _max is not None and _cs < _max - 5:
                                 # V127: Nur Zeit dazu! Kurz bleibt kurz! 14:17 zeigt: schon 43 Sek gespielt, weil ESPN 50 Sek braucht!
-                                try: await _live_send_dnd(context, uid, eid, lg, _fav_disp, f"▶️ {live_period_label(lg, period)} läuft!\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n⏰ {live_clock(ev, lg) or ''}")  # V211: DND!
+                                try: await _live_send_dnd(context, uid, eid, lg, _fav_disp, f"▶️ {live_period_label(lg, period)} läuft! • {LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)} • ⏰ {live_clock(ev, lg) or ''}")  # V211: DND!
                                 except: pass
                                 prev["awaiting_resume"] = None
                         except: pass
@@ -5119,10 +5205,10 @@ async def live_score_job(context):
                                     else: _opp_sc = _v
                                 _behind = (_opp_sc - _fav_sc) if (_fav_sc is not None and _opp_sc is not None) else _diff
                                 _mm = (_clock_secs(ev)//60 if _clock_secs(ev) is not None else 8); _ss = (_clock_secs(ev)%60 if _clock_secs(ev) is not None else 0)
-                                if _behind > 0: _ct = f"🔥🔥🔥 CRUNCH-TIME!!! 🔥🔥🔥\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n⏰ Noch {_mm}:{_ss:02d} zu spielen!\n\nNur {_behind} hinten — JETZT WIRD\'S WILD! 👀🔥"
-                                elif _behind < 0: _ct = f"🔥🔥🔥 CRUNCH-TIME!!! 🔥🔥🔥\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n⏰ Noch {_mm}:{_ss:02d} zu spielen!\n\nNur {abs(_behind)} vorne — HALT DICH FEST! 😱🔥"
-                                else: _ct = f"🔥🔥🔥 CRUNCH-TIME!!! 🔥🔥🔥\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n⏰ Noch {_mm}:{_ss:02d} zu spielen!\n\nUnentschieden — JETZT WIRD\'S WILD! 👀🔥"
-                                if lg == "MLB": _ct = f"🔥🔥🔥 CRUNCH-TIME!!! 🔥🔥🔥\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n{int(period)}. Inning!\n\nJETZT WIRD\'S WILD! 👀🔥"
+                                if _behind > 0: _ct = f"🔥🔥🔥 CRUNCH-TIME!!! 🔥🔥🔥 • {LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)} • Noch {_mm}:{_ss:02d} • Nur {_behind} hinten — JETZT WIRD\'S WILD! 👀🔥"
+                                elif _behind < 0: _ct = f"🔥🔥🔥 CRUNCH-TIME!!! 🔥🔥🔥 • {LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)} • Noch {_mm}:{_ss:02d} • Nur {abs(_behind)} vorne — HALT DICH FEST! 😱🔥"
+                                else: _ct = f"🔥🔥🔥 CRUNCH-TIME!!! 🔥🔥🔥 • {LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)} • Noch {_mm}:{_ss:02d} • Unentschieden — JETZT WIRD\'S WILD! 👀🔥"
+                                if lg == "MLB": _ct = f"🔥🔥🔥 CRUNCH-TIME!!! 🔥🔥🔥 • {LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)} • {int(period)}. Inning! • JETZT WIRD\'S WILD! 👀🔥"
                                 try: await _live_send_dnd(context, uid, eid, lg, _fav_disp, _ct)  # V211: DND!
                                 except: pass
                                 prev["crunch_sent"] = True
@@ -5133,7 +5219,7 @@ async def live_score_job(context):
                             _cs2=_clock_secs(ev)
                             _diff2=abs(list(scores.values())[0]-list(scores.values())[1]) if len(scores)>=2 else 999
                             if _cs2 is not None and 0 < _cs2 <= 120 and _diff2 <= 8:
-                                try: await _live_send_dnd(context, uid, eid, lg, _fav_disp, f"⏰ 2-Minute Warning!\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n⏰ Noch 2:00 im 4. Quarter!\n\nJetzt wird\'s ernst! 👀")  # V211: DND!
+                                try: await _live_send_dnd(context, uid, eid, lg, _fav_disp, f"⏰ 2-Minute Warning! • {LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)} • Noch 2:00 im 4. Quarter! • Jetzt wird\'s ernst! 👀")  # V211: DND!
                                 except: pass
                                 prev["2min_sent"]=True
                     except: pass
@@ -5153,7 +5239,7 @@ async def live_score_job(context):
                         try:
                             _fs_kb = InlineKeyboardMarkup([[InlineKeyboardButton("📊 Final Stats", callback_data=f"finalstats:{eid}:{lg}")]])
                             # V124: Endstand custom! Fav gewonnen/verloren? Bye Week?
-                            _final_txt = f"🏁 Endstand!\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n\nWas ein Spiel!"
+                            _final_txt = f"🏁 Endstand! • {LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)} • Was ein Spiel!"
                             try:
                                 if not _is_oneoff and fav and lg:
                                     _fav_nm = fav.split(" (")[0].strip()
@@ -5173,18 +5259,21 @@ async def live_score_job(context):
                                     if _fav_sc2 is not None and _opp_sc2 is not None and not _both_fav:
                                         _short_fav=_short_team(_fav_nm)
                                         if _fav_sc2 > _opp_sc2:
-                                            _final_txt = f"🏁 Sieg! {_short_fav} gewinnen! 🎉\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n\nJaaaa! Was ein Spiel!"
+                                            _final_txt = f"🏁 Sieg! {_short_fav} gewinnen! 🎉 • {LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)} • Jaaaa! Was ein Spiel!"
                                         elif _fav_sc2 < _opp_sc2:
                                             _has_next=_has_game_next_week(_fav_nm, lg)
                                             if _has_next:
-                                                _final_txt = f"🏁 Schade... {_short_fav} verlieren 😔\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n\nHm, schade... Aber nächste Woche wird weiter gekämpft! 💪"
+                                                _final_txt = f"🏁 Schade... {_short_fav} verlieren 😔 • {LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)} • Hm, schade... Aber nächste Woche wird weiter gekämpft! 💪"
                                             else:
-                                                _final_txt = f"🏁 Schade... {_short_fav} verlieren 😔\n\n{LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}\n\nHm, schade... Jetzt erstmal Bye Week, Pause!\nDanach wird weiter gekämpft! 💪"
+                                                _final_txt = f"🏁 Schade... {_short_fav} verlieren 😔 • {LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)} • Hm, schade... Jetzt erstmal Bye Week, Pause! Danach wird weiter gekämpft! 💪"
+                            except: pass
+                            # V222: Rollend! Endstand ersetzt die letzte Live-Nachricht - nur der Endstand steht da!
+                            try: await _live_delete_prev(context, uid, eid)
                             except: pass
                             _em = await context.bot.send_message(chat_id=uid, text=_final_txt, reply_markup=_fs_kb)
                             if _em and getattr(_em, "message_id", None): _LIVE_MSG_IDS.setdefault((uid, str(eid)), []).append(int(_em.message_id)); _save_live_msg_ids()
                         except:
-                            try: await _live_send(context, uid, eid, f"✅ Endstand: {_fav_disp}\n{LEAGUES[lg]['emoji']} {game_line(ev, lg)}")
+                            try: await _live_send(context, uid, eid, f"✅ Endstand: {_fav_disp} • {LEAGUES[lg]['emoji']} {game_line(ev, lg)}")
                             except: pass
                     if state == "post" and prev["state"] != "post" and _LIVE_MSG_IDS.get((uid, str(eid))) and not dnd_active(uid):  # V211: Bei DND nicht nachts aufpoppen!
                         try:
@@ -5258,7 +5347,14 @@ async def reminder_job(context):
                 groups.setdefault(k, []).append((dt, league, ev, name))
             for k, items in groups.items():
                 if dnd_active(uid): continue  # V203: DND an = kein Reminder - Handy bleibt ruhig! Spiel wird per Live gesammelt!
-                lines = [f"⏰ Reminder - In ca. {mins//60}h geht's los! ({k})\n" if mins>=60 else f"⏰ Reminder - In ca. {mins} Min geht's los! ({k})\n"]
+                # V222: Echte Restzeit zum Sendezeitpunkt! Vorher: starrer Text aus der Einstellung ("1h") - aber wenn DND den Reminder verzoegert, waren es nur noch 37 Min!
+                _diff_min = max(0, (items[0][0] - now).total_seconds() / 60)
+                if _diff_min >= 60:
+                    _h222 = int(_diff_min // 60); _m222 = int(round(_diff_min % 60))
+                    _remain222 = f"In ca. {_h222}h" if _m222 == 0 else f"In ca. {_h222}h {_m222} Min"
+                else:
+                    _remain222 = f"In ca. {int(round(_diff_min))} Min"
+                lines = [f"⏰ Reminder - {_remain222} geht's los! ({k})\n"]
                 for dt, league, ev, name in items:
                     _REMINDER_SENT.add((uid, ev.get("id"), mins))
                     b = broadcast_line(ev)
