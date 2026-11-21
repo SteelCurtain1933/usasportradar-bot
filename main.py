@@ -1,4 +1,4 @@
-# USA Sport Radar - V218 FINAL - Team-Fenster (Zahl in Tabellen) + Key Spieler + NFL Draft-Vorschau
+# USA Sport Radar - V219 FINAL - Ehrliches Top-10-Ranking (exakte Team-Namen, Tabellenstand, kein Zufall) + News-Filter 'criticism'
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -535,35 +535,79 @@ def is_prime_time(dt):
         return True
     return False
 
+def _team_winpct(competitor):
+    # Holt die Siegquote (W-L) aus den ESPN-Records, z.B. "8-2" -> 0.8. Kein Record da = None (kein Raten, kein Erfinden!)
+    try:
+        recs = competitor.get("records") or []
+        summ = None
+        for r in recs:
+            s = (r.get("summary") or "").strip()
+            if (r.get("type") or "") == "total" and "-" in s:
+                summ = s; break
+        if summ is None:
+            for r in recs:
+                s = (r.get("summary") or "").strip()
+                if "-" in s:
+                    summ = s; break
+        if not summ: return None
+        parts = summ.replace(" ", "").split("-")
+        if len(parts) < 2 or not parts[0].isdigit() or not parts[1].isdigit(): return None
+        w, l = int(parts[0]), int(parts[1])
+        if w + l == 0: return None
+        return w / (w + l)
+    except Exception:
+        return None
+
 def rank_game(ev, league):
     teams, comp = event_teams(ev)
-    names = " ".join([x[0] for x in teams]).lower()
-    big_teams = ["steelers","eagles","chiefs","cowboys","dodgers","yankees","lakers","celtics","panthers","penguins","pirates","patriots","packers","ravens","49ers","bills","lions","texans","georgia","alabama","ohio state","michigan","notre dame","texas","oregon","bengals","browns","vikings","seahawks","rams","dolphins","jets"]
-    big_count = sum(1 for b in big_teams if b in names)
+    # V219: EHRLICHES Ranking! Exakte Vollnamen statt Teilwoerter!
+    # Vorher: "Georgia State Panthers" hat "georgia"+"panthers" getriggert und Punkte fuer die Georgia Bulldogs gekriegt!
+    # Jetzt: Nur der ECHTE Teamname zaehlt - "georgia bulldogs" == "Georgia Bulldogs", sonst nix!
+    names = [x[0].lower().strip() for x in teams]
+    famous = {
+        # NFL
+        "pittsburgh steelers","philadelphia eagles","kansas city chiefs","dallas cowboys",
+        "new england patriots","green bay packers","baltimore ravens","san francisco 49ers",
+        "buffalo bills","detroit lions","houston texans","cincinnati bengals","cleveland browns",
+        "minnesota vikings","seattle seahawks","los angeles rams","miami dolphins","new york jets",
+        # MLB
+        "los angeles dodgers","new york yankees","pittsburgh pirates",
+        # NBA
+        "los angeles lakers","boston celtics",
+        # NHL
+        "florida panthers","pittsburgh penguins",
+        # College
+        "georgia bulldogs","alabama crimson tide","ohio state buckeyes","michigan wolverines",
+        "notre dame fighting irish","texas longhorns","oregon ducks",
+    }
+    big_count = sum(1 for n in names if n in famous)
     tabelle = 2.0 + min(1.5, big_count*0.7)
-    # ALLE großen Rivalitäten! Bengals-Steelers fehlte! Das ist AFC North, Battle of Ohio, Riesen-Rivalität!
+    # Rivalitaeten als exakte Vollnamen-Paare! Vorher: "Texas A&M" hat "texas" getriggert und die Texas-Oklahoma-Rivalitaet geklaut!
+    # V219 NEU: Texas-Arkansas dazu (SWC-Klassiker seit 1894, jetzt wieder SEC!) + Texas A&M-Oklahoma (echte Big-12-Rivalitaet)!
     rival_pairs = [
         # NFL - AFC North (die härteste Division!)
-        ("steelers","ravens"),("steelers","bengals"),("steelers","browns"),
-        ("bengals","ravens"),("bengals","browns"),("ravens","browns"),
+        ("pittsburgh steelers","baltimore ravens"),("pittsburgh steelers","cincinnati bengals"),("pittsburgh steelers","cleveland browns"),
+        ("cincinnati bengals","baltimore ravens"),("cincinnati bengals","cleveland browns"),("baltimore ravens","cleveland browns"),
         # NFL - NFC North / East / West
-        ("cowboys","49ers"),("cowboys","eagles"),("cowboys","giants"),("eagles","giants"),
-        ("packers","bears"),("packers","vikings"),("bears","vikings"),("lions","packers"),
-        ("chiefs","bills"),("chiefs","raiders"),("chiefs","broncos"),("chiefs","chargers"),
-        ("patriots","bills"),("patriots","jets"),("patriots","dolphins"),
-        ("49ers","seahawks"),("49ers","rams"),("rams","seahawks"),
-        ("saints","falcons"),("saints","buccaneers"),("colts","titans"),("texans","colts"),
+        ("dallas cowboys","san francisco 49ers"),("dallas cowboys","philadelphia eagles"),("dallas cowboys","new york giants"),("philadelphia eagles","new york giants"),
+        ("green bay packers","chicago bears"),("green bay packers","minnesota vikings"),("chicago bears","minnesota vikings"),("detroit lions","green bay packers"),
+        ("kansas city chiefs","buffalo bills"),("kansas city chiefs","las vegas raiders"),("kansas city chiefs","denver broncos"),("kansas city chiefs","los angeles chargers"),
+        ("new england patriots","buffalo bills"),("new england patriots","new york jets"),("new england patriots","miami dolphins"),
+        ("san francisco 49ers","seattle seahawks"),("san francisco 49ers","los angeles rams"),("los angeles rams","seattle seahawks"),
+        ("new orleans saints","atlanta falcons"),("new orleans saints","tampa bay buccaneers"),("indianapolis colts","tennessee titans"),("houston texans","indianapolis colts"),
         # NBA / MLB / NHL
-        ("lakers","celtics"),("lakers","clippers"),("knicks","celtics"),("bulls","pistons"),
-        ("yankees","red sox"),("dodgers","giants"),("dodgers","padres"),("cubs","cardinals"),
-        ("penguins","capitals"),("penguins","flyers"),("rangers","islanders"),("bruins","canadiens"),("blackhawks","red wings"),
+        ("los angeles lakers","boston celtics"),("los angeles lakers","los angeles clippers"),("new york knicks","boston celtics"),("chicago bulls","detroit pistons"),
+        ("new york yankees","boston red sox"),("los angeles dodgers","san francisco giants"),("los angeles dodgers","san diego padres"),("chicago cubs","st. louis cardinals"),
+        ("pittsburgh penguins","washington capitals"),("pittsburgh penguins","philadelphia flyers"),("new york rangers","new york islanders"),("boston bruins","montreal canadiens"),("chicago blackhawks","detroit red wings"),
         # College
-        ("michigan","ohio state"),("alabama","auburn"),("georgia","florida"),("texas","oklahoma"),("notre dame","usc"),
-        ("texas","texas a&m"),("army","navy"),("florida","florida state"),("ohio state","penn state"),
+        ("michigan wolverines","ohio state buckeyes"),("alabama crimson tide","auburn tigers"),("georgia bulldogs","florida gators"),("texas longhorns","oklahoma sooners"),("notre dame fighting irish","usc trojans"),
+        ("texas longhorns","texas a&m aggies"),("army black knights","navy midshipmen"),("florida gators","florida state seminoles"),("ohio state buckeyes","penn state nittany lions"),
+        ("texas longhorns","arkansas razorbacks"),("texas a&m aggies","oklahoma sooners"),
     ]
+    name_set = set(names)
     rival = 0.5
     for a,b in rival_pairs:
-        if a in names and b in names: rival = 2.8; break
+        if a in name_set and b in name_set: rival = 2.8; break
     else:
         if big_count>=2: rival = 1.5
     stars = 1.0 + min(1.8, big_count*0.6)
@@ -580,10 +624,21 @@ def rank_game(ev, league):
     else:
         prime = 0.3
     if dt and dt.weekday()>=5: prime += 0.3
-    h = sum(ord(c) for c in names) % 10
-    var = h / 20.0
-    total = round(min(9.9, max(3.0, tabelle + rival + stars + prime + var)), 1)
-    breakdown = {"tabelle": round(tabelle,1), "rival": round(rival,1), "stars": round(stars,1), "prime": round(prime,1), "var": round(var,1), "total": total}
+    # V219 NEU: Tabellenstand-Bonus aus den echten ESPN-Records (W-L)! Kein Record = kein Bonus (kein Raten)!
+    # Beide Teams Winning Record (>= .600) = +1.0, beide um .500 = +0.5 - das Playoff-Rennen zaehlt endlich!
+    stand = 0.0
+    try:
+        comps = comp.get("competitors", []) if isinstance(comp, dict) else []
+        pcts = [_team_winpct(c) for c in comps[:2]]
+        if len(pcts) >= 2 and pcts[0] is not None and pcts[1] is not None:
+            if pcts[0] >= 0.6 and pcts[1] >= 0.6: stand = 1.0
+            elif pcts[0] >= 0.5 and pcts[1] >= 0.5: stand = 0.5
+    except Exception:
+        stand = 0.0
+    # V219: Zufalls-Jitter RAUS! Vorher hat ein Zufallswert bei Gleichstand entschieden (Texas = Platz 11 trotz 6,7 = Platz 10)!
+    # Jetzt: nur echte Kriterien. Gleichstand loest die Sortierung (Anstosszeit) in top10_league_cmd!
+    total = round(min(9.9, max(3.0, tabelle + rival + stars + prime + stand)), 1)
+    breakdown = {"tabelle": round(tabelle,1), "rival": round(rival,1), "stars": round(stars,1), "prime": round(prime,1), "stand": round(stand,1), "total": total}
     return total, breakdown
 
 def live_clock(ev, league):
@@ -1117,7 +1172,8 @@ async def top10_league_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, leagu
                             except Exception: score, bd = 5.0, {}
                             all_games.append((score, lg, ev, bd))
                         except Exception: continue
-        all_games.sort(key=lambda x: x[0], reverse=True)
+        # V219: Gleichstand = fruehere Anstosszeit zuerst (deterministisch, kein Zufall)!
+        all_games.sort(key=lambda x: (-x[0], x[2].get("date","")))
         top = all_games[:10]
         ctx.user_data["top10_list"] = [(s, lg, ev, bd) for s, lg, ev, bd in top]
         title = "Alle Ligen" if league=="ALL" else league
@@ -1325,10 +1381,11 @@ async def top10_detail_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, idx: 
         _playoff_lines.append(f"\n🔥 **Playoff-Rennen:**")
         _playoff_lines.append(f"Beide Teams sind im Playoff-Rennen! Mit Sieg: Bleiben oben dran! Mit Niederlage: Rutschen ab - da ist jedes Spiel wichtig!")
     lines=[f"🏆 {a_name} @ {h_name} • {LEAGUES[lg]['emoji']} {lg} • ⭐ {score:.1f}/10\n📅 {time_s}{bc_suf}{_ven_line}{_slot_line}\n\n**Warum {score:.1f}/10?**\n",
-        f"📊 **Tabelle:** +{bd['tabelle']:.1f} - Beide Teams sind stark / Top-Teams in ihrer Liga, das Duell hat viel Gewicht für die Tabelle.",
+        f"🏅 **Top-Teams:** +{bd['tabelle']:.1f} - Bekannte Top-Teams dabei - grosses Spiel mit viel Gewicht.",
         f"🔥 **Rivalität:** +{bd['rival']:.1f} - " + ("Historische Rivalität! Die beiden haben sich schon oft in großen Spielen getroffen." if bd['rival']>=2.5 else "Division-Duell / zwei starke Teams - da ist Feuer drin." if bd['rival']>=1.5 else "Kein großes Rivalitäts-Spiel, aber beide wollen gewinnen."),
         f"⭐ **Stars:** +{bd['stars']:.1f} - Viele bekannte Stars auf dem Feld, die das Spiel entscheiden können.",
         f"📺 **Primetime:** +{bd['prime']:.1f} - " + ("Primetime-Spiel! Läuft zur besten Zeit, wo alle zugucken." if bd['prime']>=1.0 else "Kein Primetime-Spiel, läuft neben anderen Spielen."),
+        f"📊 **Tabellenstand:** +{bd.get('stand',0):.1f} - " + ("Beide Teams haben eine Winning Record - das Spiel zählt für die Tabelle." if bd.get('stand',0)>=1.0 else ("Beide Teams stehen um .500 - noch alles drin." if bd.get('stand',0)>=0.5 else "Tabellenstand gibt hier keine Extrapunkte - ein Team steht unter .500.")),
         f"\n**Fazit:** {fazit}"]
     # Standings + Playoff nach den Warum-Zeilen, vor Fazit? Nein: Nach Warum, vor Fazit ist unübersichtlich - wir hängen sie vor Fazit an!
     # Einfach: Wir fügen sie als eigene Zeilen nach der Warum-Liste ein, Fazit bleibt letzte Zeile!
@@ -4142,7 +4199,8 @@ def _news_is_filler(title):
         # "should " mit Leerzeichen danach, damit "shoulder" (Verletzung!) NICHT trifft! "shouldn" faengt "shouldn't"!
         "should ","shouldn","in trouble","bad news for","some bad news","has some bad news",
         # V217: "Suggestion" = Meinung! ("Makes Surprising ... Suggestion") "suggest" faengt suggestion/suggests/suggested!
-        "suggest"):
+        # V219: "Criticism" = Meinung! ("Faces Harsh Criticism For...") "criticism" faengt criticism/criticisms!
+        "suggest","criticism"):
             if _hb in tl: return True
         # V175: Free Agency NIE blocken! Qualifying Offer / Signing ist echte News!
         if any(k in tl for k in ("free agency","qualifying offer","signs with","agrees to","free-agent","free agent")): return False
