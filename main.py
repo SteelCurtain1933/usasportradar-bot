@@ -1,4 +1,4 @@
-# USA Sport Radar - V219 FINAL - Ehrliches Top-10-Ranking (exakte Team-Namen, Tabellenstand, kein Zufall) + News-Filter 'criticism'
+# USA Sport Radar - V220 FINAL - Steelers-Eagles-Rivalitaet + News-Filter 'ahead of' / 'why won't'
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -590,6 +590,8 @@ def rank_game(ev, league):
         ("cincinnati bengals","baltimore ravens"),("cincinnati bengals","cleveland browns"),("baltimore ravens","cleveland browns"),
         # NFL - NFC North / East / West
         ("dallas cowboys","san francisco 49ers"),("dallas cowboys","philadelphia eagles"),("dallas cowboys","new york giants"),("philadelphia eagles","new york giants"),
+        # V220: Battle of Pennsylvania! Steelers-Eagles seit 1933, In-State-Rivalitaet!
+        ("pittsburgh steelers","philadelphia eagles"),
         ("green bay packers","chicago bears"),("green bay packers","minnesota vikings"),("chicago bears","minnesota vikings"),("detroit lions","green bay packers"),
         ("kansas city chiefs","buffalo bills"),("kansas city chiefs","las vegas raiders"),("kansas city chiefs","denver broncos"),("kansas city chiefs","los angeles chargers"),
         ("new england patriots","buffalo bills"),("new england patriots","new york jets"),("new england patriots","miami dolphins"),
@@ -4200,7 +4202,9 @@ def _news_is_filler(title):
         "should ","shouldn","in trouble","bad news for","some bad news","has some bad news",
         # V217: "Suggestion" = Meinung! ("Makes Surprising ... Suggestion") "suggest" faengt suggestion/suggests/suggested!
         # V219: "Criticism" = Meinung! ("Faces Harsh Criticism For...") "criticism" faengt criticism/criticisms!
-        "suggest","criticism"):
+        # V220: "Ahead Of ... Showdown" = Preview! ("Given Major Advantage Ahead Of Eagles Showdown")
+        # "Why Won't / Why Doesn't / Why Don't" = Meinung mitten im Titel! ("Why Won't Steelers Call It More?")
+        "suggest","criticism","ahead of","why won't","why doesn't","why don't"):
             if _hb in tl: return True
         # V175: Free Agency NIE blocken! Qualifying Offer / Signing ist echte News!
         if any(k in tl for k in ("free agency","qualifying offer","signs with","agrees to","free-agent","free agent")): return False
