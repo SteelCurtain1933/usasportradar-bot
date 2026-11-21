@@ -1,4 +1,4 @@
-# USA Sport Radar - V208 FINAL - Meine Woche: Unter-Fenster als neue Nachricht + 5-Min-Cache + Aktualisieren
+# USA Sport Radar - V209 FINAL - Meine Woche: Unter-Fenster als neue Nachricht + 5-Min-Cache + Aktualisieren
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -2581,6 +2581,8 @@ async def heute_morgen(update: Update, ctx: ContextTypes.DEFAULT_TYPE, morgen=Fa
     # Überall: "Gast @ Heim" - erstes Team ist Heimteam!
 
     live_lines=[]; _up_hm=[]  # V208: (dt, zeile) fuer Zeit-Gruppen!
+    try: _favs_hm = favs_for(update.effective_user.id if update.effective_user else 0)
+    except: _favs_hm = []
     # V204: Explizite Datums-Abfrage! Vorher: espn_scoreboard() OHNE Datum -> ESPN liefert nur den US-Heute-Slate -> Nacht-Spiele 00:00-03:00 DE-Zeit (US-Abend!) fielen raus (Iowa State 00:00, Clemson 01:30 usw. fehlten in Next Games)! Jetzt: -1 bis +2 Tage abfragen + Dedupe!
     _seen_hm=set()
     for league in LEAGUES:
@@ -2600,24 +2602,40 @@ async def heute_morgen(update: Update, ctx: ContextTypes.DEFAULT_TYPE, morgen=Fa
                     _line_hm = f"{LEAGUES[league]['emoji']} {game_line(ev, league, show_broadcast=True)}"
                     # V208: Kompakt! Datum steht schon oben in der Ueberschrift - nicht 50x wiederholen!
                     _line_hm = _line_hm.replace(f" {want.strftime('%d.%m.')} ", " ").replace("  ", " ")
+                    # V209: ⭐ bei Favoriten-Spielen! Gleiches exaktes Matching wie Ergebnisse/Live!
+                    try:
+                        _is_fav_hm = False
+                        _comp_hm = ev.get("competitions", [{}])[0]
+                        for _c_hm in _comp_hm.get("competitors", []):
+                            _tm_hm = _c_hm.get("team", {}) or {}
+                            if _is_fav_team(_tm_hm.get("displayName",""), _favs_hm, league):
+                                _is_fav_hm = True; break
+                        if _is_fav_hm: _line_hm = "⭐ " + _line_hm
+                    except: pass
                     if state=="in":
                         live_lines.append(_line_hm)
                     else:
+                        # V209: Anstosszeit raus aus der Zeile - sie steht 1x als Gruppen-Ueberschrift!
+                        if dt: _line_hm = _line_hm.replace(f" • ⏰ {dt.strftime('%H:%M')} Uhr", "")
+                        _line_hm = _line_hm.replace("📺 ", "")
                         _up_hm.append((dt, _line_hm))
     if live_lines:
         lines.append("🔴 Live:")
         lines.extend(live_lines)
     if _up_hm:
-        # V208: Nach Zeit gruppiert - Nacht / Tag / Abend! Viel uebersichtlicher als eine 50er-Wand!
-        _groups_hm = [("🌙 Nacht", []), ("☀️ Tag", []), ("🌇 Abend", [])]
+        # V209: Nach Anstosszeit gruppiert! Uhrzeit steht nur 1x pro Slot - keine Wiederholung mehr!
+        _groups_hm = [("🌙 Nacht", {}), ("☀️ Tag", {}), ("🌇 Abend", {})]
         for _dt_hm, _ln_hm in sorted(_up_hm, key=lambda x: x[0] or datetime.now(BERLIN)):
             _hh_hm = _dt_hm.hour if _dt_hm else 12
             _gi_hm = 0 if _hh_hm < 6 else 1 if _hh_hm < 18 else 2
-            _groups_hm[_gi_hm][1].append(_ln_hm)
-        for _gt_hm, _items_hm in _groups_hm:
-            if _items_hm:
+            _slot_hm = _dt_hm.strftime("%H:%M") if _dt_hm else "??:??"
+            _groups_hm[_gi_hm][1].setdefault(_slot_hm, []).append(_ln_hm)
+        for _gt_hm, _slots_hm in _groups_hm:
+            if _slots_hm:
                 lines.append(f"\n{_gt_hm}:")
-                lines.extend(_items_hm)
+                for _slot_hm, _items_hm in _slots_hm.items():
+                    lines.append(f"⏰ {_slot_hm}")
+                    lines.extend(_items_hm)
     if not live_lines and not _up_hm:
         if morgen:
             lines.append(f"Keine {lg_filter}-Spiele morgen. Tipp oben auf eine andere Liga!" if lg_filter and lg_filter != "ALL" else "Morgen keine Spiele in den Ligen. Schau mal bei /top10 oder /next vorbei.")
@@ -4455,22 +4473,70 @@ async def my_live_games_cmd(update, ctx):
         if any([d.get("score"), d.get("period"), d.get("final"), d.get("crunch"), d.get("start"), d.get("reminder")]): active.append((str(eid), d.get("lg",""), d.get("name","") or f"Spiel {eid}", d))
     if not active:
         await _cb_edit(update, "🔴 Meine Live-Spiele\n\nNoch keine einzelnen Spiele angemacht.\nGeh zu Nächste Spiele → 🔴 Live für ein Spiel, dann tauchen sie hier auf!", InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Zurück zu Teams", callback_data="notif_teams")]])); return
-    try: ctx.user_data["my_live_list"] = [(eid, lg) for eid, lg, nm, d in active]
-    except: pass
     lines = ["🔴 Meine Live-Spiele\n"]
-    for i, (eid, lg, nm, d) in enumerate(active, start=1):
+    _shown209 = []; _to_delete209 = []; _any_data209 = False; _num209 = 0
+    for eid, lg, nm, d in active:
         _on = []
         if d.get("score"): _on.append("Score")
         if d.get("period"): _on.append(period_toggle_label(lg))
         if d.get("final"): _on.append("Endstand")
         if d.get("crunch"): _on.append("Crunch-Time")
         if d.get("breaking"): _on.append("Breaking")
+        # V209: Frischen Stand holen statt eingefrorenem Foto! (Patriots-Spiel zeigte 6 Tage lang "LIVE"!)
+        _fresh209 = None
+        try:
+            from datetime import date as _date209
+            _today209 = _date209.today()
+            for _off209 in (0, 1, -1, 2, -2, -3, -4, -5, -6, -7, -8):
+                _dd209 = _today209 + timedelta(days=_off209)
+                _evs209 = espn_scoreboard(lg, dates=_dd209.strftime("%Y%m%d"))
+                if _evs209: _any_data209 = True
+                for _ev209 in _evs209:
+                    if str(_ev209.get("id","")) == str(eid):
+                        _fresh209 = _ev209; break
+                if _fresh209 is not None: break
+        except: _fresh209 = None
+        _skip209 = False; _nm_clean = ""
+        if _fresh209 is not None:
+            _state209 = _fresh209.get("status",{}).get("type",{}).get("state","")
+            if _state209 == "post":
+                try:
+                    _, _dt209 = fmt_dt(_fresh209.get("date",""))
+                    if _dt209 and (datetime.now(BERLIN) - _dt209).total_seconds() > 30*3600:
+                        # V209: Fertig seit >24h -> Altlast! Raus aus der Liste!
+                        _to_delete209.append(eid); _skip209 = True
+                except: pass
+            if not _skip209:
+                _nm_clean = game_line(_fresh209, lg)
+        else:
+            if _any_data209:
+                # Spiel in den letzten 8 Tagen nirgends gefunden -> uralt/ungueltig! Raus!
+                _to_delete209.append(eid); _skip209 = True
+            else:
+                # API-Ausfall? Nichts loeschen, alten Namen zeigen!
+                _nm_clean = nm or ""
+        if _skip209: continue
         # V117: Kompakt! Stadion-Name kürzen: "FC Bayern Munich Stadium, Munich" -> "München", Zeilenumbrüche weg!
-        _nm_clean = (nm or "").replace("\n"," ").replace("FC Bayern Munich Stadium, Munich","München").replace("FC Bayern Munich Stadium","München")
+        _nm_clean = (_nm_clean or "").replace("\n"," ").replace("FC Bayern Munich Stadium, Munich","München").replace("FC Bayern Munich Stadium","München")
         # Kurz-Namen: "New England Patriots" -> "Patriots" in der Liste (nur Anzeige, nicht speichern!)
         for _full,_short in [("New England Patriots","Patriots"),("Detroit Lions","Lions")]:
             _nm_clean = _nm_clean.replace(_full,_short)
-        lines.append(f"{i}. {_nm_clean} • {' + '.join(_on) if _on else 'an'}")
+        _num209 += 1
+        _shown209.append((eid, lg))
+        lines.append(f"{_num209}. {_nm_clean} • {' + '.join(_on) if _on else 'an'}")
+    # V209: Altlasten wirklich loeschen!
+    if _to_delete209:
+        try:
+            _s209 = load_settings(); _u209 = str(uid)
+            for _eid209 in _to_delete209:
+                try: _s209.get(_u209, {}).get("oneoff_live", {}).pop(str(_eid209), None)
+                except: pass
+            save_settings(_s209)
+        except: pass
+    try: ctx.user_data["my_live_list"] = _shown209
+    except: pass
+    if not _shown209:
+        await _cb_edit(update, "🔴 Meine Live-Spiele\n\nKeine einzelnen Spiele mehr - die fertigen sind automatisch rausgeflogen! 🧹\nGeh zu Nächste Spiele → 🔴 Live für ein Spiel, dann tauchen sie hier auf!", InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Zurück zu Teams", callback_data="notif_teams")]])); return
     lines.append("\n✏️ Tippe die Zahl ein, bei dem Spiel wo du was ändern willst!")
     lines.append("Dann ploppt genau das Fenster auf und du kannst nachträglich was an / aus machen!")
     await _cb_edit(update, "\n".join(lines), InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Zurück zu Teams", callback_data="notif_teams")]]))
@@ -6556,8 +6622,8 @@ def main():
         print("JobQueue:", e)
     app.add_handler(CallbackQueryHandler(on_cb))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
-    print("✅ USA Sport Radar Bot online - V208 - is live")
-    logger.info("✅ USA Sport Radar Bot online - V208 - is live")
+    print("✅ USA Sport Radar Bot online - V209 - is live")
+    logger.info("✅ USA Sport Radar Bot online - V209 - is live")
     app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
 
 if __name__=="__main__": main()
