@@ -1,4 +1,4 @@
-# USA Sport Radar - V214 FINAL - Team-Fenster (Zahl in Tabellen) + Key Spieler + NFL Draft-Vorschau
+# USA Sport Radar - V215 FINAL - Team-Fenster (Zahl in Tabellen) + Key Spieler + NFL Draft-Vorschau
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -4113,7 +4113,9 @@ def _news_is_filler(title):
         # Echte Signings ("signs with", "agrees to") sind NICHT in dieser Liste - die bleiben erlaubt!
         # V201: Neue Luecken aus Screenshots! Prognose/Analyse/Insider/Preview-Woerter, die V192 noch durchgelassen hat!
         # "visit" (ohne s!) faengt auch "visits"! "face " mit Leerzeichen, damit "surface" nicht trifft! "stay for" faengt "Will Core Stay for..."!
-        for _hb in ("odds","oddsmakers","sportsbook","betting","trade target","trade rumors","trade rumor","to host","will host","preview","pregame","pre-game","what to watch","how to watch","be the answer","mock draft","projected","projection","predicted","breakdown","opponent breakdown","insider","will stay","stay for","going into","biggest test","visit","face ","matchup","facing","lineup","lineup notes","game notes","girlfriend","boyfriend","dating","fiancee","great match for","jeff capel","jeff cap","ncaab","march madness","final four"):
+        # V215: Crime/Gossip + Prediction + Blog-Reports raus! (Screenshots: "Arrest warrants / robbery",
+        # "Land New Prediction", "Three Rivers Report: ... problem")
+        for _hb in ("odds","oddsmakers","sportsbook","betting","trade target","trade rumors","trade rumor","to host","will host","preview","pregame","pre-game","what to watch","how to watch","be the answer","mock draft","projected","projection","predicted","prediction","predict","breakdown","opponent breakdown","insider","will stay","stay for","going into","biggest test","visit","face ","matchup","facing","lineup","lineup notes","game notes","girlfriend","boyfriend","dating","fiancee","great match for","jeff capel","jeff cap","ncaab","march madness","final four","arrest","warrant","robbery","robbed","charged with","arrested","lawsuit","sued","three rivers","report:","opinion:","column:"):
             if _hb in tl: return True
         # V175: Free Agency NIE blocken! Qualifying Offer / Signing ist echte News!
         if any(k in tl for k in ("free agency","qualifying offer","signs with","agrees to","free-agent","free agent")): return False
@@ -4260,10 +4262,35 @@ def _google_news_rss(team_full, league, limit=8):
             if _h and _h not in _seen2: _seen2.add(_h); _ded.append(a)
         return _ded[:limit]
     except: return []
+_V215_OPP_NICKS = ["eagles","cowboys","giants","commanders","packers","bears","lions","vikings","falcons","panthers","saints","buccaneers","cardinals","rams","49ers","seahawks","chiefs","bills","dolphins","jets","patriots","ravens","bengals","browns","texans","colts","jaguars","titans","broncos","raiders","chargers","lakers","celtics","knicks","nets","warriors","clippers","suns","mavericks","nuggets","bucks","heat","sixers","hawks","bulls","cavaliers","pistons","raptors","wizards","hornets","magic","pacers","grizzlies","pelicans","thunder","jazz","kings","blazers","spurs","rockets","timberwolves","bruins","rangers","islanders","devils","flyers","hurricanes","lightning","maple leafs","senators","canadiens","red wings","blue jackets","wild","avalanche","stars","blues","predators","jets","flames","oilers","canucks","kraken","ducks","golden knights","kings","sharks","yankees","red sox","dodgers","giants","cubs","cardinals","mets","phillies","braves","astros","orioles","rays","blue jays","mariners","guardians","tigers","royals","twins","white sox","angels","athletics","marlins","nationals","pirates","reds","brewers","rockies","diamondbacks","padres","aggies","tigers","bulldogs","buckeyes","wolverines","crimson tide","volunteers","gators","seminoles","hurricanes","sooners","ducks","bruins","trojans","irish","badgers","hawkeyes"]
+def _v215_is_opponent_news(headline, team_full):
+    # V215: Headline faengt mit ANDEREM Team an ("Eagles Get Back Star WR vs. Steelers",
+    # "Philadelphia Eagles Finally Get Good News Before Steelers Game") -> Gegner-News, raus!
+    try:
+        hl = (headline or "").lower()
+        own = (team_full or "").lower()
+        own_nicks = [w for w in re.split(r"[^a-z0-9]+", own) if len(w) >= 3]
+        own_nick = own_nicks[-1] if own_nicks else ""
+        for _opp in _V215_OPP_NICKS:
+            if not _opp or _opp == own_nick: continue
+            if _opp in own: continue
+            _pos_opp = hl.find(_opp)
+            if _pos_opp < 0 or _pos_opp > 25: continue
+            # Eigenes Team kommt erst SPAETER (als "vs / before / against") oder gar nicht als Subjekt!
+            _pos_own = -1
+            for _tok in own_nicks:
+                _p = hl.find(_tok)
+                if _p >= 0:
+                    _pos_own = _p if _pos_own < 0 else min(_pos_own, _p)
+            if _pos_own < 0 or _pos_own > _pos_opp:
+                return True
+        return False
+    except: return False
+
 def _team_news_all(league, team_full, limit=8):
     # V137: 2. Filter-Layer! Auch wenn RSS/ESPN mal Scam liefert, fliegt er hier raus!
     arts=_espn_team_news(league,team_full,limit=limit)
-    arts=[a for a in arts if not _v136_is_scam_news(a.get("headline",""), a.get("link","")) and not _news_is_filler(a.get("headline",""))]
+    arts=[a for a in arts if not _v136_is_scam_news(a.get("headline",""), a.get("link","")) and not _news_is_filler(a.get("headline","")) and not _v215_is_opponent_news(a.get("headline",""), team_full)]
     # V175 Pitt-Fix: Carolina Panthers (NFL) raus! "Chuba Hubbard / NFC South" ist NICHT Pitt (NCAAF)!
     try:
         _low=(team_full or "").lower()
@@ -4277,7 +4304,7 @@ def _team_news_all(league, team_full, limit=8):
             _seen={(a.get("headline","") or "").lower().strip() for a in arts}
             for _a in _g:
                 _h=(_a.get("headline","") or "").lower().strip()
-                if _h and _h not in _seen and not _v136_is_scam_news(_a.get("headline",""), _a.get("link","")) and not _news_is_filler(_a.get("headline","")):
+                if _h and _h not in _seen and not _v136_is_scam_news(_a.get("headline",""), _a.get("link","")) and not _news_is_filler(_a.get("headline","")) and not _v215_is_opponent_news(_a.get("headline",""), team_full):
                     arts.append(_a); _seen.add(_h)
                 if len(arts)>=limit: break
             # V175: Pitt-Fix auch fuer Google-Auffuellung!
@@ -4292,7 +4319,7 @@ def _team_news_all(league, team_full, limit=8):
         if arts: return _dedupe_news(arts), "ESPN"
     if arts: return _dedupe_news(arts), "ESPN"
     arts2=_google_news_rss(team_full,league,limit=limit)
-    arts2=[a for a in arts2 if not _v136_is_scam_news(a.get("headline",""), a.get("link","")) and not _news_is_filler(a.get("headline",""))]
+    arts2=[a for a in arts2 if not _v136_is_scam_news(a.get("headline",""), a.get("link","")) and not _news_is_filler(a.get("headline","")) and not _v215_is_opponent_news(a.get("headline",""), team_full)]
     if arts2: return _dedupe_news(arts2), "Google News (ESPN leer)"
     return [], "ESPN"
 # ===== /V135 HELPERS =====
@@ -6356,8 +6383,8 @@ def _v214_team_standings_detail(league, team_full):
                                         if not isinstance(s, dict): continue
                                         n = (s.get("name", "") or "").lower()
                                         vals[n] = s.get("displayValue", s.get("value", ""))
-                                    return vals
-                            return None
+                                    _v215_all_matches.append(vals)
+                                    continue
                         for k, v in node.items():
                             if k == "standings": continue
                             out = walk(v)
@@ -6367,7 +6394,17 @@ def _v214_team_standings_detail(league, team_full):
                             out = walk(it)
                             if out: return out
                     return None
-                found = walk(j) or {}
+                _v215_all_matches = []
+                walk(j)
+                # V215: ESPN liefert pro Team MEHRERE Bloecke (Overall / vs Division / Heim / Auswaerts)!
+                # Vorher: erster Treffer = oft falscher Block (z.B. Division-Record, "5.0 Punkte" bei NBA)!
+                # Jetzt: Block mit overallwins/overalllosses bevorzugen, sonst erster Treffer!
+                found = {}
+                for _m in _v215_all_matches:
+                    if "overallwins" in _m or "overalllosses" in _m:
+                        found = _m; break
+                if not found and _v215_all_matches:
+                    found = _v215_all_matches[0]
                 if found: return found
             except: continue
         return {}
@@ -6419,6 +6456,9 @@ def _v214_team_leaders(league, team_full):
         r = requests.get(f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{key}/teams/{tid}", timeout=12, headers={"User-Agent": "Mozilla/5.0"})
         d = r.json() or {}
         leaders = ((d.get("team") or {}).get("leaders") or [])
+        # V215: ESPN liefert leaders manchmal als Dict statt Liste -> in Liste umwandeln!
+        if isinstance(leaders, dict):
+            leaders = list(leaders.values())
         # Kategorie -> deutscher Label! Nur diese Kategorien zeigen (max 4, sonst wirds zu lang)!
         _map = {
             "passingyards": "Passing", "rushingyards": "Rushing", "receivingyards": "Receiving",
@@ -6432,13 +6472,23 @@ def _v214_team_leaders(league, team_full):
         out = []
         for cat in leaders:
             if not isinstance(cat, dict): continue
-            nm = str(cat.get("name", "") or "").lower().replace(" ", "").replace("_", "").replace("-", "")
+            # V215: Kategorie-Name kann in name / displayName / shortDisplayName stehen!
+            _cat_raw = str(cat.get("name", "") or cat.get("displayName", "") or cat.get("shortDisplayName", "") or "")
+            nm = _cat_raw.lower().replace(" ", "").replace("_", "").replace("-", "")
             lbl = _map.get(nm)
             if not lbl: continue
             _lds = cat.get("leaders") or []
             if not _lds: continue
-            _top = _lds[0]
-            _ath = (_top.get("athlete") or {}).get("displayName", "") or ""
+            _top = _lds[0] if isinstance(_lds, list) else {}
+            if not isinstance(_top, dict): continue
+            # V215: Athlet kann in athlete / player / displayName stecken!
+            _ath_obj = _top.get("athlete") or _top.get("player") or {}
+            if isinstance(_ath_obj, dict):
+                _ath = _ath_obj.get("displayName", "") or _ath_obj.get("fullName", "") or ""
+            else:
+                _ath = str(_ath_obj or "")
+            if not _ath:
+                _ath = str(_top.get("displayName", "") or _top.get("athleteName", "") or "")
             _val = _top.get("displayValue", _top.get("value", "")) or ""
             if _ath and str(_val) != "":
                 out.append((lbl, _ath, str(_val)))
@@ -6472,11 +6522,21 @@ def _v214_team_window_text(league, row, place, div_name, uid):
         if str(_det.get(_k, "") or "").strip():
             _l10 = str(_det.get(_k, "") or "").strip(); break
     _bil = f"📊 Bilanz: {_rec}"
-    if _pts and _pts not in ("0", "-", ""):
+    # V215: "Punkte" gibt es NUR in der NHL! NBA/MLB/NFL/NCAAF haben keine Punkte -
+    # ESPN-"points" dort ist was anderes (z.B. "5.0 Punkte" bei 76ers war falsch)!
+    if league == "NHL" and _pts and _pts not in ("0", "-", ""):
         _bil += f" • {_pts} Punkte"
     lines.append(_bil)
     if _gb and _gb not in ("0", "0.0", "-", "", "—"):
-        lines.append(f"↔️ Rückstand: {_gb} Spiele")
+        # V215: NHL-Rueckstand ist in PUNKTEN (gamesBehind = Punkte hinter Leader, z.B. Penguins 19 Punkte)!
+        # Rest: Rueckstand in Spielen! Singular: "1 Spiel" statt "1 Spiele"!
+        if league == "NHL":
+            lines.append(f"↔️ Rückstand: {_gb} Punkte")
+        else:
+            try: _gb_f = float(str(_gb).replace(",", "."))
+            except: _gb_f = 2
+            _gb_w = "Spiel" if _gb_f == 1 else "Spiele"
+            lines.append(f"↔️ Rückstand: {_gb} {_gb_w}")
     if _home or _away:
         _ha = []
         if _home: _ha.append(f"🏠 Heim: {_home}")
@@ -6542,8 +6602,9 @@ def _v214_team_window_text(league, row, place, div_name, uid):
         lines.append("⭐ Key Spieler:")
         for _lbl, _ath, _val in _leaders:
             lines.append(f"  • {_ath} – {_val} {_lbl}")
+    # V215: Keine Daten -> Zeile GANZ weglassen (statt "Keine Daten (ESPN)")! Nix erfunden!
     else:
-        lines.append("⭐ Key Spieler: Keine Daten (ESPN)")
+        pass
     # Buttons!
     _is_fav = False
     try:
@@ -6670,6 +6731,54 @@ async def team_news_cmd(update, ctx, league, team_full):
             await target.reply_text("😅 News konnten grad nicht geladen werden!", reply_markup=small_kb())
         except: pass
 
+def _v215_nfl_overall_records():
+    # V215: NFL Overall-Records aus EINEM Standings-Fetch (ohne level=4-Division-Bloecke)!
+    # Sammelt pro Team den Block mit overallwins -> sonst wuerde der Division-Block falsche Bilanzen liefern!
+    try:
+        sy = _season_year("NFL")
+        u = f"https://site.api.espn.com/apis/v2/sports/football/nfl/standings?season={sy}"
+        r = requests.get(u, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code != 200: return {}
+        j = r.json() or {}
+        best, fallback = {}, {}
+        def walk(node):
+            if isinstance(node, dict):
+                st = node.get("standings") or {}
+                ents = st.get("entries") if isinstance(st, dict) else None
+                if isinstance(ents, list) and ents:
+                    for e in ents:
+                        if not isinstance(e, dict): continue
+                        tm = e.get("team", {}) or {}
+                        disp = tm.get("displayName", "") or tm.get("shortDisplayName", "") or ""
+                        if not disp: continue
+                        vals = {}
+                        for s in e.get("stats", []) or []:
+                            if not isinstance(s, dict): continue
+                            vals[(s.get("name", "") or "").lower()] = s.get("displayValue", s.get("value", ""))
+                        def _iv(*names):
+                            for n in names:
+                                if n in vals:
+                                    try: return int(float(str(vals[n])))
+                                    except: pass
+                            return None
+                        W = _iv("overallwins", "wins")
+                        L = _iv("overalllosses", "losses")
+                        if W is None or L is None: continue
+                        if "overallwins" in vals or "overalllosses" in vals:
+                            best[disp] = (W, L)
+                        elif disp not in fallback:
+                            fallback[disp] = (W, L)
+                    return
+                for k, v in node.items():
+                    if k == "standings": continue
+                    walk(v)
+            elif isinstance(node, list):
+                for it in node: walk(it)
+        walk(j)
+        out = dict(fallback); out.update(best)
+        return out
+    except: return {}
+
 async def draft_preview_cmd(update, ctx):
     # V214: NFL Draft-Vorschau! Reihenfolge nach AKTUELLEM Tabellenstand (schlechtestes Team zuerst)!
     # NFL Draft 2027: 29.04.-01.05.2027, Washington D.C. (National Mall)!
@@ -6696,15 +6805,25 @@ async def draft_preview_cmd(update, ctx):
             lines.append("(Playoff-Teams picken hinten, Super-Bowl-Sieger zuletzt)!")
             lines.append("")
         # Draft-Reihenfolge: alle NFL-Teams, schlechtestes zuerst!
+        # V215: NICHT mehr aus espn_standings (Division-Bloecke! -> Eagles "2-7", Chargers "1-8" waren falsch)!
+        # Jetzt: EIN Fetch der reinen Standings, nur Overall-Block (overallwins/overalllosses)!
         _order = []
         try:
-            _divs = espn_standings("NFL") or {}
-            for _dv, _rows in _divs.items():
-                for _r in _rows:
-                    _order.append(_r)
+            _recs = _v215_nfl_overall_records() or {}
+            for _disp, (_W, _L) in _recs.items():
+                _short = _disp
+                _order.append((_disp, _short, "", _W, _L, 0, ""))
             # Sort: wenigste Wins zuerst, dann meiste Losses! Gleichstand = noch nicht fix!
             _order.sort(key=lambda x: (x[3], -x[4]))
         except: _order = []
+        if not _order:
+            try:
+                _divs = espn_standings("NFL") or {}
+                for _dv, _rows in _divs.items():
+                    for _r in _rows:
+                        _order.append(_r)
+                _order.sort(key=lambda x: (x[3], -x[4]))
+            except: _order = []
         if _order:
             lines.append("📋 Draft-Reihenfolge (Top 10, aktuell):")
             for i, (disp, short, abbr, W, L, T, streak) in enumerate(_order[:10], 1):
