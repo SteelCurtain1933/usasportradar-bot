@@ -1,4 +1,4 @@
-# USA Sport Radar - V220 FINAL - Steelers-Eagles-Rivalitaet + News-Filter 'ahead of' / 'why won't'
+# USA Sport Radar - V221 FINAL - Live-Ansichten mit expliziten Berlin-Daten (Navy @ Memphis Fix!)
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -360,6 +360,26 @@ def fmt_dt(iso):
 
 # V114: Caching - Scoreboard 30 Sek merken, damit alles flüssiger geht!
 _SCORE_CACHE = {}
+
+def _scoreboard_dates(league):
+    # V221: Live-Ansichten duerfen sich NICHT auf ESPNs No-Dates-Standard-Slate verlassen!
+    # Der hat Navy @ Memphis (live, 7-7 Q1!) rausgeworfen -> Bot sagte "kein Favorit live".
+    # Explizite Berlin-Daten: gestern + heute + morgen, dedup per Event-ID - genau wie der V204-Fix bei Next Games!
+    try:
+        _seen=set(); _out=[]
+        for _off in (-1, 0, 1):
+            _d = datetime.now(BERLIN).date() + timedelta(days=_off)
+            for _ev in espn_scoreboard(league, dates=_d.strftime("%Y%m%d")):
+                _eid=str(_ev.get("id",""))
+                if _eid in _seen: continue
+                _seen.add(_eid); _out.append(_ev)
+        if _out: return _out
+    except Exception:
+        pass
+    # Sicherheitsnetz: falls alle drei Daten leer sind -> alter Abruf (nie schlechter als vorher!)
+    try: return espn_scoreboard(league)
+    except Exception: return []
+
 def espn_scoreboard(league, days=7, dates=None):
     import time as _time2
     _ck = (league, dates)
@@ -3302,7 +3322,7 @@ async def live_stats_one_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, idx
     # V148: Frisches Event für Situation (Down & Distance, Feldposition) - gespeichertes ev ist alt!
     try:
         _fresh=None
-        for _ev2 in espn_scoreboard(lg):
+        for _ev2 in _scoreboard_dates(lg):
             if str(_ev2.get("id",""))==str(eid):
                 _fresh=_ev2; break
         if _fresh is not None: ev=_fresh
@@ -3369,7 +3389,7 @@ async def live_all_cmd(update, ctx):
     lines=["🔴 Live - Alle Spiele\n"]
     found=False
     for league in LEAGUES:
-        for ev in espn_scoreboard(league):
+        for ev in _scoreboard_dates(league):
             if ev.get("status",{}).get("type",{}).get("state","")!="in": continue
             lines.append(f"{LEAGUES[league]['emoji']} {game_line(ev, league, show_broadcast=True)}")
             for sl in shootout_lines(ev, league):
@@ -3403,7 +3423,7 @@ async def live_mine_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     live_found=False
     finals=[]
     for league in LEAGUES:
-        for ev in espn_scoreboard(league):
+        for ev in _scoreboard_dates(league):
             teams, _ = event_teams(ev)
             team_text = " ".join([x[0] for x in teams]).lower()
             # Nur wenn Vollname in der gleichen Liga vorkommt!
@@ -3435,7 +3455,7 @@ async def live_mine_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 _lf = []
                 for _lg2 in LEAGUES:
-                    for _ev2 in espn_scoreboard(_lg2):
+                    for _ev2 in _scoreboard_dates(_lg2):
                         _teams2, _ = event_teams(_ev2)
                         _tt2 = " ".join([x[0] for x in _teams2]).lower()
                         if fav_map and not any((lgx is None or lgx==_lg2) and fnx in _tt2 for lgx, fnx in fav_map): continue
@@ -3463,7 +3483,7 @@ async def live_mine_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         _live_list=[]
         for league in LEAGUES:
-            for ev in espn_scoreboard(league):
+            for ev in _scoreboard_dates(league):
                 teams2,_=event_teams(ev)
                 team_text2=" ".join([x[0] for x in teams2]).lower()
                 if fav_map and not any((lg2 is None or lg2==league) and fn in team_text2 for lg2,fn in fav_map):
@@ -4769,7 +4789,7 @@ async def _scorer_update_job(context):
         # Auch Scoreboard als Fallback probieren
         if not _dets:
             try:
-                for _ev2 in espn_scoreboard(lg):
+                for _ev2 in _scoreboard_dates(lg):
                     if str(_ev2.get("id", "")) == eid:
                         _sc = last_scorer(_ev2, lg) or ""
                         break
@@ -4840,7 +4860,7 @@ async def _scorer_update_job(context):
             # Aktuellen Score holen (Scoreboard)
             _cur_scores = {}
             try:
-                for _ev3 in espn_scoreboard(lg):
+                for _ev3 in _scoreboard_dates(lg):
                     if str(_ev3.get("id", "")) == eid:
                         _cur_scores = _live_scores_of(_ev3); break
             except: _cur_scores = {}
@@ -4920,7 +4940,7 @@ async def live_score_job(context):
                     name = fav.split(" (")[0].strip(); lg = fav.split(" (")[-1].replace(")", "").strip() if " (" in fav else None
                     if lg not in LEAGUES: continue
                     _eid_one = None
-                for ev in espn_scoreboard(lg):
+                for ev in _scoreboard_dates(lg):
                     teams, _ = event_teams(ev)
                     team_text = " ".join([x[0] for x in teams]).lower()
                     if _is_oneoff:
