@@ -1,4 +1,4 @@
-# USA Sport Radar - V222 FINAL - Rollende Live-Nachrichten + Spoiler-Fix + Echte Reminder-Zeit!
+# USA Sport Radar - V226 FINAL - Scorer-Zeile zeigt echte Score-Art: Pick Six, Safety, Field Goal, Return TD statt immer 'Letzter Touchdown'!
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -730,6 +730,33 @@ def live_clock(ev, league):
     if detail: return detail
     return ""
 
+def _v226_scorer_label(dtype, league):
+    # V226: Scorer-Zeile zeigt die ECHTE Score-Art! Nicht mehr "Letzter Touchdown", sondern "Pick Six", "Safety", "Field Goal", "Return TD" usw.!
+    try:
+        t = (dtype or "").lower()
+        if "pick six" in t: return "Pick Six"
+        if "interception" in t and "touchdown" in t: return "Pick Six"
+        if "fumble" in t and "touchdown" in t: return "Fumble Return TD"
+        if "blocked" in t and "touchdown" in t: return "Blocked Kick TD"
+        if "punt return" in t or "kickoff return" in t or "kick return" in t or "return touchdown" in t or "return td" in t: return "Return TD"
+        if "safety" in t: return "Safety"
+        if "field goal" in t: return "Field Goal"
+        if "two point" in t or "2-point" in t: return "2-Point Conversion"
+        if "extra point" in t: return "Extra Point"
+        if "touchdown" in t: return "Touchdown"
+        if league == "NHL": return "Tor"
+        if "home run" in t: return "Home Run"
+        if "triple" in t: return "Triple"
+        if "double" in t: return "Double"
+        if "single" in t: return "Single"
+        if "three point" in t: return "Dreier"
+        if "dunk" in t: return "Dunk"
+        if "layup" in t: return "Layup"
+        if league == "NBA": return "Korb"
+        if league == "MLB": return "Score"
+        return "Score"
+    except: return "Score"
+
 def last_scorer(ev, league):
     # Holt den letzten Torschützen / Scorer aus den ESPN-Spieldetails
     # ESPN legt in competitions[0].details die Scoring-Plays ab, z.B. Goal, Touchdown, Home Run
@@ -741,7 +768,7 @@ def last_scorer(ev, league):
             _rt = d.get("type", "") or ""
             dtype = _rt if isinstance(_rt, str) else (_rt.get("text", "") or _rt.get("shortText", "") or "")
             # NHL: Goal, NFL: Touchdown / Field Goal, NBA: 3PT / Dunk / Layup, MLB: Home Run / Single
-            if any(k in dtype for k in ["Goal", "Touchdown", "Field Goal", "Home Run", "Three Point", "Two Point", "Dunk", "Layup", "Single", "Double", "Triple"]):
+            if any(k in dtype for k in ["Goal", "Touchdown", "Field Goal", "Home Run", "Three Point", "Two Point", "Dunk", "Layup", "Single", "Double", "Triple", "Safety", "Return Touchdown", "Return TD", "Pick Six"]):  # V226: Safety + Return-TDs sind auch Scoring-Plays!
                 # Spielername aus participants / athletes
                 scorer = ""
                 for p in d.get("participants", []) or d.get("athletesInvolved", []) or []:
@@ -757,7 +784,7 @@ def last_scorer(ev, league):
                 period = d.get("period", "")
                 # Emoji je nach Liga
                 emo = "🏒" if league=="NHL" else "🏈" if league in ("NFL","NCAAF") else "⚾" if league=="MLB" else "🏀"
-                label = "Letztes Tor" if league=="NHL" else "Letzter Score" if league=="MLB" else "Letzter Touchdown" if dtype=="Touchdown" else "Letzter Score"
+                label = _v226_scorer_label(dtype, league)  # V226: Echte Score-Art (Pick Six, Safety, Field Goal...) statt "Letzter Touchdown"!
                 extra = f" • {clock} P{period}" if league=="NHL" and clock else ""
                 if scorer:
                     return f"   {emo} {label}: {scorer} ({team}){extra}" if team else f"   {emo} {label}: {scorer}{extra}"
@@ -4832,6 +4859,7 @@ def _live_scores_of(ev):
     except: return {}
 async def _scorer_update_job(context):
     # V101-FIX: Scorer steht NICHT im Scoreboard, nur in der Summary! Deswegen Summary holen!
+    # V225: ROLLENDER SCORER! TD-Nachricht kommt SOFORT (ohne Warten!), Scorer rollt per Edit rein (30/60/120-Staffel)! XP rollt vorher schon per Edit rein (V222)!
     try:
         d = context.job.data or {}
         uid = int(d.get("uid", 0)); eid = str(d.get("eid", "")); lg = d.get("lg", ""); mid = int(d.get("mid", 0)); orig = d.get("orig", "")
@@ -4858,7 +4886,8 @@ async def _scorer_update_job(context):
                     _try2 = int((context.job.data or {}).get("try", 1) or 1)
                     if _try2 < 3 and context.job_queue:
                         _nd2 = dict(context.job.data or {}); _nd2["try"] = _try2 + 1
-                        context.job_queue.run_once(_scorer_update_job, 120, data=_nd2, name=f"scorer_retry2_{eid}_{mid}_{_try2+1}")
+                        # V225: Retry-Staffel! 2. Versuch nach 60, 3. nach 120 Sek (vorher immer 120)!
+                        context.job_queue.run_once(_scorer_update_job, 60 if _try2 == 1 else 120, data=_nd2, name=f"scorer_retry2_{eid}_{mid}_{_try2+1}")
                 except: pass
             return
         # Letzten Scoring-Play aus Summary-Details suchen (letzter zuerst)
@@ -4873,7 +4902,7 @@ async def _scorer_update_job(context):
                     _dtype = ""
                 if not _dtype:
                     _dtype = _d.get("playType", "") or _d.get("text", "") or ""
-                if not any(k.lower() in _dtype.lower() for k in ["Goal", "Touchdown", "Field Goal", "Home Run", "Three Point", "Two Point", "Dunk", "Layup", "Single", "Double", "Triple", "Extra Point"]): continue
+                if not any(k.lower() in _dtype.lower() for k in ["Goal", "Touchdown", "Field Goal", "Home Run", "Three Point", "Two Point", "Dunk", "Layup", "Single", "Double", "Triple", "Extra Point", "Safety", "Return Touchdown", "Return TD", "Pick Six"]): continue  # V226: Safety + Return-TDs sind auch Scoring-Plays!
                 # V104: Extra Point / PAT ist kein TD - ueberspringen, wir wollen den TD selbst!
                 if "extra point" in _dtype.lower() and "touchdown" not in _dtype.lower(): continue
                 _scorer = ""
@@ -4892,7 +4921,7 @@ async def _scorer_update_job(context):
                 _clock = (_d.get("clock", {}) or {}).get("displayValue", "") or ""
                 _per = _d.get("period", "")
                 _emo = "🏒" if lg=="NHL" else "🏈" if lg in ("NFL","NCAAF") else "⚾" if lg=="MLB" else "🏀"
-                _label = "Letztes Tor" if lg=="NHL" else "Letzter Touchdown" if _dtype=="Touchdown" else "Letzter Score"
+                _label = _v226_scorer_label(_dtype, lg)  # V226: Echte Score-Art (Pick Six, Safety, Field Goal...) statt "Letzter Touchdown"!
                 _extra = f" \u2022 {_clock} P{_per}" if lg=="NHL" and _clock else ""
                 if _scorer:
                     _sc = f"   {_emo} {_label}: {_scorer} ({_team}){_extra}" if _team else f"   {_emo} {_label}: {_scorer}{_extra}"
@@ -4904,7 +4933,8 @@ async def _scorer_update_job(context):
                 _try = int((context.job.data or {}).get("try", 1) or 1)
                 if _try < 3 and context.job_queue:
                     _nd = dict(context.job.data or {}); _nd["try"] = _try + 1
-                    context.job_queue.run_once(_scorer_update_job, 120, data=_nd, name=f"scorer_retry_{eid}_{mid}_{_try+1}")
+                    # V225: Retry-Staffel! 2. Versuch nach 60, 3. nach 120 Sek (vorher immer 120)!
+                    context.job_queue.run_once(_scorer_update_job, 60 if _try == 1 else 120, data=_nd, name=f"scorer_retry_{eid}_{mid}_{_try+1}")
             except: pass
             return
         if _sc.strip() in orig: return
@@ -5022,13 +5052,13 @@ async def live_score_job(context):
                             _k2 = (uid, str(ev.get("id","")), fav)
                             _prev2 = _LIVE_SEEN.get(_k2)
                             if _prev2 is None or _prev2.get("state") != "pre":
-                                _LIVE_SEEN[_k2] = {"scores": scores, "period": period, "state": "pre", "last_td": {}, "awaiting_resume": None, "halftime_sent": False, "crunch_sent": False, "start_sent": False}
+                                _LIVE_SEEN[_k2] = {"scores": scores, "period": period, "state": "pre", "last_td": {}, "awaiting_resume": None, "halftime_sent": False, "crunch_sent": False, "start_sent": False, "ints_sent": []}
                         continue
                     key = (uid, eid, fav)
                     prev = _LIVE_SEEN.get(key)
                     if prev is None:
                         # V211: Spiel schon fertig beim ersten Sehen? -> Als 'pre' merken, damit der Endstand trotzdem feuert! Vorher: Neustart + fertiges Spiel = Endstand still verloren!
-                        _LIVE_SEEN[key] = {"scores": scores, "period": period, "state": ("pre" if state == "post" else state), "last_td": {}, "awaiting_resume": None, "halftime_sent": False, "crunch_sent": False, "start_sent": False}
+                        _LIVE_SEEN[key] = {"scores": scores, "period": period, "state": ("pre" if state == "post" else state), "last_td": {}, "awaiting_resume": None, "halftime_sent": False, "crunch_sent": False, "start_sent": False, "ints_sent": []}
                         if state != "post": continue
                     # V119: SPIELSTART gehört zu PERIOD! Wer Quarter-Ende + Beginn will, will auch Spielstart!
                     # (cfg.start noch drin für alle, die V118 schon an hatten - sonst geht nix verloren!)
@@ -5127,7 +5157,7 @@ async def live_score_job(context):
                                             _teams222b = _et222b[0] if _et222b else []
                                             _away222b = next((x[0] for x in _teams222b if (x[1] or "").lower()=="away"), "")
                                             _home222b = next((x[0] for x in _teams222b if (x[1] or "").lower()=="home"), "")
-                                            context.job_queue.run_once(_scorer_update_job, 120, data={"uid": uid, "eid": eid, "lg": lg, "mid": int(_lm.message_id), "orig": _live_txt, "away": _away222b, "home": _home222b}, name=f"scorer_{eid}_{_lm.message_id}")
+                                            context.job_queue.run_once(_scorer_update_job, 30, data={"uid": uid, "eid": eid, "lg": lg, "mid": int(_lm.message_id), "orig": _live_txt, "away": _away222b, "home": _home222b}, name=f"scorer_{eid}_{_lm.message_id}")  # V225: 1. Scorer-Versuch schon nach 30 Sek (vorher 120)! Scorer rollt frueher rein!
                                     except: pass
                                 except: pass
                     # V103: Halbzeit / Intermission extra! ESPN bleibt bei NCAAF in der Halbzeit bei Q2 + Detail Halftime, Period springt erst bei Q3!
@@ -5164,7 +5194,7 @@ async def live_score_job(context):
                     # V100-FIX: NICHT game_line(ev) nehmen (zeigt schon neue Uhr 14:28 Q2)! Nur Score + Stand nach altem Abschnitt!
                     # V103: Wenn Halbzeit schon geschickt (2->3), kein doppeltes Perioden-Ende mehr! Weiter kommt unten!
                     _skip_pe = bool(prev.get("halftime_sent") and prev["period"] is not None and int(prev["period"]) == 2 and period is not None and int(period) == 3)
-                    if cfg.get("period") and state == "in" and prev["period"] is not None and period is not None and int(period) > int(prev["period"]) and not _skip_pe:
+                    if cfg.get("period") and state == "in" and prev["period"] is not None and period is not None and int(period) > int(prev["period"]) and int(prev["period"]) >= 1 and not _skip_pe:  # V223: 0.-Quarter-Fix! Vorherige Periode 0 = Spiel hat noch nicht angefangen -> KEIN "0. Quarter vorbei!" mehr!
                         try: await _live_send_dnd(context, uid, eid, lg, _fav_disp, f"⏸️ {live_period_label(lg, prev['period'])} vorbei! • {LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)}")  # V211: DND!
                         except: pass
                         try: prev["awaiting_resume"] = int(period)
@@ -5212,6 +5242,36 @@ async def live_score_job(context):
                                 try: await _live_send_dnd(context, uid, eid, lg, _fav_disp, _ct)  # V211: DND!
                                 except: pass
                                 prev["crunch_sent"] = True
+                    except: pass
+                    # V223: CRUNCH-TIME INTERCEPTION! Nur NFL/NCAAF, nur wenn Crunch-Schalter an + Spiel gerade in der Crunch-Phase (Q4, <=8:00, Diff <=7)!
+                    # ESPN Summary-Details enthalten den Play-Typ "Interception" - 1x pro Play (Dedupe via Play-Key in prev["ints_sent"])!
+                    # Kein Team-Name im Text: ESPN ordnet den INT-Play nicht immer eindeutig dem fangenden Team zu - lieber kein Name als ein falscher!
+                    try:
+                        if cfg.get("crunch") and state == "in" and lg in ("NFL", "NCAAF") and period is not None and int(period) == 4:
+                            _cs_int = _clock_secs(ev)
+                            _diff_int = abs(list(scores.values())[0] - list(scores.values())[1]) if len(scores) >= 2 else 999
+                            if _cs_int is not None and 0 < _cs_int <= 480 and _diff_int <= 7:
+                                if not prev.get("ints_sent"): prev["ints_sent"] = []
+                                for _d in (espn_summary_details(ev, lg) or []):
+                                    try:
+                                        _dt_raw = _d.get("type") or {}
+                                        if isinstance(_dt_raw, dict):
+                                            _dtype = _dt_raw.get("text", "") or _dt_raw.get("shortText", "") or ""
+                                        else:
+                                            _dtype = str(_dt_raw or "")
+                                        _dtxt = ((_d.get("text", "") or "") + " " + _dtype).lower()
+                                        if "intercept" not in _dtxt: continue
+                                        _dper = _d.get("period")
+                                        if _dper is not None and int(_dper) != 4: continue
+                                        _dclock = _d.get("clock", {})
+                                        if isinstance(_dclock, dict): _dclock = _dclock.get("displayValue", "") or ""
+                                        _dclock = str(_dclock or "")
+                                        _dkey = str(_d.get("id", "") or "") or f"{_dper}|{_dclock}|{_dtxt[:60]}"
+                                        if _dkey in prev["ints_sent"]: continue
+                                        prev["ints_sent"].append(_dkey)
+                                        try: await _live_send_dnd(context, uid, eid, lg, _fav_disp, f"🚨 INTERCEPTION! Ballwechsel! • {LEAGUES[lg]['emoji']} {_score_line_short(ev, lg)} • ⏰ {live_clock(ev, lg) or ''} • Jetzt wird's wild! 👀")  # V223: DND!
+                                        except: pass
+                                    except: continue
                     except: pass
                     # V124: 2-Minute Warning! Nur NFL/NCAAF, nur 4. Quarter, nur wenn eng (Diff <=8)!
                     try:
@@ -5281,7 +5341,7 @@ async def live_score_job(context):
                             _qm = await context.bot.send_message(chat_id=uid, text=f"🏁 Spiel zu Ende! {_fav_disp}\n\nSoll ich die Live-Nachrichten von diesem Spiel löschen?", reply_markup=_cq)
                             if _qm and getattr(_qm, "message_id", None): _LIVE_MSG_IDS.setdefault((uid, str(eid)), []).append(int(_qm.message_id)); _save_live_msg_ids()
                         except: pass
-                    _LIVE_SEEN[key] = {"scores": scores, "period": period, "state": state, "last_td": prev.get("last_td") or {}, "awaiting_resume": prev.get("awaiting_resume"), "halftime_sent": prev.get("halftime_sent", False), "crunch_sent": prev.get("crunch_sent", False), "start_sent": prev.get("start_sent", False), "2min_sent": prev.get("2min_sent", False)}
+                    _LIVE_SEEN[key] = {"scores": scores, "period": period, "state": state, "last_td": prev.get("last_td") or {}, "awaiting_resume": prev.get("awaiting_resume"), "halftime_sent": prev.get("halftime_sent", False), "crunch_sent": prev.get("crunch_sent", False), "start_sent": prev.get("start_sent", False), "2min_sent": prev.get("2min_sent", False), "ints_sent": prev.get("ints_sent") or []}
     except Exception as e:
         logger.warning(f"live_score_job: {e}")
 _REMEMBER = None
@@ -6552,7 +6612,7 @@ async def myweek_cmd(update, ctx, force=False):
 
 # ===== V214: TEAM-FENSTER + KEY SPIELER + DRAFT-VORSCHAU =====
 # Team-Fenster: Zahl in Tabellen tippen -> Detail-Fenster mit Platz, Bilanz, Punkten/GB, Heim/Auswaerts, Streak, Last 10, naechste 3, letzte 3, News-Zaehler, Key Spieler!
-# Key Spieler: ESPN Team-Leaders (nur wenn ESPN sie liefert - sonst steht "Keine Daten", nix erfunden)!
+# Key Spieler: V223 DEDIZIERTER Leaders-Endpunkt /teams/{id}/leaders + Fallback eingebettete leaders (nur wenn ESPN sie liefert - sonst Zeile weg, nix erfunden)!
 # Draft-Vorschau: NFL Draft 29.04.-01.05.2027 Washington D.C. - Reihenfolge nach aktuellem Tabellenstand (schlechtestes Team zuerst)!
 
 def _v214_team_standings_detail(league, team_full):
@@ -6651,33 +6711,14 @@ def _v214_team_last_results(league, team_full, n=3):
         return out
     except: return []
 
-def _v214_team_leaders(league, team_full):
-    # Key Spieler via ESPN Team-Leaders! Nur wenn ESPN sie liefert!
+_V223_LEADERS_CACHE = {}
+def _v223_parse_leaders_cats(cats, _map):
+    # Parst EINE Leaders-Kategorie-Liste (dedizierter Endpunkt UND eingebettete leaders haben dieselbe Form)!
+    # Nur Kategorien aus _map, nur Top-1 pro Kategorie, max 4 Zeilen - sonst wirds zu lang!
     try:
-        tid = _espn_team_id_for(league, team_full)
-        if not tid: return []
-        sport = {"NFL": "football", "NCAAF": "football", "NBA": "basketball", "NHL": "hockey", "MLB": "baseball"}.get(league, "football")
-        key = {"NFL": "nfl", "NCAAF": "college-football", "NBA": "nba", "NHL": "nhl", "MLB": "mlb"}.get(league, "nfl")
-        r = requests.get(f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{key}/teams/{tid}", timeout=12, headers={"User-Agent": "Mozilla/5.0"})
-        d = r.json() or {}
-        leaders = ((d.get("team") or {}).get("leaders") or [])
-        # V215: ESPN liefert leaders manchmal als Dict statt Liste -> in Liste umwandeln!
-        if isinstance(leaders, dict):
-            leaders = list(leaders.values())
-        # Kategorie -> deutscher Label! Nur diese Kategorien zeigen (max 4, sonst wirds zu lang)!
-        _map = {
-            "passingyards": "Passing", "rushingyards": "Rushing", "receivingyards": "Receiving",
-            "tackles": "Tackles", "sacks": "Sacks", "interceptions": "Interceptions",
-            "points": "Punkte", "rebounds": "Rebounds", "assists": "Assists",
-            "steals": "Steals", "blocks": "Blocks",
-            "goals": "Tore", "plusminus": "+/-",
-            "battingaverage": "Batting Avg", "homeruns": "Homeruns", "runsbattedin": "RBI",
-            "earnedrunaverage": "ERA", "strikeouts": "Strikeouts", "wins": "Wins",
-        }
         out = []
-        for cat in leaders:
+        for cat in (cats or []):
             if not isinstance(cat, dict): continue
-            # V215: Kategorie-Name kann in name / displayName / shortDisplayName stehen!
             _cat_raw = str(cat.get("name", "") or cat.get("displayName", "") or cat.get("shortDisplayName", "") or "")
             nm = _cat_raw.lower().replace(" ", "").replace("_", "").replace("-", "")
             lbl = _map.get(nm)
@@ -6686,7 +6727,6 @@ def _v214_team_leaders(league, team_full):
             if not _lds: continue
             _top = _lds[0] if isinstance(_lds, list) else {}
             if not isinstance(_top, dict): continue
-            # V215: Athlet kann in athlete / player / displayName stecken!
             _ath_obj = _top.get("athlete") or _top.get("player") or {}
             if isinstance(_ath_obj, dict):
                 _ath = _ath_obj.get("displayName", "") or _ath_obj.get("fullName", "") or ""
@@ -6698,6 +6738,50 @@ def _v214_team_leaders(league, team_full):
             if _ath and str(_val) != "":
                 out.append((lbl, _ath, str(_val)))
             if len(out) >= 4: break
+        return out
+    except: return []
+
+def _v214_team_leaders(league, team_full):
+    # V223: Key Spieler via DEDIZIERTEM Endpunkt /teams/{id}/leaders! Der liefert oft Daten, wo die
+    # eingebetteten leaders im Team-Endpunkt leer sind (genau das war Sache 2: "ESPN liefert iwie nicht")!
+    # Fallback: eingebettete leaders aus Team-Endpunkt. Cache pro Tag + Team (1 Abruf pro Fenster)!
+    # Keine Daten -> [] -> Zeile wird weggelassen (V215-Regel)! NIX erfunden!
+    try:
+        tid = _espn_team_id_for(league, team_full)
+        if not tid: return []
+        _today = datetime.now(BERLIN).date().isoformat()
+        _ck = (league, str(tid), _today)
+        if _ck in _V223_LEADERS_CACHE: return list(_V223_LEADERS_CACHE[_ck])
+        sport = {"NFL": "football", "NCAAF": "football", "NBA": "basketball", "NHL": "hockey", "MLB": "baseball"}.get(league, "football")
+        key = {"NFL": "nfl", "NCAAF": "college-football", "NBA": "nba", "NHL": "nhl", "MLB": "mlb"}.get(league, "nfl")
+        _map = {
+            "passingyards": "Passing", "rushingyards": "Rushing", "receivingyards": "Receiving",
+            "tackles": "Tackles", "sacks": "Sacks", "interceptions": "Interceptions",
+            "points": "Punkte", "rebounds": "Rebounds", "assists": "Assists",
+            "steals": "Steals", "blocks": "Blocks",
+            "goals": "Tore", "plusminus": "+/-",
+            "battingaverage": "Batting Avg", "homeruns": "Homeruns", "runsbattedin": "RBI",
+            "earnedrunaverage": "ERA", "strikeouts": "Strikeouts", "wins": "Wins",
+        }
+        out = []
+        # 1) Dedizierter Leaders-Endpunkt!
+        try:
+            r = requests.get(f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{key}/teams/{tid}/leaders", timeout=12, headers={"User-Agent": "Mozilla/5.0"})
+            d = r.json() or {}
+            cats = d.get("categories") or d.get("leaders") or (d.get("team") or {}).get("leaders") or []
+            if isinstance(cats, dict): cats = list(cats.values())
+            out = _v223_parse_leaders_cats(cats, _map)
+        except: out = []
+        # 2) Fallback: eingebettete leaders aus Team-Endpunkt!
+        if not out:
+            try:
+                r2 = requests.get(f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{key}/teams/{tid}", timeout=12, headers={"User-Agent": "Mozilla/5.0"})
+                d2 = r2.json() or {}
+                leaders = ((d2.get("team") or {}).get("leaders") or [])
+                if isinstance(leaders, dict): leaders = list(leaders.values())
+                out = _v223_parse_leaders_cats(leaders, _map)
+            except: pass
+        _V223_LEADERS_CACHE[_ck] = list(out)
         return out
     except: return []
 
