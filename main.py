@@ -1,4 +1,4 @@
-# USA Sport Radar - V215 FINAL - Team-Fenster (Zahl in Tabellen) + Key Spieler + NFL Draft-Vorschau
+# USA Sport Radar - V216 FINAL - Team-Fenster (Zahl in Tabellen) + Key Spieler + NFL Draft-Vorschau
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -2277,6 +2277,23 @@ async def tables_mine_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     else: _new_rows.append(_r)
                 rows=_new_rows
                 _overall_note=" (Alle = Gesamt-Record)"
+        # V216: Reihen in "Meine Teams" richtig SORTIEREN! Vorher: ESPN-Reihenfolge (MLB: Brewers 103-59 ganz unten!)!
+        # Sort: NHL nach Punkten (aus Streak "W2 \u2022 32 PTS"), Rest nach Siegquote, dann Wins!
+        try:
+            if lg == "NHL":
+                def _v216_pts(_r):
+                    try:
+                        _s = str(_r[6] or "")
+                        if "PTS" in _s: return int(_s.split("\u2022")[-1].replace("PTS", "").strip())
+                    except: pass
+                    return 0
+                rows = sorted(rows, key=lambda _r: (_v216_pts(_r), _r[3]), reverse=True)
+            else:
+                def _v216_pct(_r):
+                    _tot = _r[3] + _r[4] + _r[5]
+                    return ((_r[3] / _tot) if _tot else 0, _r[3], -_r[4])
+                rows = sorted(rows, key=_v216_pct, reverse=True)
+        except: pass
         lines.append(f"\n{LEAGUES[lg]['emoji']} {lg} - {div_s}{_overall_note}")
         for i,(disp, short, abbrev, W, L, T, streak) in enumerate(rows,1):
             rec = f"{W}-{L}" + (f"-{T}" if T else "")
@@ -4113,9 +4130,12 @@ def _news_is_filler(title):
         # Echte Signings ("signs with", "agrees to") sind NICHT in dieser Liste - die bleiben erlaubt!
         # V201: Neue Luecken aus Screenshots! Prognose/Analyse/Insider/Preview-Woerter, die V192 noch durchgelassen hat!
         # "visit" (ohne s!) faengt auch "visits"! "face " mit Leerzeichen, damit "surface" nicht trifft! "stay for" faengt "Will Core Stay for..."!
-        # V215: Crime/Gossip + Prediction + Blog-Reports raus! (Screenshots: "Arrest warrants / robbery",
+        # V216: Crime/Gossip + Prediction + Blog-Reports raus! (Screenshots: "Arrest warrants / robbery",
         # "Land New Prediction", "Three Rivers Report: ... problem")
-        for _hb in ("odds","oddsmakers","sportsbook","betting","trade target","trade rumors","trade rumor","to host","will host","preview","pregame","pre-game","what to watch","how to watch","be the answer","mock draft","projected","projection","predicted","prediction","predict","breakdown","opponent breakdown","insider","will stay","stay for","going into","biggest test","visit","face ","matchup","facing","lineup","lineup notes","game notes","girlfriend","boyfriend","dating","fiancee","great match for","jeff capel","jeff cap","ncaab","march madness","final four","arrest","warrant","robbery","robbed","charged with","arrested","lawsuit","sued","three rivers","report:","opinion:","column:"):
+        for _hb in ("odds","oddsmakers","sportsbook","betting","trade target","trade rumors","trade rumor","to host","will host","preview","pregame","pre-game","what to watch","how to watch","be the answer","mock draft","projected","projection","predicted","prediction","predict","breakdown","opponent breakdown","insider","will stay","stay for","going into","biggest test","visit","face ","matchup","facing","lineup","lineup notes","game notes","girlfriend","boyfriend","dating","fiancee","great match for","jeff capel","jeff cap","ncaab","march madness","final four","arrest","warrant","robbery","robbed","charged with","arrested","lawsuit","sued","three rivers","report:","opinion:","column:",
+        # V216: Meinungs-Stuecke aus Screenshots! "Should Carry More" = Meinung, "They're In Trouble" / "Bad News for" = Gossip/Meinung!
+        # "should " mit Leerzeichen danach, damit "shoulder" (Verletzung!) NICHT trifft! "shouldn" faengt "shouldn't"!
+        "should ","shouldn","in trouble","bad news for","some bad news","has some bad news"):
             if _hb in tl: return True
         # V175: Free Agency NIE blocken! Qualifying Offer / Signing ist echte News!
         if any(k in tl for k in ("free agency","qualifying offer","signs with","agrees to","free-agent","free agent")): return False
