@@ -1,4 +1,4 @@
-# USA Sport Radar - V216 FINAL - Team-Fenster (Zahl in Tabellen) + Key Spieler + NFL Draft-Vorschau
+# USA Sport Radar - V218 FINAL - Team-Fenster (Zahl in Tabellen) + Key Spieler + NFL Draft-Vorschau
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -1069,9 +1069,14 @@ async def top10_league_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, leagu
         leagues = list(LEAGUES.keys()) if league=="ALL" else [league]
         from datetime import date as _date
         today = _date.today()
+        # V218: Top 10 = nur Spiele DIESER Woche (heute -> Sonntag)! Vorher: heute + 7 Tage,
+        # dadurch haben Spiele von NAECHSTER Woche (28.11.) die heutigen Spiele (z.B. Texas) rausgedraengt!
+        _days_to_sun = (6 - today.weekday()) % 7  # Montag=0 ... Sonntag=6
+        _win_days = _days_to_sun + 1  # heute + bis Sonntag
+        _win_end = today + timedelta(days=_win_days - 1)
         all_games=[]; seen=set()
         for lg in leagues:
-            for offset in range(0, 8):
+            for offset in range(0, _win_days):
                 d = today + timedelta(days=offset)
                 ds = d.strftime("%Y%m%d")
                 try:
@@ -1116,7 +1121,7 @@ async def top10_league_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, leagu
         top = all_games[:10]
         ctx.user_data["top10_list"] = [(s, lg, ev, bd) for s, lg, ev, bd in top]
         title = "Alle Ligen" if league=="ALL" else league
-        lines=[f"🏆 Top 10 - {title}\n💡 Zahl tippen für Rating + Details!\n"]
+        lines=[f"🏆 Top 10 - {title}\n💡 Zahl tippen für Rating + Details!\n📅 Diese Woche: {today.strftime('%d.%m.')} – {_win_end.strftime('%d.%m.')}\n"]
         if not top:
             lines.append("Keine Spiele in den nächsten 7 Tagen gefunden.")
             _live_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔴 Meine Live-Spiele", callback_data="my_live_games")],[InlineKeyboardButton("⬅️ Zurück", callback_data="back")]])
@@ -4135,7 +4140,9 @@ def _news_is_filler(title):
         for _hb in ("odds","oddsmakers","sportsbook","betting","trade target","trade rumors","trade rumor","to host","will host","preview","pregame","pre-game","what to watch","how to watch","be the answer","mock draft","projected","projection","predicted","prediction","predict","breakdown","opponent breakdown","insider","will stay","stay for","going into","biggest test","visit","face ","matchup","facing","lineup","lineup notes","game notes","girlfriend","boyfriend","dating","fiancee","great match for","jeff capel","jeff cap","ncaab","march madness","final four","arrest","warrant","robbery","robbed","charged with","arrested","lawsuit","sued","three rivers","report:","opinion:","column:",
         # V216: Meinungs-Stuecke aus Screenshots! "Should Carry More" = Meinung, "They're In Trouble" / "Bad News for" = Gossip/Meinung!
         # "should " mit Leerzeichen danach, damit "shoulder" (Verletzung!) NICHT trifft! "shouldn" faengt "shouldn't"!
-        "should ","shouldn","in trouble","bad news for","some bad news","has some bad news"):
+        "should ","shouldn","in trouble","bad news for","some bad news","has some bad news",
+        # V217: "Suggestion" = Meinung! ("Makes Surprising ... Suggestion") "suggest" faengt suggestion/suggests/suggested!
+        "suggest"):
             if _hb in tl: return True
         # V175: Free Agency NIE blocken! Qualifying Offer / Signing ist echte News!
         if any(k in tl for k in ("free agency","qualifying offer","signs with","agrees to","free-agent","free agent")): return False
@@ -5379,7 +5386,7 @@ HELP_CATS = {
  "fenster": "❓ Hilfe - Fenster\n\n**🪟 Fenster**\nAuswahl = Fenster ändert sich! Detail = neues Fenster! ✖️ = Fenster weg!\n\n**Einfach auf Knöpfe drücken** - kein @, kein Befehl nötig!",
 }
 HELP_SHORT = {
-    "top10": "❓ Hilfe - Top 10\n\nTippe eine Zahl 1-10 in den Chat für Rating + Warum!\nRating steht nur im Detail, nicht in der Übersicht!",
+    "top10": "❓ Hilfe - Top 10\n\nTippe eine Zahl 1-10 in den Chat für Rating + Warum!\nRating steht nur im Detail, nicht in der Übersicht!\n\n📅 Top 10 zeigt nur Spiele dieser Woche (heute bis Sonntag)! Spiele von nächster Woche sind NICHT dabei!",
     "tables": "❓ Hilfe - Tabellen\n\nW-L-OTL = Siege - Niederlagen - Overtime-Niederlagen.\nBei NHL: Sieg = 2 Punkte, Overtime-Niederlage = 1 Punkt!\n\n💡 Zahl tippen = Team-Fenster! (z.B. 1 für Platz 1)",
     "next": "❓ Hilfe - Next Games\n\nHeute / Morgen = alle Spiele!\nNur Favoriten = nur deine Teams!",
     "live": "❓ Hilfe - Live\n\nLäuft gerade!\nNach Spielende: Fenster schließen reicht!",
