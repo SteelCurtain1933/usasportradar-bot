@@ -1,4 +1,4 @@
-# USA Sport Radar - V230 FINAL - Liste: Kuerzel statt Langnamen (jedes Spiel 1 Zeile)! Detail-Ansicht: echte Details (Stadion + Sender + Anpfiff) statt nur Schalter!
+# USA Sport Radar - V231 FINAL - Liste: Kuerzel sauber neu aufgebaut (V230-Bug: 'San Diego St' ist nur Praefix -> 'SDSUate'! Kein Substring-Replace mehr!)
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -2816,15 +2816,27 @@ async def heute_morgen(update: Update, ctx: ContextTypes.DEFAULT_TYPE, morgen=Fa
                                 _is_fav_hm = True; break
                         if _is_fav_hm: _line_hm = "⭐ " + _line_hm
                     except: pass
-                    # V230: Kuerzel statt Langnamen! UTAH statt "Utah Utes" -> jedes Spiel passt auf EINE Zeile!
+                    # V231: Kuerzel sauber NEU AUFBAUEN! V230-Bug: ESPN-shortDisplayName ("San Diego St") ist nur ein PRAEFIX von "San Diego State Aztecs" -> Replace liess "ate" uebrig ("SDSUate")! Nie wieder Substring-Replace!
                     try:
-                        _comp230 = ev.get("competitions", [{}])[0]
-                        for _c230 in _comp230.get("competitors", []):
-                            _tm230 = _c230.get("team", {}) or {}
-                            _short230 = _tm230.get("shortDisplayName", "") or ""
-                            _abbr230 = (_tm230.get("abbreviation", "") or "").upper()
-                            if _short230 and _abbr230 and _short230 in _line_hm:
-                                _line_hm = _line_hm.replace(_short230, _abbr230)
+                        _comp231 = ev.get("competitions", [{}])[0]
+                        _away231 = _home231 = None
+                        for _c231 in _comp231.get("competitors", []):
+                            _tm231 = _c231.get("team", {}) or {}
+                            _rec231 = ((_tm231.get("abbreviation", "") or "").upper(), _c231.get("score"))
+                            if _c231.get("homeAway", "") == "away": _away231 = _rec231
+                            else: _home231 = _rec231
+                        if _away231 and _home231:
+                            _star231 = ""
+                            _work231 = _line_hm
+                            if _work231.startswith("⭐ "): _star231, _work231 = "⭐ ", _work231[2:]
+                            _segs231 = _work231.split(" • ", 1)
+                            _a231, _sa231 = _away231
+                            _h231, _sh231 = _home231
+                            if _sa231 is not None and _sh231 is not None:
+                                _match231 = f"{_a231} {_sa231} @ {_h231} {_sh231}"
+                            else:
+                                _match231 = f"{_a231} @ {_h231}"
+                            _line_hm = _star231 + _match231 + (f" • {_segs231[1]}" if len(_segs231) > 1 else "")
                     except: pass
                     if state=="in":
                         # V229: Kein "LIVE" in jeder Zeile! Oben steht schon "🔴 Live:" als Ueberschrift - sonst doppelt gemoppelt!
