@@ -1,4 +1,4 @@
-# USA Sport Radar - V226 FINAL - Scorer-Zeile zeigt echte Score-Art: Pick Six, Safety, Field Goal, Return TD statt immer 'Letzter Touchdown'!
+# USA Sport Radar - V228 FINAL - Liste: Aktualisieren-Knopf + Stand-Zeit! XP rollt auch OHNE Scorer rein (vorher blieb Nachricht ewig beim TD-Stand)!
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -2463,11 +2463,10 @@ async def next_hub_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📅 Heute", callback_data="next_today")],  # V210: Liga wird danach gewaehlt!
         [InlineKeyboardButton("📅 Morgen", callback_data="next_tomorrow")],
         [InlineKeyboardButton("⭐ Nur meine Favoriten", callback_data="next_mine")],
-        [InlineKeyboardButton("🔴 Live für ein Spiel (nicht Favorit)", callback_data="next_live_league")],
-        [InlineKeyboardButton("❓ Hilfe", callback_data="help")],
+        [InlineKeyboardButton("❓ Hilfe", callback_data="help")],  # V227: "Live für ein Spiel"-Button RAUS! Geht jetzt über Heute/Morgen + Zahl!
         [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
     ])
-    await _cb_edit(update, "⏭️ Next Games\n\nWas willst du sehen?\n📅 Heute / Morgen = alle Spiele, auch ohne Favoriten!\n⭐ Nur meine Favoriten = wann spielen DEINE Teams als Nächstes?", kb)
+    await _cb_edit(update, "⏭️ Next Games\n\nWas willst du sehen?\n📅 Heute / Morgen = alle Spiele, auch ohne Favoriten!\n⭐ Nur meine Favoriten = wann spielen DEINE Teams als Nächstes?\n✍️ In Heute/Morgen: Zahl vom Spiel schreiben = Details + Benachrichtigungen!", kb)  # V227: Zahlen-Weg!
 async def next_mine_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     target = update.message or update.callback_query.message
     user = update.effective_user or (update.callback_query.from_user if update.callback_query else None)
@@ -2764,7 +2763,7 @@ async def fav_remove_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def heute_morgen(update: Update, ctx: ContextTypes.DEFAULT_TYPE, morgen=False, lg_filter=None, edit=False):
     target = update.message or update.callback_query.message
     want = (datetime.now(BERLIN)+timedelta(days=1 if morgen else 0)).date()
-    lines=[f"📅 {'Morgen' if morgen else 'Heute'} ({want.strftime('%d.%m.')})" + (f" – {lg_filter}" if lg_filter and lg_filter != "ALL" else "") + "\n"]
+    lines=[f"📅 {'Morgen' if morgen else 'Heute'} ({want.strftime('%d.%m.')})" + (f" – {lg_filter}" if lg_filter and lg_filter != "ALL" else "") + f" • Stand: {datetime.now(BERLIN).strftime('%H:%M')} Uhr\n"]  # V228: Stand-Zeit! Liste ist 'ne Momentaufnahme - jetzt sieht man, von wann die Zahlen sind!
     # V210: Kein 'Alle' mehr! Ohne Liga -> Liga-Auswahl zeigen (College-Wand am Wochenende war zu viel)!
     if not lg_filter or lg_filter == "ALL":
         _cb210 = "next_tomorrow" if morgen else "next_today"
@@ -2785,7 +2784,7 @@ async def heute_morgen(update: Update, ctx: ContextTypes.DEFAULT_TYPE, morgen=Fa
         return
     # Überall: "Gast @ Heim" - erstes Team ist Heimteam!
 
-    live_lines=[]; _up_hm=[]  # V208: (dt, zeile) fuer Zeit-Gruppen!
+    live_lines=[]; _up_hm=[]  # V208: (dt, zeile) fuer Zeit-Gruppen! | V227: live_lines = (eid, liga, zeile), _up_hm = (dt, eid, liga, zeile) - fuer die Nummerierung!
     try: _favs_hm = favs_for(update.effective_user.id if update.effective_user else 0)
     except: _favs_hm = []
     # V204: Explizite Datums-Abfrage! Vorher: espn_scoreboard() OHNE Datum -> ESPN liefert nur den US-Heute-Slate -> Nacht-Spiele 00:00-03:00 DE-Zeit (US-Abend!) fielen raus (Iowa State 00:00, Clemson 01:30 usw. fehlten in Next Games)! Jetzt: -1 bis +2 Tage abfragen + Dedupe!
@@ -2818,29 +2817,43 @@ async def heute_morgen(update: Update, ctx: ContextTypes.DEFAULT_TYPE, morgen=Fa
                         if _is_fav_hm: _line_hm = "⭐ " + _line_hm
                     except: pass
                     if state=="in":
-                        live_lines.append(_line_hm)
+                        live_lines.append((_eid_hm, league, _line_hm))  # V227: eid + Liga mitnehmen fuer Zahlen-Pick!
                     else:
                         # V209: Anstosszeit raus aus der Zeile - sie steht 1x als Gruppen-Ueberschrift!
                         if dt: _line_hm = _line_hm.replace(f" • ⏰ {dt.strftime('%H:%M')} Uhr", "")
                         _line_hm = _line_hm.replace("📺 ", "")
-                        _up_hm.append((dt, _line_hm))
+                        _up_hm.append((dt, _eid_hm, league, _line_hm))  # V227: eid + Liga mitnehmen fuer Zahlen-Pick!
+    # V227: Spiele NUMMERIERT! Zahl schreiben -> Detail + Benachrichtigungen!
+    _ng227 = []  # [(liga, eid)] in Anzeige-Reihenfolge!
+    _n227 = 0
     if live_lines:
         lines.append("🔴 Live:")
-        lines.extend(live_lines)
+        for _eid227, _lg227, _ln227 in live_lines:
+            _n227 += 1; _ng227.append((_lg227, _eid227))
+            lines.append(f"{_n227}. {_ln227}")
     if _up_hm:
         # V209: Nach Anstosszeit gruppiert! Uhrzeit steht nur 1x pro Slot - keine Wiederholung mehr!
         _groups_hm = [("🌙 Nacht", {}), ("☀️ Tag", {}), ("🌇 Abend", {})]
-        for _dt_hm, _ln_hm in sorted(_up_hm, key=lambda x: x[0] or datetime.now(BERLIN)):
+        for _dt_hm, _eid227b, _lg227b, _ln_hm in sorted(_up_hm, key=lambda x: x[0] or datetime.now(BERLIN)):
             _hh_hm = _dt_hm.hour if _dt_hm else 12
             _gi_hm = 0 if _hh_hm < 6 else 1 if _hh_hm < 18 else 2
             _slot_hm = _dt_hm.strftime("%H:%M") if _dt_hm else "??:??"
-            _groups_hm[_gi_hm][1].setdefault(_slot_hm, []).append(_ln_hm)
+            _n227 += 1; _ng227.append((_lg227b, _eid227b))  # V227: Nummer in Anzeige-Reihenfolge!
+            _groups_hm[_gi_hm][1].setdefault(_slot_hm, []).append(f"{_n227}. {_ln_hm}")
         for _gt_hm, _slots_hm in _groups_hm:
             if _slots_hm:
                 lines.append(f"\n{_gt_hm}:")
                 for _slot_hm, _items_hm in _slots_hm.items():
                     lines.append(f"⏰ {_slot_hm}")
                     lines.extend(_items_hm)
+    if live_lines or _up_hm:
+        lines.append("\n✍️ Zahl schreiben für Details + Benachrichtigungen! (z.B. 1 für Spiel 1)")
+        try:
+            ctx.user_data["next_games_list"] = _ng227  # V227: Zahlen-Liste merken!
+            ctx.user_data["my_live_list"] = None  # V227: Andere Zahlen-Listen leeren - sonst frisst Meine-Live-Spiele die Zahl!
+            ctx.user_data["next_live_list"] = None
+            ctx.user_data["results_list"] = None
+        except: pass
     if not live_lines and not _up_hm:
         if morgen:
             lines.append(f"Keine {lg_filter}-Spiele morgen. Tipp oben auf eine andere Liga!" if lg_filter and lg_filter != "ALL" else "Morgen keine Spiele in den Ligen. Schau mal bei /top10 oder /next vorbei.")
@@ -2857,6 +2870,7 @@ async def heute_morgen(update: Update, ctx: ContextTypes.DEFAULT_TYPE, morgen=Fa
          InlineKeyboardButton(_flbl_hm("NBA"), callback_data=f"{_cb_hm}:NBA")],
         [InlineKeyboardButton(_flbl_hm("NHL"), callback_data=f"{_cb_hm}:NHL"),
          InlineKeyboardButton(_flbl_hm("MLB"), callback_data=f"{_cb_hm}:MLB")],  # V210: 'Alle' RAUS!
+        [InlineKeyboardButton("🔄 Aktualisieren", callback_data=f"{_cb_hm}:{lg_filter}")],  # V228: Liste neu laden! Selber Callback wie Liga-Knopf -> rendert neu (edit=True)!
         [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
         [InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")],
     ])
@@ -2867,6 +2881,13 @@ async def heute_morgen(update: Update, ctx: ContextTypes.DEFAULT_TYPE, morgen=Fa
             if sum(len(x) + 1 for x in _cut) + len(_ln) > 3900: break
             _cut.append(_ln)
         _cut.append("\n… zu viele Spiele! Tipp oben auf eine Liga, um zu filtern! 👆")
+        # V227: Nur die wirklich angezeigten Spiele in der Zahlen-Liste behalten!
+        try:
+            _shown227 = sum(1 for _ln in _cut if _ln and _ln.split(". ", 1)[0].isdigit())
+            ctx.user_data["next_games_list"] = _ng227[:_shown227]
+            if _shown227 < len(_ng227):
+                _cut.append("✍️ Zahl schreiben für Details + Benachrichtigungen!")
+        except: pass
         _txt_hm = "\n".join(_cut)
     if edit:
         await _cb_edit(update, _txt_hm, _kb_hm)
@@ -4742,7 +4763,7 @@ async def my_live_games_cmd(update, ctx):
         if not d: continue
         if any([d.get("score"), d.get("period"), d.get("final"), d.get("crunch"), d.get("start"), d.get("reminder")]): active.append((str(eid), d.get("lg",""), d.get("name","") or f"Spiel {eid}", d))
     if not active:
-        await _cb_edit(update, "🔴 Meine Live-Spiele\n\nNoch keine einzelnen Spiele angemacht.\nGeh zu Nächste Spiele → 🔴 Live für ein Spiel, dann tauchen sie hier auf!", InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Zurück zu Teams", callback_data="notif_teams")]])); return
+        await _cb_edit(update, "🔴 Meine Live-Spiele\n\nNoch keine einzelnen Spiele angemacht.\nGeh zu Next Games → Heute/Morgen → Zahl vom Spiel schreiben, dann tauchen sie hier auf!", InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Zurück zu Teams", callback_data="notif_teams")]])); return
     lines = ["🔴 Meine Live-Spiele\n"]
     _shown209 = []; _to_delete209 = []; _any_data209 = False; _num209 = 0
     for eid, lg, nm, d in active:
@@ -4806,7 +4827,7 @@ async def my_live_games_cmd(update, ctx):
     try: ctx.user_data["my_live_list"] = _shown209
     except: pass
     if not _shown209:
-        await _cb_edit(update, "🔴 Meine Live-Spiele\n\nKeine einzelnen Spiele mehr - die fertigen sind automatisch rausgeflogen! 🧹\nGeh zu Nächste Spiele → 🔴 Live für ein Spiel, dann tauchen sie hier auf!", InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Zurück zu Teams", callback_data="notif_teams")]])); return
+        await _cb_edit(update, "🔴 Meine Live-Spiele\n\nKeine einzelnen Spiele mehr - die fertigen sind automatisch rausgeflogen! 🧹\nGeh zu Next Games → Heute/Morgen → Zahl vom Spiel schreiben, dann tauchen sie hier auf!", InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Zurück zu Teams", callback_data="notif_teams")]])); return
     lines.append("\n✏️ Tippe die Zahl ein, bei dem Spiel wo du was ändern willst!")
     lines.append("Dann ploppt genau das Fenster auf und du kannst nachträglich was an / aus machen!")
     await _cb_edit(update, "\n".join(lines), InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Zurück zu Teams", callback_data="notif_teams")]]))
@@ -4864,6 +4885,41 @@ async def _scorer_update_job(context):
         d = context.job.data or {}
         uid = int(d.get("uid", 0)); eid = str(d.get("eid", "")); lg = d.get("lg", ""); mid = int(d.get("mid", 0)); orig = d.get("orig", "")
         if not uid or not eid or not mid or not orig: return
+        # V228: XP-Edit OHNE Scorer! Wenn der Scorer nicht gefunden wird, bleibt die Nachricht sonst ewig beim TD-Stand (13 statt 14)!
+        async def _xp_only_edit228():
+            try:
+                import re as _re228
+                if not ("TOUCHDOWN" in orig or "Touchdown" in orig): return
+                _m228 = _re228.search(r"(\d+)\s:\s(\d+)", orig)
+                if not _m228: return
+                _o_a228, _o_h228 = int(_m228.group(1)), int(_m228.group(2))
+                _cur228 = {}
+                for _ev228 in _scoreboard_dates(lg):
+                    if str(_ev228.get("id", "")) == eid:
+                        _cur228 = _live_scores_of(_ev228); break
+                if not _cur228: return
+                _away_nm228 = (d.get("away", "") or ""); _home_nm228 = (d.get("home", "") or "")
+                _c_a228 = _c_h228 = None
+                for _k228, _v228 in _cur228.items():
+                    if _away_nm228 and (_away_nm228.lower() in _k228.lower() or _k228.lower() in _away_nm228.lower()): _c_a228 = _v228
+                    if _home_nm228 and (_home_nm228.lower() in _k228.lower() or _k228.lower() in _home_nm228.lower()): _c_h228 = _v228
+                if _c_a228 is None or _c_h228 is None: return
+                _da228, _dh228 = _c_a228 - _o_a228, _c_h228 - _o_h228
+                # Genau EINE Seite +1/+2, andere 0 -> XP/2PC ist drin! Beide Seiten gestiegen = danach kam noch was -> nix raten!
+                if _da228 in (1, 2) and _dh228 == 0: _diff228 = _da228
+                elif _dh228 in (1, 2) and _da228 == 0: _diff228 = _dh228
+                else: return
+                _new_txt228 = _re228.sub(r"\d+\s:\s\d+", f"{_c_a228} : {_c_h228}", orig, count=1)
+                if _diff228 == 1:
+                    _new_txt228 = _new_txt228.replace("TOUCHDOWN!", "TOUCHDOWN + EXTRA POINT!")
+                    _new_txt228 = _new_txt228.replace("Touchdown...", "Touchdown + Extra Point...")
+                else:
+                    _new_txt228 = _new_txt228.replace("TOUCHDOWN!", "TOUCHDOWN + 2-POINT!")
+                    _new_txt228 = _new_txt228.replace("Touchdown...", "Touchdown + 2-Point...")
+                if _new_txt228 != orig:
+                    try: await context.bot.edit_message_text(chat_id=uid, message_id=mid, text=_new_txt228)
+                    except: pass
+            except: pass
         # Summary-Details holen (da steht der Scorer wirklich drin!)
         _dets = []
         try: _dets = espn_summary_details({"id": eid}, lg) or []
@@ -4881,6 +4937,8 @@ async def _scorer_update_job(context):
                 try: await context.bot.edit_message_text(chat_id=uid, message_id=mid, text=orig + "\n" + _sc.strip())
                 except: pass
             else:
+                # V228: Auch ohne Scorer den XP reinholen! (TCU-Fall: 13 statt 14!)
+                await _xp_only_edit228()
                 # V105: Auch hier Retry, wenn Scoreboard auch keinen Scorer hatte!
                 try:
                     _try2 = int((context.job.data or {}).get("try", 1) or 1)
@@ -4928,6 +4986,8 @@ async def _scorer_update_job(context):
                     break
             except: continue
         if not _sc.strip():
+            # V228: Auch ohne Scorer den XP reinholen! Nachricht darf nicht ewig beim TD-Stand haengen!
+            await _xp_only_edit228()
             # V105: Retry! Wenn nach 2 Min noch kein Scorer da ist, nochmal in 2 Min probieren (max 3x)!
             try:
                 _try = int((context.job.data or {}).get("try", 1) or 1)
@@ -5469,6 +5529,14 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             _lg, _eid = _nl[_n-1]
             ctx.user_data["next_live_list"] = None
             await next_live_pick_cmd(update, ctx, _lg, _eid, num_mid=update.message.message_id); return
+    # V227: Zahl für Next Games Heute/Morgen -> Detail + Benachrichtigungen!
+    if txt.isdigit() and ctx.user_data.get("next_games_list") and not ctx.user_data.get("awaiting_fav"):
+        _ng227 = ctx.user_data.get("next_games_list") or []
+        _n227 = int(txt)
+        if 1 <= _n227 <= len(_ng227):
+            _lg227, _eid227 = _ng227[_n227-1]
+            ctx.user_data["next_games_list"] = None
+            await next_live_pick_cmd(update, ctx, _lg227, _eid227, num_mid=update.message.message_id); return
     # V110: Zahl für Ergebnisse Final Stats!
     if txt.isdigit() and ctx.user_data.get("results_list") and not ctx.user_data.get("awaiting_fav"):
         _rl = ctx.user_data.get("results_list") or []
@@ -5617,7 +5685,7 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # V134: Hilfe in Kategorien - nicht mehr ein Batzen Text!
 HELP_CATS = {
  "grund": "❓ Hilfe - Grundlagen\n\n**Gast @ Heim**\nErstes Team = Auswärts, zweites = Heim!\nZ.B. Vikings @ Packers = Vikings spielt bei den Packers!\n\n**⭐ = Dein Team**\nDas ist einer deiner Favoriten!\n\n**📺 = US-Sender**\nSender in den USA (CBS / FOX / ESPN...). Deutsche Sender zeigen wir nicht, Rechte ändern sich ständig!\n\n**📍 / 🏟️ = Stadion / Ort**\nWo das Spiel stattfindet!",
- "spiele": "❓ Hilfe - Spiele / Live / Next Games\n\n**🔴 Live**\nLäuft gerade! Nach Spielende: Fenster schließen reicht!\n\n**⏭️ Next Games**\nHeute / Morgen = alle Spiele! Nur Favoriten = nur deine Teams!\nDa kannst du auch 🔴 Live für ein Spiel anmachen (z.B. München)!\n\n**✅ Ergebnisse**\nWie die letzten Spiele ausgingen, mit Final Stats!",
+ "spiele": "❓ Hilfe - Spiele / Live / Next Games\n\n**🔴 Live**\nLäuft gerade! Nach Spielende: Fenster schließen reicht!\n\n**⏭️ Next Games**\nHeute / Morgen = alle Spiele! Nur Favoriten = nur deine Teams!\nDa kannst du auch die Zahl vom Spiel schreiben für Details + Benachrichtigungen!\n\n**✅ Ergebnisse**\nWie die letzten Spiele ausgingen, mit Final Stats!",
  "tabellen": "❓ Hilfe - Tabellen / Top 10\n\n**📊 Tabellen**\nW-L-OTL = Siege - Niederlagen - Overtime-Niederlagen.\nNHL: Sieg = 2 Punkte, Overtime-Niederlage = 1 Punkt!\n\n**👉 Zahl tippen = Team-Fenster!**\nIn der Tabelle die Zahl vom Team tippen (z.B. 1) → Platz, Bilanz, Punkte/GB, Heim/Auswärts, Streak, Letzte 10, nächste 3, letzte 3, News + Key Spieler!\n\n**🏆 Top 10**\nTippe Zahl 1-10 für Rating + Warum so bewertet!\nRating (z.B. ⭐ 9,9/10) steht nur im Detail!",
  "benach": "❓ Hilfe - Benachrichtigungen\n\nIn ⚙️ Einstellungen → 🔔 Benachrichtigungen:\n**⏰ Reminder** - 3h / 2h / 1h / 30 Min / Aus. 2 Favoriten gleichzeitig = 1 Nachricht für beide, mit Sender!\n**🔴 Live-Scores** - Nur für Favoriten, pro Team: Jeder Score / Spielstart + Quarter-Wechsel / Endstand / Crunch-Time / Spiel-Breaking!\nAlles aus = kein Spam!",
  "news": "❓ Hilfe - News / Verletzungen / Breaking\n\n**📰 News** - Nur deine Favoriten! Nur Headline + Link!\nQuelle: ESPN! Artikel sind auf Englisch!\nKein Push-Spam - du holst dir News, wenn du willst!\n\n**🌍 Liga-Breaking** - In News ganz oben als Toggle! Nur große Sachen: International Series, Schedule, Super Bowl, Playoffs, Trade Deadline! Push, aber nur 1x!\n\n**🚨 Spiel-Breaking** - Bei Favorit / Live-Spiel: Nur OUT / RULED OUT / Ejection! Nur 1x pro Spieler!\n\n**🏥 Verletzungen** - Daten von Sleeper (NFL) / ESPN (NBA, NHL, MLB). Offizielle Team-Apps können bis zu 15 Min schneller sein - Bot holt alle 15 Min neu!",
@@ -5626,7 +5694,7 @@ HELP_CATS = {
 HELP_SHORT = {
     "top10": "❓ Hilfe - Top 10\n\nTippe eine Zahl 1-10 in den Chat für Rating + Warum!\nRating steht nur im Detail, nicht in der Übersicht!\n\n📅 Top 10 zeigt nur Spiele dieser Woche (heute bis Sonntag)! Spiele von nächster Woche sind NICHT dabei!",
     "tables": "❓ Hilfe - Tabellen\n\nW-L-OTL = Siege - Niederlagen - Overtime-Niederlagen.\nBei NHL: Sieg = 2 Punkte, Overtime-Niederlage = 1 Punkt!\n\n💡 Zahl tippen = Team-Fenster! (z.B. 1 für Platz 1)",
-    "next": "❓ Hilfe - Next Games\n\nHeute / Morgen = alle Spiele!\nNur Favoriten = nur deine Teams!",
+    "next": "❓ Hilfe - Next Games\n\nHeute / Morgen = alle Spiele!\nNur Favoriten = nur deine Teams!\n✍️ In Heute/Morgen: Zahl vom Spiel schreiben = Details + Benachrichtigungen!",
     "live": "❓ Hilfe - Live\n\nLäuft gerade!\nNach Spielende: Fenster schließen reicht!",
     "results": "❓ Hilfe - Ergebnisse\n\nWelche Liga? Dann siehst du, wie die letzten Spiele ausgingen!",
     "settings": "❓ Hilfe - Einstellungen\n\nHier: Favoriten + Benachrichtigungen!\nReminder + Live-Scores sind unter Benachrichtigungen!",
@@ -6443,7 +6511,7 @@ async def next_live_pick_cmd(update, ctx, league, eid, num_mid=None):
             [InlineKeyboardButton("🗑️ Aus Liste entfernen", callback_data=f"next_live_remove:{league}:{eid}")],
             [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
         ])
-        _win213 = await _cb_edit(update, f"🔴 Live für ein Spiel\n\n{_name}\n\n🏁 Spiel schon vorbei! Da gibt's nix mehr einzustellen! 😁", _rm_kb)
+        _win213 = await _cb_edit(update, f"🔴 Spiel-Benachrichtigungen\n\n{_name}\n\n🏁 Spiel schon vorbei! Da gibt's nix mehr einzustellen! 😁", _rm_kb)
         # V213: Fenster -> Zahl mappen (wie V210), damit die getippte Zahl mitgeloescht wird!
         try:
             if num_mid and _win213 is not None and getattr(_win213, "message_id", None):
@@ -6468,7 +6536,7 @@ async def next_live_pick_cmd(update, ctx, league, eid, num_mid=None):
         [InlineKeyboardButton(f"{'✅' if cfg.get('reminder') else '❌'} ⏰ Reminder", callback_data=f"next_live_toggle:{league}:{eid}:reminder")],
         [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
     ])
-    _win210 = await _cb_edit(update, f"🔴 Live für ein Spiel\n\n{_name}\n\nTippe an / aus. Nur was du anmachst, schicke ich dir!\nNach dem Spiel wird es automatisch wieder aus!", kb)
+    _win210 = await _cb_edit(update, f"🔴 Spiel-Benachrichtigungen\n\n{_name}\n\nTippe an / aus. Nur was du anmachst, schicke ich dir!\nNach dem Spiel wird es automatisch wieder aus!", kb)
     # V210: Fenster -> Zahl mappen! Damit 'Fenster schliessen' die getippte Zahl mitloescht!
     try:
         if num_mid and _win210 is not None and getattr(_win210, "message_id", None):
@@ -7286,8 +7354,7 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 try: await ctx.bot.edit_message_text(chat_id=_uid2, message_id=_load.message_id, text="😅 Grad noch keine Stats vorhanden!\nESPN ist noch langsam!\nSoll ich in 5 Min nochmal schauen?", reply_markup=_kb2)
                 except: pass
         except: pass
-    elif data == "next_live_league": await next_live_league_cmd(update, ctx)
-    elif data.startswith("next_live_list:"): await next_live_list_cmd(update, ctx, data.split(":")[1])
+    # V227: next_live_league / next_live_list RAUS - geht jetzt über Next Games Heute/Morgen + Zahl!
     elif data.startswith("next_live_pick:"):
         _pp = data.split(":"); await next_live_pick_cmd(update, ctx, _pp[1], _pp[2])
     elif data.startswith("next_live_toggle:"):
