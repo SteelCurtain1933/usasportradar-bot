@@ -1,4 +1,4 @@
-# USA Sport Radar - V239 FINAL - FIX: Wetter mit 2. Quelle (wttr.in) als Fallback! Open-Meteo liefert 'Forecast leer' - statt raten, zweite Quelle! + Explizite Zeitzone statt auto!
+# USA Sport Radar - V240 FINAL - FIX: Zahlen-Listen bleiben! Vorher wurde die Liste nach der 1. Zahl geloescht (None) -> nach Schliessen passierte bei der naechsten Zahl nix mehr! Jetzt: Liste bleibt, bis eine neue Liste kommt!
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -5564,7 +5564,7 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         _nm = int(txt)
         if 1 <= _nm <= len(_ml):
             _eid_m, _lg_m = _ml[_nm-1]
-            ctx.user_data["my_live_list"] = None
+            # V240: Liste BEHALTEN! Vorher = None -> nach Schliessen passierte bei der naechsten Zahl nix mehr!
             await next_live_pick_cmd(update, ctx, _lg_m, _eid_m, num_mid=update.message.message_id); return
     # V110: Zahl für Nächste Spiele Live (wie bei Favoriten!)
     if txt.isdigit() and ctx.user_data.get("next_live_list") and not ctx.user_data.get("awaiting_fav"):
@@ -5572,7 +5572,7 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         _n = int(txt)
         if 1 <= _n <= len(_nl):
             _lg, _eid = _nl[_n-1]
-            ctx.user_data["next_live_list"] = None
+            # V240: Liste BEHALTEN! Vorher = None -> nach Schliessen passierte bei der naechsten Zahl nix mehr!
             await next_live_pick_cmd(update, ctx, _lg, _eid, num_mid=update.message.message_id); return
     # V227: Zahl für Next Games Heute/Morgen -> Detail + Benachrichtigungen!
     if txt.isdigit() and ctx.user_data.get("next_games_list") and not ctx.user_data.get("awaiting_fav"):
@@ -5580,7 +5580,7 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         _n227 = int(txt)
         if 1 <= _n227 <= len(_ng227):
             _lg227, _eid227 = _ng227[_n227-1]
-            ctx.user_data["next_games_list"] = None
+            # V240: Liste BEHALTEN! Vorher = None -> nach Schliessen passierte bei der naechsten Zahl nix mehr! (Heute-Liste!)
             await next_live_pick_cmd(update, ctx, _lg227, _eid227, num_mid=update.message.message_id); return
     # V110: Zahl für Ergebnisse Final Stats!
     if txt.isdigit() and ctx.user_data.get("results_list") and not ctx.user_data.get("awaiting_fav"):
@@ -5588,8 +5588,7 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         _n2 = int(txt)
         if 1 <= _n2 <= len(_rl):
             _lg2, _eid2 = _rl[_n2-1]
-            # Liste behalten, damit man gleich noch ein Spiel tippen kann? Nein - einmal reicht, danach neu wählen!
-            ctx.user_data["results_list"] = None
+            # V240: Liste BEHALTEN! Vorher = None -> nach Schliessen passierte bei der naechsten Zahl nix mehr!
             _uid2 = update.effective_user.id if update.effective_user else 0
             _load = await update.message.reply_text("⏳ Spiel wird zusammengefasst...\nEinen Moment, ich hol die Stats von ESPN!")
             _txt2 = get_final_stats_text(_eid2, _lg2) if _lg2 in LEAGUES else ""
@@ -5618,7 +5617,7 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         _nlf = int(txt)
         if 1 <= _nlf <= len(_lf2):
             _lg3, _eid3 = _lf2[_nlf-1]
-            ctx.user_data["live_finals_list"] = None
+            # V240: Liste BEHALTEN! Vorher = None -> nach Schliessen passierte bei der naechsten Zahl nix mehr!
             _uid3 = update.effective_user.id if update.effective_user else 0
             _load3 = await update.message.reply_text("⏳ Spiel wird zusammengefasst...\nEinen Moment, ich hol die Stats von ESPN!")
             _txt3 = get_final_stats_text(_eid3, _lg3) if _lg3 in LEAGUES else ""
@@ -5647,7 +5646,7 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         _trows214 = _tl214.get("rows") or []
         _tn214 = int(txt)
         if 1 <= _tn214 <= len(_trows214):
-            ctx.user_data["tables_team_list"] = None
+            # V240: Liste BEHALTEN! Vorher = None -> nach Schliessen passierte bei der naechsten Zahl nix mehr! (Tabellen!)
             await team_window_cmd(update, ctx, _tl214.get("league", ""), _trows214[_tn214-1], _tn214, _tl214.get("div", ""), _tl214.get("back", ""), num_mid=update.message.message_id)
             return
 
