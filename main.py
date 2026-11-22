@@ -1,4 +1,4 @@
-# USA Sport Radar - V240 FINAL - FIX: Zahlen-Listen bleiben! Vorher wurde die Liste nach der 1. Zahl geloescht (None) -> nach Schliessen passierte bei der naechsten Zahl nix mehr! Jetzt: Liste bleibt, bis eine neue Liste kommt!
+# USA Sport Radar - V242 FINAL - NEU: NERD-MODUS (Phase 1)! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -1048,6 +1048,8 @@ def main_kb(with_close=True, uid=None):
         [InlineKeyboardButton("⚙️ Einstellungen", callback_data="settings"),
          InlineKeyboardButton("❓ Hilfe", callback_data="help")],
     ]
+    # V242: Nerd-Modus - Lexikon: Regeln, Teams & Hall of Famers!
+    rows.append([InlineKeyboardButton("🧠 Nerd-Modus", callback_data="nerd")])
     # V214: NFL Draft-Vorschau - NUR vor dem Draft! Nach dem Draft (01.05.2027) verschwindet der Knopf von allein!
     try:
         from datetime import date as _date214
@@ -5650,6 +5652,21 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await team_window_cmd(update, ctx, _tl214.get("league", ""), _trows214[_tn214-1], _tn214, _tl214.get("div", ""), _tl214.get("back", ""), num_mid=update.message.message_id)
             return
 
+    # V242: Zahl für Nerd-Modus Teams (1-32)!
+    if txt.isdigit() and ctx.user_data.get("nerd_teams_list") and not ctx.user_data.get("awaiting_fav"):
+        _nt242 = ctx.user_data.get("nerd_teams_list") or []
+        _nn242 = int(txt)
+        if 1 <= _nn242 <= len(_nt242):
+            # V240: Liste BEHALTEN!
+            await nerd_team_cmd(update, ctx, _nt242[_nn242-1]); return
+    # V242: Zahl für Nerd-Modus Hall of Famers!
+    if txt.isdigit() and ctx.user_data.get("nerd_hof_list") and not ctx.user_data.get("awaiting_fav"):
+        _nh242 = ctx.user_data.get("nerd_hof_list") or {}
+        _names242 = _nh242.get("names") or []
+        _nhn242 = int(txt)
+        if 1 <= _nhn242 <= len(_names242):
+            # V240: Liste BEHALTEN!
+            await nerd_hof_detail_cmd(update, ctx, _nh242.get("team", ""), _nhn242-1); return
     if not ctx.user_data.get("awaiting_fav"): return
     ctx.user_data["awaiting_fav"]=False
     name = update.message.text.strip()
@@ -7325,6 +7342,164 @@ def _v215_nfl_overall_records():
         return out
     except: return {}
 
+
+# ===== V242: NERD-MODUS (Phase 1: NFL) - alle Fakten kuratiert & geprueft! =====
+NFL_RULES_TEXT = """📖 NFL – Die Regeln (kurz & knackig)
+
+⏱️ Spielzeit: 4 Viertel à 15 Minuten = 60 Minuten. Bei Gleichstand: Overtime!
+👥 Spieler: 11 pro Team auf dem Feld – Offense, Defense & Special Teams.
+🏈 Downs: Die Offense hat 4 Versuche für 10 Yards. Schafft sie's → 4 neue Versuche. Sonst → Ballbesitz wechselt!
+🎯 Punkte: Touchdown 6, Extrapunkt 1 (Kick) oder 2 (Conversion), Field Goal 3, Safety 2
+🔄 Ballverlust: Interception (abgefangener Pass) oder Fumble (verlorener Ball) = Gegner bekommt den Ball!
+⏱️ Overtime: Regular Season 10 Min – danach kann's Unentschieden geben. Playoffs: Bis zur Entscheidung, beide Teams bekommen den Ball!
+🏆 Playoffs: 7 Teams pro Conference → Wild Card → Divisional → Conference Championship → Super Bowl!"""
+
+# V242: Alle 32 NFL-Teams - Reihenfolge = Anzeige-Reihenfolge (AFC East/North/South/West, NFC East/North/South/West)!
+NFL_TEAMS_NERD = {
+    "bills": {"name": "Buffalo Bills", "city": "Buffalo", "stadion": "Highmark Stadium", "gegr": "1960", "div": "AFC East", "farben": "Blau-Rot-Weiß", "titel": "0× Super-Bowl-Champion", "geschichte": "1960 in der AFL gegründet. Anfang der 90er 4× in Folge im Super Bowl – alle 4 verloren. Seit 2020 wieder ein Top-Team um Josh Allen."},
+    "dolphins": {"name": "Miami Dolphins", "city": "Miami Gardens", "stadion": "Hard Rock Stadium", "gegr": "1966", "div": "AFC East", "farben": "Türkis-Orange-Weiß", "titel": "2× Super-Bowl-Champion (VII, VIII)", "geschichte": "Die einzige perfekte Saison der NFL: 1972 mit 17-0! Unter Don Shula das Team der 70er."},
+    "patriots": {"name": "New England Patriots", "city": "Foxborough", "stadion": "Gillette Stadium", "gegr": "1959 (als Boston Patriots)", "div": "AFC East", "farben": "Marineblau-Silber-Rot", "titel": "6× Super-Bowl-Champion", "geschichte": "Die Dynastie der 2000er/2010er: 6 Super Bowls mit Brady & Belichick. 2017 der legendäre 28-3-Comeback-Sieg im Super Bowl LI."},
+    "jets": {"name": "New York Jets", "city": "East Rutherford", "stadion": "MetLife Stadium", "gegr": "1959 (als Titans of New York)", "div": "AFC East", "farben": "Grün-Weiß", "titel": "1× Super-Bowl-Champion (III)", "geschichte": "Super Bowl III 1969: Joe Namath garantierte den Sieg gegen die Colts – und hielt Wort! Seitdem warten die Jets auf den nächsten Titel."},
+    "ravens": {"name": "Baltimore Ravens", "city": "Baltimore", "stadion": "M&T Bank Stadium", "gegr": "1996", "div": "AFC North", "farben": "Lila-Schwarz-Gold", "titel": "2× Super-Bowl-Champion (XXXV, XLVII)", "geschichte": "1996 nach Baltimore gezogen. Harte Defense-Tradition: Ray Lewis & Ed Reed. Super-Bowl-Sieg 2013 im 'Harbaugh-Bowl' gegen die 49ers."},
+    "bengals": {"name": "Cincinnati Bengals", "city": "Cincinnati", "stadion": "Paycor Stadium", "gegr": "1968", "div": "AFC North", "farben": "Orange-Schwarz", "titel": "0× Super-Bowl-Champion", "geschichte": "3× im Super Bowl (1981, 1988, 2021) – 3× verloren. Joe Burrow führte sie Anfang 2022 zurück in den Super Bowl."},
+    "browns": {"name": "Cleveland Browns", "city": "Cleveland", "stadion": "Huntington Bank Field", "gegr": "1946", "div": "AFC North", "farben": "Orange-Braun-Weiß", "titel": "0× Super-Bowl-Champion (4 NFL-Meisterschaften vor dem Super Bowl)", "geschichte": "Eines der ältesten Teams (1946). 4 NFL-Titel in den 50ern, aber noch nie im Super Bowl. 'The Dawg Pound' – eine der lautesten Fankurven der Liga."},
+    "steelers": {"name": "Pittsburgh Steelers", "city": "Pittsburgh", "stadion": "Acrisure Stadium", "gegr": "1933", "div": "AFC North", "farben": "Schwarz-Gold", "titel": "6× Super-Bowl-Champion (IX, X, XIII, XIV, XL, XLIII)", "geschichte": "Die 70er-Dynastie: 4 Super Bowls in 6 Jahren mit der 'Steel Curtain'-Defense. 6 Titel – zusammen mit den Patriots die meisten der Liga. 'Terrible Towel' & Steeler Nation!"},
+    "texans": {"name": "Houston Texans", "city": "Houston", "stadion": "NRG Stadium", "gegr": "2002", "div": "AFC South", "farben": "Dunkelblau-Rot-Weiß", "titel": "0× Super-Bowl-Champion", "geschichte": "Jüngstes NFL-Team (2002). Das erste Team in Houston nach den Oilers. Wartet noch auf den ersten Super-Bowl-Einzug."},
+    "colts": {"name": "Indianapolis Colts", "city": "Indianapolis", "stadion": "Lucas Oil Stadium", "gegr": "1953 (als Baltimore Colts)", "div": "AFC South", "farben": "Blau-Weiß", "titel": "2× Super-Bowl-Champion (V, XLI)", "geschichte": "Peyton Manning machte Indy groß – Super-Bowl-Sieg 2007. 'The Greatest Game Ever Played': NFL-Meisterschaft 1958 gegen die Giants."},
+    "jaguars": {"name": "Jacksonville Jaguars", "city": "Jacksonville", "stadion": "EverBank Stadium", "gegr": "1995", "div": "AFC South", "farben": "Türkis-Schwarz-Gold", "titel": "0× Super-Bowl-Champion", "geschichte": "Seit 1995 dabei. 2017 kurz vor dem Super Bowl (AFC-Finale vs. Patriots). 'DUUUVAL!' – der berühmteste Schlachtruf der Liga."},
+    "titans": {"name": "Tennessee Titans", "city": "Nashville", "stadion": "Nissan Stadium", "gegr": "1960 (als Houston Oilers)", "div": "AFC South", "farben": "Marineblau-Hellblau", "titel": "0× Super-Bowl-Champion", "geschichte": "Als Houston Oilers gegründet, seit 1997 in Tennessee. Super Bowl XXXIV 2000: 1 Yard vor dem Ausgleich gestoppt ('One Yard Short')!"},
+    "broncos": {"name": "Denver Broncos", "city": "Denver", "stadion": "Empower Field at Mile High", "gegr": "1960", "div": "AFC West", "farben": "Orange-Marineblau", "titel": "3× Super-Bowl-Champion (XXXII, XXXIII, 50)", "geschichte": "John Elway & der 'Mile High'-Vorteil (über 1.600 m Höhe!). Super-Bowl-Sieg 2016 mit der besten Defense der Liga."},
+    "chiefs": {"name": "Kansas City Chiefs", "city": "Kansas City", "stadion": "GEHA Field at Arrowhead Stadium", "gegr": "1960 (als Dallas Texans)", "div": "AFC West", "farben": "Rot-Gold", "titel": "4× Super-Bowl-Champion (IV, LIV, LVII, LVIII)", "geschichte": "Arrowhead ist das lauteste Stadion der Welt (142,2 dB Weltrekord). Die Mahomes-Ära: 3 Super-Bowl-Siege in 5 Jahren."},
+    "chargers": {"name": "Los Angeles Chargers", "city": "Inglewood", "stadion": "SoFi Stadium", "gegr": "1960", "div": "AFC West", "farben": "Pulverblau-Gelb-Weiß", "titel": "0× Super-Bowl-Champion", "geschichte": "1960 in L.A. gegründet, lange in San Diego, seit 2017 zurück in L.A. 'Air Coryell' – die Pass-Offense der 80er. Noch ohne Super-Bowl-Titel."},
+    "raiders": {"name": "Las Vegas Raiders", "city": "Las Vegas", "stadion": "Allegiant Stadium", "gegr": "1960", "div": "AFC West", "farben": "Silber-Schwarz", "titel": "3× Super-Bowl-Champion (XI, XV, XVIII)", "geschichte": "Die 'Silver & Black' – das Bad-Boy-Image der Liga. 'Just Win, Baby!' (Al Davis). 3 Super-Bowl-Titel, seit 2020 in Las Vegas."},
+    "cowboys": {"name": "Dallas Cowboys", "city": "Arlington", "stadion": "AT&T Stadium", "gegr": "1960", "div": "NFC East", "farben": "Marineblau-Silber-Weiß", "titel": "5× Super-Bowl-Champion (VI, XII, XXVII, XXVIII, XXX)", "geschichte": "'America's Team'! 5 Super-Bowl-Titel, die 90er-Dynastie um Aikman, Smith & Irvin. AT&T Stadium – Platz für über 100.000 Fans."},
+    "giants": {"name": "New York Giants", "city": "East Rutherford", "stadion": "MetLife Stadium", "gegr": "1925", "div": "NFC East", "farben": "Blau-Rot-Weiß", "titel": "4× Super-Bowl-Champion (XXI, XXV, XLII, XLVI)", "geschichte": "Seit 1925 dabei – eines der ältesten Teams. 2008 & 2012: Zwei Super-Bowl-Siege gegen die favorisierten Patriots (David vs. Goliath!)."},
+    "eagles": {"name": "Philadelphia Eagles", "city": "Philadelphia", "stadion": "Lincoln Financial Field", "gegr": "1933", "div": "NFC East", "farben": "Mitternachtsgrün-Silber", "titel": "2× Super-Bowl-Champion (LII, LIX)", "geschichte": "'Fly, Eagles, Fly!' – und 'E-A-G-L-E-S'! Erster Super-Bowl-Titel 2018 (Philly Special!), zweiter 2025 gegen die Chiefs."},
+    "commanders": {"name": "Washington Commanders", "city": "Landover", "stadion": "Northwest Stadium", "gegr": "1932 (als Boston Braves)", "div": "NFC East", "farben": "Burgunder-Gold", "titel": "3× Super-Bowl-Champion (XVII, XXII, XXVI)", "geschichte": "3 Super-Bowl-Titel unter Joe Gibbs (80er/90er). Früher Redskins, seit 2022 Commanders. 'Hail to the Commanders!'"},
+    "bears": {"name": "Chicago Bears", "city": "Chicago", "stadion": "Soldier Field", "gegr": "1920 (als Decatur Staleys)", "div": "NFC North", "farben": "Marineblau-Orange", "titel": "1× Super-Bowl-Champion (XX)", "geschichte": "Gründungsmitglied der NFL (1920). Die 'Monsters of the Midway'. Die 85er-Bears mit der besten Defense aller Zeiten – Super-Bowl-Sieg 1986."},
+    "lions": {"name": "Detroit Lions", "city": "Detroit", "stadion": "Ford Field", "gegr": "1930 (als Portsmouth Spartans)", "div": "NFC North", "farben": "Honolulu-Blau-Silber", "titel": "0× Super-Bowl-Champion (4 NFL-Meisterschaften)", "geschichte": "4 NFL-Titel in den 50ern, aber noch nie im Super Bowl. Längste Playoff-Sieg-Durststrecke der Liga – Anfang 2024 endlich wieder im NFC-Finale!"},
+    "packers": {"name": "Green Bay Packers", "city": "Green Bay", "stadion": "Lambeau Field", "gegr": "1919", "div": "NFC North", "farben": "Grün-Gold", "titel": "4× Super-Bowl-Champion (I, II, XXXI, XLV)", "geschichte": "Das einzige Team, das den Fans gehört (Non-Profit)! 'Titletown USA' – 13 NFL-Meisterschaften insgesamt. Lambeau Field – das älteste Stadion der NFL."},
+    "vikings": {"name": "Minnesota Vikings", "city": "Minneapolis", "stadion": "U.S. Bank Stadium", "gegr": "1961", "div": "NFC North", "farben": "Lila-Gold", "titel": "0× Super-Bowl-Champion", "geschichte": "4× im Super Bowl (70er) – 4× verloren. 'Skol!' – der berühmteste Schlachtruf. Die 'Purple People Eaters'-Defense der 70er."},
+    "falcons": {"name": "Atlanta Falcons", "city": "Atlanta", "stadion": "Mercedes-Benz Stadium", "gegr": "1966", "div": "NFC South", "farben": "Rot-Schwarz", "titel": "0× Super-Bowl-Champion", "geschichte": "2× im Super Bowl – 1999 und 2017. 2017: 28-3-Führung gegen die Patriots verspielt – das berühmteste Comeback der NFL-Geschichte."},
+    "panthers": {"name": "Carolina Panthers", "city": "Charlotte", "stadion": "Bank of America Stadium", "gegr": "1995", "div": "NFC South", "farben": "Schwarz-Blau-Silber", "titel": "0× Super-Bowl-Champion", "geschichte": "Seit 1995 dabei. 2× im Super Bowl (2004, 2016) – beide verloren. 'Keep Pounding!' – der Schlachtruf, benannt nach Sam Mills."},
+    "saints": {"name": "New Orleans Saints", "city": "New Orleans", "stadion": "Caesars Superdome", "gegr": "1967", "div": "NFC South", "farben": "Schwarz-Gold", "titel": "1× Super-Bowl-Champion (XLIV)", "geschichte": "1967 gegründet. Nach Hurricane Katrina 2005 wurde das Team zum Symbol für den Wiederaufbau – 2010 der erste Super-Bowl-Titel!"},
+    "buccaneers": {"name": "Tampa Bay Buccaneers", "city": "Tampa", "stadion": "Raymond James Stadium", "gegr": "1976", "div": "NFC South", "farben": "Rot-Zinn", "titel": "2× Super-Bowl-Champion (XXXVII, LV)", "geschichte": "1976 gestartet – mit 26 Niederlagen in Folge! Dann 2 Super-Bowl-Titel (2003 & 2021). Das Piratenschiff im Stadion feuert bei jedem TD die Kanonen ab!"},
+    "cardinals": {"name": "Arizona Cardinals", "city": "Glendale", "stadion": "State Farm Stadium", "gegr": "1898 (als Morgan Athletic Club)", "div": "NFC West", "farben": "Kardinalrot-Weiß", "titel": "0× Super-Bowl-Champion (2 NFL-Meisterschaften)", "geschichte": "Ältestes Profi-Team der USA (1898)! Von Chicago über St. Louis nach Arizona. 2009 knapp im Super Bowl verloren."},
+    "rams": {"name": "Los Angeles Rams", "city": "Inglewood", "stadion": "SoFi Stadium", "gegr": "1936 (als Cleveland Rams)", "div": "NFC West", "farben": "Blau-Gelb", "titel": "2× Super-Bowl-Champion (XXXIV, LVI)", "geschichte": "3 Städte: Cleveland → L.A. → St. Louis → zurück nach L.A. 2000 'Greatest Show on Turf', 2022 Super-Bowl-Sieg im eigenen Stadion!"},
+    "49ers": {"name": "San Francisco 49ers", "city": "Santa Clara", "stadion": "Levi's Stadium", "gegr": "1946", "div": "NFC West", "farben": "Scharlachrot-Gold", "titel": "5× Super-Bowl-Champion (XVI, XIX, XXIII, XXIV, XXIX)", "geschichte": "Die 80er-Dynastie: Montana → Rice, 4 Super Bowls. 5 Titel insgesamt. 'The Catch' (1982) – einer der berühmtesten Spielzüge aller Zeiten."},
+    "seahawks": {"name": "Seattle Seahawks", "city": "Seattle", "stadion": "Lumen Field", "gegr": "1976", "div": "NFC West", "farben": "Marineblau-Grün-Grau", "titel": "1× Super-Bowl-Champion (XLVIII)", "geschichte": "Seit 1976 dabei. Die '12s' – die lautesten Fans der Liga. Super-Bowl-Sieg 2014 mit der 'Legion of Boom'-Defense."},
+}
+
+
+# V242: Hall of Famers pro Team - NUR Top-Legenden (kuratiert, nicht alle 30-40 Namen)! Format: (Name, Position)!
+NFL_HOF = {
+    "bills": [("Jim Kelly", "QB"), ("Thurman Thomas", "RB"), ("Bruce Smith", "DE"), ("Andre Reed", "WR"), ("Marv Levy", "Trainer")],
+    "dolphins": [("Dan Marino", "QB"), ("Don Shula", "Trainer"), ("Bob Griese", "QB"), ("Larry Csonka", "RB"), ("Jason Taylor", "DE"), ("Zach Thomas", "LB"), ("Dwight Stephenson", "C")],
+    "patriots": [("John Hannah", "G"), ("Andre Tippett", "LB"), ("Ty Law", "CB"), ("Richard Seymour", "DT"), ("Mike Haynes", "CB")],
+    "jets": [("Joe Namath", "QB"), ("Curtis Martin", "RB"), ("Don Maynard", "WR"), ("Joe Klecko", "DT"), ("Darrelle Revis", "CB"), ("Kevin Mawae", "C"), ("Winston Hill", "T")],
+    "ravens": [("Ray Lewis", "LB"), ("Ed Reed", "S"), ("Jonathan Ogden", "T")],
+    "bengals": [("Anthony Muñoz", "T"), ("Ken Riley", "CB")],
+    "browns": [("Jim Brown", "RB"), ("Otto Graham", "QB"), ("Paul Brown", "Trainer"), ("Ozzie Newsome", "TE"), ("Joe Thomas", "T"), ("Lou Groza", "K"), ("Marion Motley", "FB")],
+    "steelers": [("Joe Greene", "DT"), ("Terry Bradshaw", "QB"), ("Franco Harris", "RB"), ("Jack Lambert", "LB"), ("Jack Ham", "LB"), ("Mel Blount", "CB"), ("Lynn Swann", "WR"), ("John Stallworth", "WR"), ("Troy Polamalu", "S"), ("Jerome Bettis", "RB"), ("Rod Woodson", "CB"), ("Chuck Noll", "Trainer")],
+    "texans": [("Andre Johnson", "WR")],
+    "colts": [("Peyton Manning", "QB"), ("Marvin Harrison", "WR"), ("Johnny Unitas", "QB"), ("Dwight Freeney", "DE"), ("Edgerrin James", "RB"), ("Tony Dungy", "Trainer"), ("Lenny Moore", "RB"), ("Gino Marchetti", "DE"), ("Jim Parker", "T"), ("Raymond Berry", "WR"), ("John Mackey", "TE")],
+    "jaguars": [("Tony Boselli", "T")],
+    "titans": [("Bruce Matthews", "G"), ("Warren Moon", "QB"), ("Earl Campbell", "RB"), ("Elvin Bethea", "DE"), ("Mike Munchak", "G"), ("Curley Culp", "DT")],
+    "broncos": [("John Elway", "QB"), ("Terrell Davis", "RB"), ("Shannon Sharpe", "TE"), ("Champ Bailey", "CB"), ("Steve Atwater", "S"), ("Randy Gradishar", "LB"), ("Floyd Little", "RB"), ("Gary Zimmerman", "T")],
+    "chiefs": [("Len Dawson", "QB"), ("Derrick Thomas", "LB"), ("Tony Gonzalez", "TE"), ("Bobby Bell", "LB"), ("Buck Buchanan", "DT"), ("Willie Lanier", "LB"), ("Jan Stenerud", "K"), ("Emmitt Thomas", "CB"), ("Hank Stram", "Trainer"), ("Will Shields", "G")],
+    "chargers": [("Dan Fouts", "QB"), ("LaDainian Tomlinson", "RB"), ("Junior Seau", "LB"), ("Kellen Winslow", "TE"), ("Lance Alworth", "WR"), ("Charlie Joiner", "WR"), ("Ron Mix", "T"), ("Don Coryell", "Trainer"), ("Antonio Gates", "TE")],
+    "raiders": [("Howie Long", "DE"), ("Marcus Allen", "RB"), ("Tim Brown", "WR"), ("Gene Upshaw", "G"), ("Art Shell", "T"), ("Ted Hendricks", "LB"), ("Ken Stabler", "QB"), ("Fred Biletnikoff", "WR"), ("Charles Woodson", "CB"), ("Cliff Branch", "WR")],
+    "cowboys": [("Roger Staubach", "QB"), ("Troy Aikman", "QB"), ("Emmitt Smith", "RB"), ("Michael Irvin", "WR"), ("Bob Lilly", "DT"), ("Randy White", "DT"), ("DeMarcus Ware", "LB"), ("Tony Dorsett", "RB"), ("Mel Renfro", "CB"), ("Rayfield Wright", "T"), ("Tom Landry", "Trainer"), ("Drew Pearson", "WR"), ("Chuck Howley", "LB")],
+    "giants": [("Lawrence Taylor", "LB"), ("Michael Strahan", "DE"), ("Harry Carson", "LB"), ("Frank Gifford", "RB"), ("Sam Huff", "LB"), ("Mel Hein", "C"), ("Y.A. Tittle", "QB"), ("Andy Robustelli", "DE"), ("Emlen Tunnell", "S"), ("Roosevelt Brown", "T")],
+    "eagles": [("Reggie White", "DE"), ("Brian Dawkins", "S"), ("Chuck Bednarik", "C"), ("Steve Van Buren", "RB"), ("Tommy McDonald", "WR"), ("Pete Pihos", "E"), ("Harold Carmichael", "WR"), ("Eric Allen", "CB")],
+    "commanders": [("Sammy Baugh", "QB"), ("Darrell Green", "CB"), ("Art Monk", "WR"), ("John Riggins", "RB"), ("Sonny Jurgensen", "QB"), ("Russ Grimm", "G"), ("Joe Gibbs", "Trainer"), ("Charley Taylor", "WR"), ("Chris Hanburger", "LB"), ("Bobby Mitchell", "WR")],
+    "bears": [("Walter Payton", "RB"), ("Dick Butkus", "LB"), ("Mike Singletary", "LB"), ("Gale Sayers", "RB"), ("Sid Luckman", "QB"), ("George Halas", "Trainer"), ("Bronko Nagurski", "FB"), ("Red Grange", "RB"), ("Mike Ditka", "TE"), ("Brian Urlacher", "LB"), ("Devin Hester", "KR"), ("Richard Dent", "DE"), ("Dan Hampton", "DT"), ("Steve McMichael", "DT")],
+    "lions": [("Barry Sanders", "RB"), ("Calvin Johnson", "WR"), ("Dick LeBeau", "CB"), ("Lem Barney", "CB"), ("Joe Schmidt", "LB"), ("Alex Karras", "DT"), ("Charlie Sanders", "TE"), ("Bobby Layne", "QB"), ("Doak Walker", "RB")],
+    "packers": [("Bart Starr", "QB"), ("Brett Favre", "QB"), ("Forrest Gregg", "T"), ("Ray Nitschke", "LB"), ("Willie Davis", "DE"), ("Paul Hornung", "RB"), ("Herb Adderley", "CB"), ("Jim Taylor", "FB"), ("Curly Lambeau", "Trainer"), ("Vince Lombardi", "Trainer"), ("Jerry Kramer", "G"), ("Dave Robinson", "LB"), ("LeRoy Butler", "S"), ("Sterling Sharpe", "WR")],
+    "vikings": [("Fran Tarkenton", "QB"), ("Randy Moss", "WR"), ("John Randle", "DT"), ("Cris Carter", "WR"), ("Alan Page", "DT"), ("Jared Allen", "DE"), ("Mick Tingelhoff", "C"), ("Bud Grant", "Trainer"), ("Carl Eller", "DE"), ("Paul Krause", "S"), ("Ron Yary", "T")],
+    "falcons": [("Deion Sanders", "CB"), ("Claude Humphrey", "DE")],
+    "panthers": [("Julius Peppers", "DE")],
+    "saints": [("Rickey Jackson", "LB"), ("Willie Roaf", "T"), ("Morten Andersen", "K"), ("Sam Mills", "LB")],
+    "buccaneers": [("Derrick Brooks", "LB"), ("Warren Sapp", "DT"), ("John Lynch", "S"), ("Lee Roy Selmon", "DE"), ("Ronde Barber", "CB")],
+    "cardinals": [("Roger Wehrli", "CB"), ("Dan Dierdorf", "T"), ("Aeneas Williams", "CB"), ("Jackie Smith", "TE")],
+    "rams": [("Kurt Warner", "QB"), ("Marshall Faulk", "RB"), ("Eric Dickerson", "RB"), ("Deacon Jones", "DE"), ("Merlin Olsen", "DT"), ("Jack Youngblood", "DE"), ("Tom Mack", "G"), ("Norm Van Brocklin", "QB"), ("Isaac Bruce", "WR"), ("Orlando Pace", "T"), ("Kevin Greene", "LB")],
+    "49ers": [("Joe Montana", "QB"), ("Jerry Rice", "WR"), ("Steve Young", "QB"), ("Ronnie Lott", "S"), ("Charles Haley", "LB"), ("Dave Wilcox", "LB"), ("Leo Nomellini", "DT"), ("Bob St. Clair", "T"), ("Hugh McElhenny", "RB"), ("Patrick Willis", "LB")],
+    "seahawks": [("Steve Largent", "WR"), ("Cortez Kennedy", "DT"), ("Walter Jones", "T"), ("Kenny Easley", "S")],
+}
+
+# V242: HOF-Detailseiten - Phase 1: Steelers (alle 12) + groesste Legenden der Liga! Rest folgt in Phase 2!
+NFL_HOF_DETAILS = {
+    "Joe Greene": "Position: DT | Steelers 1969–1981 | Aufnahme: 1987\n\nWarum Hall of Fame?\n🏆 4× Super-Bowl-Champion\n⭐ 10× Pro Bowl, 2× Defensive Player of the Year\n🔥 Der Anker der 'Steel Curtain'-Defense\n→ Der Anführer der besten Defense aller Zeiten.",
+    "Terry Bradshaw": "Position: QB | Steelers 1970–1983 | Aufnahme: 1989\n\nWarum Hall of Fame?\n🏆 4× Super-Bowl-Champion\n⭐ 2× Super-Bowl-MVP, NFL MVP 1978\n🔥 27.989 Passing Yards, 212 TDs\n→ Vom viel kritisierten Rookie zum 4-fachen Champion.",
+    "Franco Harris": "Position: RB | Steelers 1972–1983 | Aufnahme: 1990\n\nWarum Hall of Fame?\n🏆 4× Super-Bowl-Champion\n⭐ 9× Pro Bowl, 12.120 Rushing Yards\n🔥 'Immaculate Reception' 1972 – der berühmteste Spielzug der NFL-Geschichte\n→ Der Mann vom Wunder-Catch.",
+    "Jack Lambert": "Position: LB | Steelers 1974–1984 | Aufnahme: 1990\n\nWarum Hall of Fame?\n🏆 4× Super-Bowl-Champion\n⭐ 9× Pro Bowl, 6× First-Team All-Pro\n🔥 Defensive Player of the Year 1976, 28 Interceptions\n→ Das furchtlose Herz der Steel Curtain.",
+    "Jack Ham": "Position: LB | Steelers 1971–1982 | Aufnahme: 1988\n\nWarum Hall of Fame?\n🏆 4× Super-Bowl-Champion\n⭐ 8× Pro Bowl, 8× First-Team All-Pro\n🔥 32 Interceptions als Linebacker!\n→ Einer der komplettesten Linebacker aller Zeiten.",
+    "Mel Blount": "Position: CB | Steelers 1970–1983 | Aufnahme: 1989\n\nWarum Hall of Fame?\n🏆 4× Super-Bowl-Champion\n⭐ 5× Pro Bowl, Defensive Player of the Year 1975\n🔥 57 Interceptions\n→ So dominant, dass die NFL wegen ihm die Regeln änderte (5-Yard-Regel)!",
+    "Lynn Swann": "Position: WR | Steelers 1974–1982 | Aufnahme: 2001\n\nWarum Hall of Fame?\n🏆 4× Super-Bowl-Champion\n⭐ Super-Bowl-MVP (X), 3× Pro Bowl\n🔥 Legendäre Catches im Super Bowl X\n→ Der eleganteste Receiver seiner Zeit.",
+    "John Stallworth": "Position: WR | Steelers 1974–1987 | Aufnahme: 2002\n\nWarum Hall of Fame?\n🏆 4× Super-Bowl-Champion\n⭐ 3× Pro Bowl, 8.723 Receiving Yards, 63 TDs\n🔥 Big-Game-Receiver: In den Super Bowls immer da\n→ Bradshaws Lieblingsziel in den großen Spielen.",
+    "Troy Polamalu": "Position: S | Steelers 2003–2014 | Aufnahme: 2020\n\nWarum Hall of Fame?\n🏆 2× Super-Bowl-Champion\n⭐ 8× Pro Bowl, 4× First-Team All-Pro\n🔥 Defensive Player of the Year 2010, 32 Interceptions\n→ Der Safety, der den Spielzug roch, bevor er passierte.",
+    "Jerome Bettis": "Position: RB | Steelers 1996–2005 | Aufnahme: 2015\n\nWarum Hall of Fame?\n🏆 Super-Bowl-Champion (XL – in seiner Heimatstadt Detroit!)\n⭐ 6× Pro Bowl, 13.662 Rushing Yards\n🔥 Spitzname: 'The Bus'\n→ Der Bus rollte bis nach Hause – Super Bowl in Detroit zum Abschied.",
+    "Rod Woodson": "Position: CB/S | Steelers 1987–1996 | Aufnahme: 2021\n\nWarum Hall of Fame?\n🏆 Super-Bowl-Champion (XXXV mit den Ravens)\n⭐ 11× Pro Bowl, 6× First-Team All-Pro\n🔥 Defensive Player of the Year 1993, 71 Interceptions, 12 Defensive TDs (Rekord!)\n→ Der vielseitigste Defensive Back der Geschichte.",
+    "Chuck Noll": "Position: Trainer | Steelers 1969–1991 | Aufnahme: 1993\n\nWarum Hall of Fame?\n🏆 4× Super-Bowl-Champion\n⭐ 4 Titel in 6 Jahren – die 70er-Dynastie\n🔥 209 Siege als Head Coach\n→ Der Architekt der Dynastie – 'The Emperor'.",
+    "Joe Montana": "Position: QB | 49ers 1979–1992 | Aufnahme: 2000\n\nWarum Hall of Fame?\n🏆 4× Super-Bowl-Champion\n⭐ 3× Super-Bowl-MVP, 2× NFL MVP\n🔥 0 Interceptions in 4 Super Bowls!\n→ 'Joe Cool' – eiskalt in den größten Spielen.",
+    "Jerry Rice": "Position: WR | 49ers 1985–2000 | Aufnahme: 2010\n\nWarum Hall of Fame?\n🏆 3× Super-Bowl-Champion\n⭐ 13× Pro Bowl, Super-Bowl-MVP\n🔥 22.895 Receiving Yards – NFL-REKORD!\n→ Der beste Receiver aller Zeiten. Punkt.",
+    "Steve Young": "Position: QB | 49ers 1987–1999 | Aufnahme: 2005\n\nWarum Hall of Fame?\n🏆 3× Super-Bowl-Champion (1× als Starter, SB XXIX)\n⭐ 2× NFL MVP, Super-Bowl-MVP, 7× Pro Bowl\n🔥 33.124 Passing Yards + 4.239 Rushing Yards\n→ Der beste linkshändige QB der Geschichte.",
+    "Ronnie Lott": "Position: S | 49ers 1981–1990 | Aufnahme: 2000\n\nWarum Hall of Fame?\n🏆 4× Super-Bowl-Champion\n⭐ 10× Pro Bowl, 63 Interceptions\n🔥 Ließ sich einen Finger amputieren, um weiterzuspielen!\n→ Härtester Safety aller Zeiten.",
+    "Walter Payton": "Position: RB | Bears 1975–1987 | Aufnahme: 1993\n\nWarum Hall of Fame?\n🏆 Super-Bowl-Champion (XX)\n⭐ 9× Pro Bowl, NFL MVP 1977\n🔥 16.726 Rushing Yards (damals Rekord!)\n→ 'Sweetness' – der kompletteste Running Back aller Zeiten.",
+    "Dick Butkus": "Position: LB | Bears 1965–1973 | Aufnahme: 1979\n\nWarum Hall of Fame?\n⭐ 8× Pro Bowl, 2× Defensive Player of the Year\n🔥 22 Interceptions, 27 Fumble Recoveries\n→ Der furchteinflößendste Linebacker der Geschichte.",
+    "Mike Singletary": "Position: LB | Bears 1981–1992 | Aufnahme: 1998\n\nWarum Hall of Fame?\n🏆 Super-Bowl-Champion (XX)\n⭐ 10× Pro Bowl, 2× Defensive Player of the Year\n🔥 Das Herz der 85er-Bears\n→ 'Samurai Mike' – der Anführer der besten Defense aller Zeiten.",
+    "Gale Sayers": "Position: RB | Bears 1965–1971 | Aufnahme: 1977\n\nWarum Hall of Fame?\n⭐ 4× Pro Bowl, Rookie of the Year 1965\n🔥 6 Touchdowns in EINEM Spiel (als Rookie!)\n→ Der 'Kansas Comet' – kurze Karriere, ewige Legende.",
+    "Jim Brown": "Position: RB | Browns 1957–1965 | Aufnahme: 1971\n\nWarum Hall of Fame?\n⭐ 3× NFL MVP, 9× Pro Bowl\n🔥 8× Rushing-Titel in 9 Jahren, 12.312 Yards\n→ Von vielen der beste Footballer aller Zeiten – ging mit 29 in Rente.",
+    "Otto Graham": "Position: QB | Browns 1946–1955 | Aufnahme: 1965\n\nWarum Hall of Fame?\n🏆 7× Meister (4 AAFC + 3 NFL)\n⭐ 5× Pro Bowl\n🔥 10 Endspiele in 10 Jahren – 7 gewonnen!\n→ Der erfolgreichste QB der Anfangszeit.",
+    "Dan Marino": "Position: QB | Dolphins 1983–1999 | Aufnahme: 2005\n\nWarum Hall of Fame?\n⭐ 9× Pro Bowl, NFL MVP 1984\n🔥 5.084 Passing Yards 1984 – damals unglaublich! 61.361 Yards insgesamt\n→ Der beste reine Passer aller Zeiten – ohne Super-Bowl-Ring.",
+    "Don Shula": "Position: Trainer | Dolphins 1970–1995 | Aufnahme: 1997\n\nWarum Hall of Fame?\n🏆 2× Super-Bowl-Champion\n⭐ 347 Siege – NFL-REKORD!\n🔥 Perfekte Saison 1972 (17-0)!\n→ Der siegreichste Trainer der NFL-Geschichte.",
+    "John Elway": "Position: QB | Broncos 1983–1998 | Aufnahme: 2004\n\nWarum Hall of Fame?\n🏆 2× Super-Bowl-Champion\n⭐ Super-Bowl-MVP, 9× Pro Bowl\n🔥 'The Drive' 1987 – 98 Yards zum Ausgleich!\n→ Der Arm, der Denver groß machte.",
+    "Terrell Davis": "Position: RB | Broncos 1995–2001 | Aufnahme: 2017\n\nWarum Hall of Fame?\n🏆 2× Super-Bowl-Champion\n⭐ Super-Bowl-MVP, NFL MVP 1998\n🔥 2.008 Rushing Yards 1998 – die 2.000er-Marke!\n→ Migräne-Spiel im Super Bowl – trotzdem MVP. Legende.",
+    "Barry Sanders": "Position: RB | Lions 1989–1998 | Aufnahme: 2004\n\nWarum Hall of Fame?\n⭐ 10× Pro Bowl, NFL MVP 1997\n🔥 15.269 Rushing Yards, 2.053 Yards 1997\n→ Der spektakulärste Läufer aller Zeiten – ging mit 30 in Rente.",
+    "Calvin Johnson": "Position: WR | Lions 2007–2015 | Aufnahme: 2021\n\nWarum Hall of Fame?\n⭐ 6× Pro Bowl, 3× First-Team All-Pro\n🔥 1.964 Receiving Yards 2012 – NFL-REKORD!\n→ 'Megatron' – der körperlich dominanteste Receiver aller Zeiten.",
+    "Brett Favre": "Position: QB | Packers 1992–2007 | Aufnahme: 2016\n\nWarum Hall of Fame?\n🏆 Super-Bowl-Champion (XXXI)\n⭐ 3× NFL MVP in Folge (1995–97!), 11× Pro Bowl\n🔥 297 Spiele in Folge – der Eisenmann-Rekord!\n→ Der Gunslinger – 3 MVPs in Folge, das schafft keiner mehr.",
+    "Bart Starr": "Position: QB | Packers 1956–1971 | Aufnahme: 1977\n\nWarum Hall of Fame?\n🏆 5× NFL-Meister, 2× Super-Bowl-Champion\n⭐ 2× Super-Bowl-MVP, 4× Pro Bowl\n🔥 Playoff-Bilanz: 9-1!\n→ Lombardis verlängerter Arm auf dem Feld.",
+    "Vince Lombardi": "Position: Trainer | Packers 1959–1967 | Aufnahme: 1971\n\nWarum Hall of Fame?\n🏆 5× NFL-Meister, 2× Super-Bowl-Champion\n⭐ Die Trophäe trägt seinen Namen!\n🔥 'Winning isn't everything – it's the only thing.'\n→ Der Super-Bowl-Pokal heißt nach ihm – mehr muss man nicht sagen.",
+    "Roger Staubach": "Position: QB | Cowboys 1969–1979 | Aufnahme: 1985\n\nWarum Hall of Fame?\n🏆 2× Super-Bowl-Champion\n⭐ Super-Bowl-MVP, 6× Pro Bowl\n🔥 'Captain America' – der erste große Comeback-QB\n→ Durch ihn wurde der 'Hail Mary'-Pass berühmt.",
+    "Troy Aikman": "Position: QB | Cowboys 1989–2000 | Aufnahme: 2006\n\nWarum Hall of Fame?\n🏆 3× Super-Bowl-Champion\n⭐ Super-Bowl-MVP, 6× Pro Bowl\n🔥 32.942 Passing Yards\n→ Der ruhige Anführer der 90er-Dynastie.",
+    "Emmitt Smith": "Position: RB | Cowboys 1990–2002 | Aufnahme: 2010\n\nWarum Hall of Fame?\n🏆 3× Super-Bowl-Champion\n⭐ Super-Bowl-MVP, NFL MVP 1993, 8× Pro Bowl\n🔥 18.355 Rushing Yards – NFL-REKORD!\n→ Der ewige Rushing-König der NFL.",
+    "Tom Landry": "Position: Trainer | Cowboys 1960–1988 | Aufnahme: 1990\n\nWarum Hall of Fame?\n🏆 2× Super-Bowl-Champion\n⭐ 20 Saisons in Folge mit positiver Bilanz!\n🔥 29 Jahre Cowboys – der Mann mit dem Hut\n→ Der Architekt von 'America's Team'.",
+    "Lawrence Taylor": "Position: LB | Giants 1981–1993 | Aufnahme: 1999\n\nWarum Hall of Fame?\n🏆 2× Super-Bowl-Champion\n⭐ 3× Defensive Player of the Year, NFL MVP 1986 (als Verteidiger!)\n🔥 132,5 Sacks, 10× Pro Bowl\n→ Der einzige Verteidiger, der die Offense komplett verändert hat.",
+    "Peyton Manning": "Position: QB | Colts 1998–2011 | Aufnahme: 2021\n\nWarum Hall of Fame?\n🏆 2× Super-Bowl-Champion (1× Colts)\n⭐ 5× NFL MVP – REKORD!, 14× Pro Bowl\n🔥 71.940 Passing Yards\n→ 'Der Sheriff' – 5 MVPs, so viele wie kein anderer.",
+    "Marvin Harrison": "Position: WR | Colts 1996–2008 | Aufnahme: 2016\n\nWarum Hall of Fame?\n🏆 Super-Bowl-Champion (XLI)\n⭐ 8× Pro Bowl, 143 Catches 2002 (damals Rekord!)\n🔥 14.580 Receiving Yards\n→ Der zuverlässigste Receiver der Manning-Ära.",
+    "Johnny Unitas": "Position: QB | Colts 1956–1972 | Aufnahme: 1979\n\nWarum Hall of Fame?\n🏆 3× NFL-Meister, 1× Super-Bowl-Champion (V)\n⭐ 3× NFL MVP, 10× Pro Bowl\n🔥 47 Spiele in Folge mit TD-Pass (damals Rekord!)\n→ Der Urvater des modernen Quarterbacks.",
+    "Reggie White": "Position: DE | Eagles 1985–1992 | Aufnahme: 2006\n\nWarum Hall of Fame?\n🏆 Super-Bowl-Champion (XXXI mit den Packers)\n⭐ 13× Pro Bowl, 2× Defensive Player of the Year\n🔥 198 Sacks!\n→ Der 'Minister of Defense' – der dominanteste Pass-Rusher seiner Zeit.",
+    "Brian Dawkins": "Position: S | Eagles 1996–2008 | Aufnahme: 2018\n\nWarum Hall of Fame?\n⭐ 9× Pro Bowl, 4× First-Team All-Pro\n🔥 37 Interceptions, 26 Sacks – als Safety!\n→ 'Weapon X' – das Herz der Eagles-Defense.",
+    "Deion Sanders": "Position: CB | Falcons 1989–1993 | Aufnahme: 2011\n\nWarum Hall of Fame?\n🏆 2× Super-Bowl-Champion (mit 49ers & Cowboys)\n⭐ 8× Pro Bowl, Defensive Player of the Year 1994\n🔥 53 Interceptions + Return-TDs en masse\n→ 'Prime Time' – spielte sogar in Super Bowl UND World Series!",
+    "Randy Moss": "Position: WR | Vikings 1998–2004 | Aufnahme: 2018\n\nWarum Hall of Fame?\n⭐ 6× Pro Bowl, 4× First-Team All-Pro\n🔥 23 Touchdowns 2007 – NFL-REKORD!\n→ 'You got Mossed!' – der spektakulärste Deep-Ball-Receiver aller Zeiten.",
+    "Ray Lewis": "Position: LB | Ravens 1996–2012 | Aufnahme: 2018\n\nWarum Hall of Fame?\n🏆 2× Super-Bowl-Champion\n⭐ Super-Bowl-MVP, 2× Defensive Player of the Year\n🔥 13× Pro Bowl, 1.562 Tackles\n→ Der Anführer – die beste Defense der 2000er.",
+    "Ed Reed": "Position: S | Ravens 2002–2012 | Aufnahme: 2019\n\nWarum Hall of Fame?\n🏆 Super-Bowl-Champion (XLVII)\n⭐ Defensive Player of the Year 2004, 9× Pro Bowl\n🔥 64 Interceptions, 1.590 INT-Return-Yards (Rekord!)\n→ Der Ballhawk – keiner las den QB besser.",
+    "Joe Namath": "Position: QB | Jets 1965–1976 | Aufnahme: 1985\n\nWarum Hall of Fame?\n🏆 Super-Bowl-Champion (III)\n⭐ Super-Bowl-MVP\n🔥 'Broadway Joe' – der erste Football-Superstar\n→ 'Wir werden den Super Bowl gewinnen!' – und er hielt Wort.",
+    "LaDainian Tomlinson": "Position: RB | Chargers 2001–2009 | Aufnahme: 2017\n\nWarum Hall of Fame?\n⭐ NFL MVP 2006, 5× Pro Bowl\n🔥 31 Touchdowns 2006 – NFL-REKORD!\n→ 'LT' – 31 TDs in einer Saison, das schafft keiner mehr.",
+    "Junior Seau": "Position: LB | Chargers 1990–2002 | Aufnahme: 2015\n\nWarum Hall of Fame?\n⭐ 12× Pro Bowl, 6× First-Team All-Pro\n🔥 1.846 Tackles\n→ Das Herz von San Diego – über ein Jahrzehnt der Anführer.",
+    "Howie Long": "Position: DE | Raiders 1981–1993 | Aufnahme: 2000\n\nWarum Hall of Fame?\n🏆 Super-Bowl-Champion (XVIII)\n⭐ 8× Pro Bowl, 84 Sacks\n🔥 Danach als TV-Experte genauso erfolgreich\n→ Der Dominator der Raiders-Line.",
+    "Marcus Allen": "Position: RB | Raiders 1982–1992 | Aufnahme: 2003\n\nWarum Hall of Fame?\n🏆 Super-Bowl-Champion (XVIII)\n⭐ Super-Bowl-MVP, NFL MVP 1985\n🔥 12.279 Rushing Yards, 145 TDs\n→ Der eleganteste Läufer der Raiders.",
+    "Bruce Smith": "Position: DE | Bills 1985–1999 | Aufnahme: 2009\n\nWarum Hall of Fame?\n⭐ 11× Pro Bowl, 2× Defensive Player of the Year\n🔥 200 Sacks – NFL-REKORD!\n→ Der ewige Sack-König.",
+    "Jim Kelly": "Position: QB | Bills 1986–1996 | Aufnahme: 2002\n\nWarum Hall of Fame?\n⭐ 5× Pro Bowl, 'K-Gun'-Offense\n🔥 4× Super-Bowl-Teilnahmen in Folge!\n→ 4× in Folge im Super Bowl – das schafft nie wieder einer.",
+    "Kurt Warner": "Position: QB | Rams 1998–2003 | Aufnahme: 2017\n\nWarum Hall of Fame?\n🏆 Super-Bowl-Champion (XXXIV)\n⭐ 2× NFL MVP, Super-Bowl-MVP\n🔥 Vom Supermarkt in den Super Bowl!\n→ Die größte Underdog-Story der NFL.",
+    "Marshall Faulk": "Position: RB | Rams 1999–2005 | Aufnahme: 2011\n\nWarum Hall of Fame?\n🏆 Super-Bowl-Champion (XXXIV)\n⭐ NFL MVP 2000, 3× Offensive Player of the Year\n🔥 19.154 Yards from Scrimmage\n→ Das Schweizer Taschenmesser der 'Greatest Show on Turf'.",
+    "Tony Gonzalez": "Position: TE | Chiefs 1997–2008 | Aufnahme: 2019\n\nWarum Hall of Fame?\n⭐ 14× Pro Bowl, 6× First-Team All-Pro\n🔥 15.127 Receiving Yards – Rekord für Tight Ends!\n→ Der beste Tight End aller Zeiten.",
+}
+
+# V241: Top Prospects 2027 - Konsens aus Kiper (ESPN), Brugler, Athlon & DraftCountdown (Stand Nov 2026)!
+# Keine Live-API dafuer: ESPNs Draft-Endpunkt liefert nur Picks vom letzten Draft, keine Prospects! Darum kuratierter Snapshot - bei neuen Boards einfach hier updaten!
+_TOP_PROSPECTS_2027 = [
+    ("Jeremiah Smith", "WR", "Ohio State"),
+    ("Drew Mestemaker", "QB", "Oklahoma State"),
+    ("Colin Simmons", "EDGE", "Texas"),
+    ("Leonard Moore", "CB", "Notre Dame"),
+    ("Dylan Stewart", "EDGE", "South Carolina"),
+    ("Darian Mensah", "QB", "Miami (FL)"),
+    ("CJ Carr", "QB", "Notre Dame"),
+    ("Chris Cole", "LB", "Georgia"),
+    ("Charlie Becker", "WR", "Indiana"),
+    ("Xavier Gilliam", "DT", "Tennessee"),
+]
 async def draft_preview_cmd(update, ctx):
     # V214: NFL Draft-Vorschau! Reihenfolge nach AKTUELLEM Tabellenstand (schlechtestes Team zuerst)!
     # NFL Draft 2027: 29.04.-01.05.2027, Washington D.C. (National Mall)!
@@ -7392,6 +7567,12 @@ async def draft_preview_cmd(update, ctx):
             except: pass
         else:
             lines.append("😅 Draft-Reihenfolge grad nicht verfügbar (ESPN)!")
+        # V241: Top Prospects 2027! Wer sind die heissen Namen fuer den Draft?
+        lines.append("🌟 Top Prospects 2027 (Top 10):")
+        for _i241, (_nm241, _pos241, _sch241) in enumerate(_TOP_PROSPECTS_2027, 1):
+            lines.append(f"{_i241}. {_nm241} – {_pos241}, {_sch241}")
+        lines.append("Stand: Nov 2026 (Konsens: Kiper, Brugler & Co.) – Ranglisten ändern sich bis zum Draft noch!")
+        lines.append("")
         _kb = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Zurück", callback_data="back")]])
         _m = await target.reply_text("\n".join(lines), reply_markup=_with_close(_kb))
         try: _chain_add(uid, _m.message_id)
@@ -7400,6 +7581,155 @@ async def draft_preview_cmd(update, ctx):
         try:
             target = update.message or update.callback_query.message
             await target.reply_text("😅 Draft-Vorschau konnte grad nicht geladen werden!", reply_markup=small_kb())
+        except: pass
+
+
+
+# ===== V242: NERD-MODUS Handler =====
+def _nerd_clear_lists(ctx):
+    # V242: Nerd-Zahlenlisten sind exklusiv! Sonst klaut eine alte Liste (Next Games etc.) die getippte Zahl!
+    for _k in ("my_live_list", "next_live_list", "next_games_list", "results_list", "live_finals_list", "top10_list", "tables_team_list", "await_live_stats_pick", "nerd_teams_list", "nerd_hof_list"):
+        try: ctx.user_data[_k] = None
+        except: pass
+
+async def nerd_cmd(update, ctx):
+    try:
+        target = update.message or update.callback_query.message
+        uid = update.effective_user.id if update.effective_user else 0
+        _kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📖 NFL Regeln", callback_data="nerd_rules")],
+            [InlineKeyboardButton("🏈 NFL Teams", callback_data="nerd_teams")],
+            [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+        ])
+        _m = await target.reply_text("🧠 Nerd-Modus\nDein Lexikon für US-Sport – Regeln, Teams & Legenden!\n\n📖 NFL Regeln – so funktioniert Football\n🏈 NFL Teams – alle 32 Teams + Hall of Famers\n\nNBA, NHL, MLB & NCAAF kommen in Phase 2!", reply_markup=_with_close(_kb))
+        try: _chain_add(uid, _m.message_id)
+        except: pass
+    except Exception:
+        try:
+            target = update.message or update.callback_query.message
+            await target.reply_text("😅 Nerd-Modus konnte grad nicht geladen werden!", reply_markup=small_kb())
+        except: pass
+
+async def nerd_rules_cmd(update, ctx):
+    try:
+        target = update.message or update.callback_query.message
+        uid = update.effective_user.id if update.effective_user else 0
+        _kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🏈 NFL Teams", callback_data="nerd_teams")],
+            [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+        ])
+        _m = await target.reply_text(NFL_RULES_TEXT, reply_markup=_with_close(_kb))
+        try: _chain_add(uid, _m.message_id)
+        except: pass
+    except Exception:
+        try:
+            target = update.message or update.callback_query.message
+            await target.reply_text("😅 Regeln konnten grad nicht geladen werden!", reply_markup=small_kb())
+        except: pass
+
+async def nerd_teams_cmd(update, ctx):
+    try:
+        target = update.message or update.callback_query.message
+        uid = update.effective_user.id if update.effective_user else 0
+        _nerd_clear_lists(ctx)
+        _keys = list(NFL_TEAMS_NERD.keys())
+        ctx.user_data["nerd_teams_list"] = _keys
+        lines = ["🏈 NFL Teams – alle 32!", "Tippe die Zahl für dein Team!", ""]
+        _last_div = ""
+        for _i, _k in enumerate(_keys, 1):
+            _t = NFL_TEAMS_NERD[_k]
+            if _t["div"] != _last_div:
+                _last_div = _t["div"]
+                lines.append(f"{_last_div}:")
+            lines.append(f"{_i}. {_t['name']}")
+        _kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🧠 Nerd-Modus", callback_data="nerd")],
+            [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+        ])
+        _m = await target.reply_text("\n".join(lines), reply_markup=_with_close(_kb))
+        try: _chain_add(uid, _m.message_id)
+        except: pass
+    except Exception:
+        try:
+            target = update.message or update.callback_query.message
+            await target.reply_text("😅 Team-Liste konnte grad nicht geladen werden!", reply_markup=small_kb())
+        except: pass
+
+async def nerd_team_cmd(update, ctx, key):
+    try:
+        target = update.message or update.callback_query.message
+        uid = update.effective_user.id if update.effective_user else 0
+        _t = NFL_TEAMS_NERD.get(key)
+        if not _t:
+            await target.reply_text("😅 Team nicht gefunden!", reply_markup=small_kb()); return
+        lines = [f"🏈 {_t['name']}", f"📍 {_t['city']} | 🏟️ {_t['stadion']}", f"📅 Gegründet: {_t['gegr']}", f"🏆 {_t['titel']}", f"🎨 Farben: {_t['farben']}", f"📂 Division: {_t['div']}", "", "📖 Geschichte:", _t["geschichte"]]
+        _kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("⭐ Hall of Famers", callback_data=f"nerd_hof:{key}")],
+            [InlineKeyboardButton("🏈 Alle Teams", callback_data="nerd_teams")],
+            [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+        ])
+        _m = await target.reply_text("\n".join(lines), reply_markup=_with_close(_kb))
+        try: _chain_add(uid, _m.message_id)
+        except: pass
+    except Exception:
+        try:
+            target = update.message or update.callback_query.message
+            await target.reply_text("😅 Team-Seite konnte grad nicht geladen werden!", reply_markup=small_kb())
+        except: pass
+
+async def nerd_hof_cmd(update, ctx, key):
+    try:
+        target = update.message or update.callback_query.message
+        uid = update.effective_user.id if update.effective_user else 0
+        _nerd_clear_lists(ctx)
+        _t = NFL_TEAMS_NERD.get(key)
+        _names = NFL_HOF.get(key) or []
+        if not _t or not _names:
+            await target.reply_text("😅 Für dieses Team gibt's noch keine HOF-Liste!", reply_markup=small_kb()); return
+        ctx.user_data["nerd_hof_list"] = {"team": key, "names": [n for n, p in _names]}
+        lines = [f"⭐ Hall of Famers – {_t['name']}", "Tippe die Zahl für die Story!", ""]
+        for _i, (_nm, _pos) in enumerate(_names, 1):
+            lines.append(f"{_i}. {_nm} – {_pos}")
+        _kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🏈 Team-Seite", callback_data=f"nerd_team:{key}")],
+            [InlineKeyboardButton("🏈 Alle Teams", callback_data="nerd_teams")],
+            [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+        ])
+        _m = await target.reply_text("\n".join(lines), reply_markup=_with_close(_kb))
+        try: _chain_add(uid, _m.message_id)
+        except: pass
+    except Exception:
+        try:
+            target = update.message or update.callback_query.message
+            await target.reply_text("😅 HOF-Liste konnte grad nicht geladen werden!", reply_markup=small_kb())
+        except: pass
+
+async def nerd_hof_detail_cmd(update, ctx, key, idx):
+    try:
+        target = update.message or update.callback_query.message
+        uid = update.effective_user.id if update.effective_user else 0
+        _t = NFL_TEAMS_NERD.get(key)
+        _names = NFL_HOF.get(key) or []
+        if idx < 0 or idx >= len(_names):
+            await target.reply_text("😅 Legende nicht gefunden!", reply_markup=small_kb()); return
+        _nm, _pos = _names[idx]
+        _det = NFL_HOF_DETAILS.get(_nm)
+        if _det:
+            _txt = f"⭐ {_nm} – Hall of Fame\n{_det}"
+        else:
+            _txt = f"⭐ {_nm} – Hall of Fame\nPosition: {_pos} | {_t['name'] if _t else ''}\n\nAusführliche Story folgt in Phase 2!"
+        _kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("⭐ Alle Hall of Famers", callback_data=f"nerd_hof:{key}")],
+            [InlineKeyboardButton("🏈 Team-Seite", callback_data=f"nerd_team:{key}")],
+            [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+        ])
+        _m = await target.reply_text(_txt, reply_markup=_with_close(_kb))
+        try: _chain_add(uid, _m.message_id)
+        except: pass
+    except Exception:
+        try:
+            target = update.message or update.callback_query.message
+            await target.reply_text("😅 Legenden-Story konnte grad nicht geladen werden!", reply_markup=small_kb())
         except: pass
 
 
@@ -7660,6 +7990,11 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("news_league:"): await news_league_cmd(update, ctx, data.split(":")[1])
     elif data.startswith("news_team:"): await news_team_cmd(update, ctx, int(data.split(":")[1]))
     elif data == "draft_preview": await draft_preview_cmd(update, ctx)
+    elif data == "nerd": await nerd_cmd(update, ctx)
+    elif data == "nerd_rules": await nerd_rules_cmd(update, ctx)
+    elif data == "nerd_teams": await nerd_teams_cmd(update, ctx)
+    elif data.startswith("nerd_team:"): await nerd_team_cmd(update, ctx, data.split(":", 1)[1])
+    elif data.startswith("nerd_hof:"): await nerd_hof_cmd(update, ctx, data.split(":", 1)[1])
     elif data.startswith("teamnext:"):
         _pp214 = data.split(":", 2); await team_next_cmd(update, ctx, _pp214[1], _pp214[2])
     elif data.startswith("teamnews:"):
