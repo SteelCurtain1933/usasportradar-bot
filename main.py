@@ -1,4 +1,4 @@
-# USA Sport Radar - V243 FINAL - NEU: NERD-MODUS Option 1! EIN Fenster, das sich umbaut (wie _cb_edit bei allen anderen Flows)! Getippte Zahlen werden geloescht - Chat bleibt sauber! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# USA Sport Radar - V244 FINAL - NEU: Live-Liste als Scoreboard-Ticker (Variante B)! Nur Kuerzel + Stand + Spielzeit! Kein LIVE-Label, kein Sender in der Liste! Sender + aktuelle Stats in der Detail-Ansicht! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -1032,6 +1032,28 @@ def game_line(ev, league, show_venue=False, compact_home_first=True, show_broadc
         _ven_short = " • München" if is_intl and "Munich" in (intl_label or "") else ""
         return f"{_a_short} @ {_h_short} • ⏰ {date_s} Uhr{bc_suf}{_ven_short}"
     return f"{ev.get('name','Spiel')}  •  {label}"
+
+def _live_ticker_line(ev, league):
+    # V244: Scoreboard-Ticker! "MIA 9 – 20 BUF • 5:58 Q3" - nur Kuerzel + Stand + Spielzeit!
+    try:
+        _comps = ev.get("competitions", [{}])[0]
+        _cs = _comps.get("competitors", []) or []
+        _home = next((c for c in _cs if (c.get("homeAway") or "").lower() == "home"), None)
+        _away = next((c for c in _cs if (c.get("homeAway") or "").lower() == "away"), None)
+        if _home is None or _away is None:
+            if len(_cs) >= 2: _away, _home = _cs[0], _cs[1]
+            else: return ""
+        def _ab(c):
+            _t = c.get("team", {}) or {}
+            return _t.get("abbreviation") or _t.get("shortDisplayName") or _t.get("displayName") or "?"
+        _a_ab = _ab(_away); _h_ab = _ab(_home)
+        _a_sc = _away.get("score", ""); _h_sc = _home.get("score", "")
+        _clock = live_clock(ev, league)
+        if _clock:
+            return f"{_a_ab} {_a_sc} – {_h_sc} {_h_ab} • {_clock}"
+        return f"{_a_ab} {_a_sc} – {_h_sc} {_h_ab}"
+    except Exception:
+        return ""
 
 def main_kb(with_close=True, uid=None):
     # V94: Hauptmenue = KEIN Fenster-schliessen (sonst muss man jedes Mal wieder /start tippen)! Ueberall sonst = mit Fenster-schliessen!
@@ -3408,8 +3430,8 @@ async def live_stats_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     lines=["📊 Live-Stats - Welches Spiel?\n"]
     rows=[]
     for i,(lg,eid,ev) in enumerate(_live,1):
-        lines.append(f"{i}. {game_line(ev, lg, show_broadcast=False)}")
-        rows.append([InlineKeyboardButton(f"{i}. {game_line(ev, lg, show_broadcast=False)[:40]}", callback_data=f"live_stats_one:{i-1}")])
+        lines.append(f"{i}. {LEAGUES[lg]['emoji']} {_live_ticker_line(ev, lg) or game_line(ev, lg, show_broadcast=False)}")
+        rows.append([InlineKeyboardButton(f"{i}. {_live_ticker_line(ev, lg)}", callback_data=f"live_stats_one:{i-1}")])
     lines.append("\nTippe die Zahl ein (z.B. 1) oder tippe auf das Spiel!")
     ctx.user_data["await_live_stats_pick"]=True
     rows.append([InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")])
@@ -3475,6 +3497,13 @@ async def live_stats_one_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, idx
                 _poss_ov=_tm3.get("abbreviation") or ""
     except Exception:
         _poss_ov=""
+    # V244: Sender in die Detail-Ansicht! (In der Liste steht er nicht mehr!)
+    try: _bc244 = broadcast_line(ev)
+    except Exception: _bc244 = ""
+    if _bc244:
+        _p244 = _txt.split("\n", 1)
+        if len(_p244) == 2: _txt = _p244[0] + "\n" + "📺 Sender: " + _bc244 + "\n" + _p244[1]
+        else: _txt = _txt + "\n" + "📺 Sender: " + _bc244
     _sit_line=_live_situation_line(lg, ev, _poss_ov)
     if _sit_line:
         # Nach der ersten Zeile (Titel) einfügen: „Live-Stats: ...\nSituation\nRest"
@@ -3510,24 +3539,32 @@ async def live_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await _cb_edit(update, "🔴 Live\n\nWas willst du sehen?\n🔴 Alle Live-Spiele = alles was GERADE läuft, auch ohne Favoriten!\n⭐ Nur meine Favoriten = nur deine Teams live + letzte Endergebnisse!\n🔴 Meine Live-Spiele = deine eingestellten Einzel-Spiele!", kb)
 
 async def live_all_cmd(update, ctx):
-    # V206: ALLE Spiele die gerade live sind - egal ob Favorit oder nicht!
+    # V244: Scoreboard-Ticker! Nur Kuerzel + Stand + Spielzeit! Kein LIVE-Label, kein Sender (Sender -> Detail-Ansicht)!
     target = update.message or update.callback_query.message
     _load_live = await _loading_start(target, "⏳ Ich hole alle Live-Spiele... einen Moment")
     lines=["🔴 Live - Alle Spiele\n"]
-    found=False
+    _all=[]
     for league in LEAGUES:
         for ev in _scoreboard_dates(league):
             if ev.get("status",{}).get("type",{}).get("state","")!="in": continue
-            lines.append(f"{LEAGUES[league]['emoji']} {game_line(ev, league, show_broadcast=True)}")
-            for sl in shootout_lines(ev, league):
-                lines.append(sl)
-            sc = last_scorer(ev, league)
-            if sc: lines.append(sc)
-            found=True
-    if not found:
+            _all.append((league, str(ev.get("id","")), ev))
+    if not _all:
         lines.append("Gerade ist kein Spiel live in den Ligen.")
         lines.append("Schau mal bei ⏭️ Next Games, wann es weitergeht!")
+    else:
+        for _i, (_lg, _eid, _ev) in enumerate(_all, 1):
+            _tl = _live_ticker_line(_ev, _lg)
+            if _tl:
+                lines.append(f"{_i}. {LEAGUES[_lg]['emoji']} {_tl}")
+            else:
+                lines.append(f"{_i}. {game_line(_ev, _lg, show_broadcast=False)}")
+        lines.append("\nTippe die Zahl für die Details (Sender + aktuelle Stats)!")
     await _loading_done(ctx, update.effective_user.id if update.effective_user else 0, _load_live)
+    # V244: Zahlen-Weiterleitung! Liste = dieselbe wie bei Live-Stats, Zahl oeffnet die Detail-Ansicht!
+    try:
+        ctx.user_data["live_events_v147"] = _all
+        ctx.user_data["await_live_stats_pick"] = bool(_all)
+    except: pass
     _kb=InlineKeyboardMarkup([[InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")]])
     _m206 = await target.reply_text("\n".join(lines), reply_markup=_kb)
     try: _chain_add(update.effective_user.id if update.effective_user else 0, _m206.message_id)
