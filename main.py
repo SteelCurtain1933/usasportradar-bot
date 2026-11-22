@@ -1,4 +1,4 @@
-# USA Sport Radar - V238 FINAL - FIX: Wetter mit User-Agent (Open-Meteo blockt Pythons Default-UA)! + Debug-Zeile, falls Wetter trotzdem nicht klappt (nur bis der Bug gefunden ist)!
+# USA Sport Radar - V239 FINAL - FIX: Wetter mit 2. Quelle (wttr.in) als Fallback! Open-Meteo liefert 'Forecast leer' - statt raten, zweite Quelle! + Explizite Zeitzone statt auto!
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -6536,20 +6536,20 @@ async def next_live_list_cmd(update, ctx, league):
 # V235: Wetter via Open-Meteo (gratis, ohne Key)! ESPN liefert kein Wetter - also ueber den Stadion-Ort! Gibt (wetter_zeile, stadion_tz) zurueck!
 _WETTER235 = {0:"Klar", 1:"Überwiegend klar", 2:"Wechselhaft", 3:"Bedeckt", 45:"Nebel", 48:"Nebel mit Reif", 51:"Leichter Nieselregen", 53:"Nieselregen", 55:"Starker Nieselregen", 56:"Gefrierender Nieselregen", 57:"Gefrierender Nieselregen", 61:"Leichter Regen", 63:"Regen", 65:"Starker Regen", 66:"Gefrierender Regen", 67:"Gefrierender Regen", 71:"Leichter Schnee", 73:"Schnee", 75:"Starker Schnee", 77:"Schneekörner", 80:"Leichte Regenschauer", 81:"Regenschauer", 82:"Starke Regenschauer", 85:"Schneeschauer", 86:"Schneeschauer", 95:"Gewitter", 96:"Gewitter mit Hagel", 99:"Gewitter mit starkem Hagel"}
 _WETTER_DEBUG238 = ""  # V238: Debug-Grund, warum Wetter nicht klappt (nur bis der Bug gefunden ist, dann fliegt die Zeile wieder raus)!
+_WTTR239 = {"clear": "Klar", "sunny": "Sonnig", "partly cloudy": "Wechselhaft", "cloudy": "Bedeckt", "overcast": "Bedeckt", "mist": "Nebel", "fog": "Nebel", "light rain": "Leichter Regen", "moderate rain": "Regen", "heavy rain": "Starker Regen", "light snow": "Leichter Schnee", "moderate snow": "Schnee", "heavy snow": "Starker Schnee", "thunderstorm": "Gewitter", "thundery outbreaks possible": "Gewitter möglich", "patchy rain possible": "Regen möglich", "patchy snow possible": "Schnee möglich", "light drizzle": "Leichter Nieselregen", "drizzle": "Nieselregen", "freezing fog": "Nebel mit Reif", "blizzard": "Schneesturm", "blowing snow": "Schneetreiben"}  # V239: wttr.in sagt Wetter auf Englisch -> hier auf Deutsch!
 def _game_weather235(city, dt_kickoff, state):
-    # V237: Robust! Exakte Stunde -> naechste Stunde -> aktuelles Wetter. Vorher: exakte Stunde nicht gefunden = gar keine Wetter-Zeile!
-    # V238: User-Agent dazu! Alle anderen Abrufe im Bot schicken Mozilla/5.0 - nur Open-Meteo lief mit Pythons Default-UA (python-requests) - und der wird oft geblockt!
+    # V239: ZWEITE Quelle als Fallback (wttr.in)! Open-Meteo liefert "Forecast leer" (Geo geht, Forecast kommt ohne Daten zurueck) - statt weiter zu raten, einfach zweite Quelle nehmen! + Explizite Stadion-Zeitzone statt auto!
     global _WETTER_DEBUG238
     _WETTER_DEBUG238 = ""
     _HDR238 = {"User-Agent": "Mozilla/5.0"}
+    _om_reason = ""
     try:
-        # V237: Kickoff-Zeit ist Berlin-Zeit! Falls ohne Zeitzone -> Berlin annehmen!
         try:
             if getattr(dt_kickoff, "tzinfo", None) is None:
                 dt_kickoff = dt_kickoff.replace(tzinfo=BERLIN)
         except: pass
         res = None
-        for _q237 in (city, f"{city}, USA"):  # V237: Geo-Retry mit Land, falls Stadt allein nix findet!
+        for _q237 in (city, f"{city}, USA"):
             try:
                 g = requests.get("https://geocoding-api.open-meteo.com/v1/search", params={"name": _q237, "count": 1, "language": "de", "format": "json"}, timeout=8, headers=_HDR238).json()
                 res = (g.get("results") or [None])[0]
@@ -6567,39 +6567,56 @@ def _game_weather235(city, dt_kickoff, state):
         except: tz = None
         if lat is None or lon is None: return "", tz
         temp = code = None
-        if state == "in":
-            f = requests.get("https://api.open-meteo.com/v1/forecast", params={"latitude": lat, "longitude": lon, "current": "temperature_2m,weather_code", "timezone": "auto"}, timeout=8, headers=_HDR238).json()
-            cur = f.get("current") or {}
-            temp, code = cur.get("temperature_2m"), cur.get("weather_code")
-        else:
-            f = requests.get("https://api.open-meteo.com/v1/forecast", params={"latitude": lat, "longitude": lon, "hourly": "temperature_2m,weather_code", "current": "temperature_2m,weather_code", "timezone": "auto", "forecast_days": 3}, timeout=8, headers=_HDR238).json()
-            off = f.get("utc_offset_seconds", 0) or 0
-            from datetime import timezone as _tzmod235
-            ko_local = dt_kickoff.astimezone(_tzmod235.utc) + timedelta(seconds=off)
-            want = ko_local.strftime("%Y-%m-%dT%H:00")
-            hours = ((f.get("hourly") or {}).get("time") or [])
-            temps = ((f.get("hourly") or {}).get("temperature_2m") or [])
-            codes = ((f.get("hourly") or {}).get("weather_code") or [])
-            if want in hours:
-                idx = hours.index(want); temp, code = temps[idx], codes[idx]
-            elif hours and len(temps) == len(hours) and len(codes) == len(hours):
-                # V237: Naechste Stunde zum Kickoff - besser als gar kein Wetter!
-                try:
-                    from datetime import datetime as _dt237
-                    best = min(range(len(hours)), key=lambda i: abs((_dt237.strptime(hours[i], "%Y-%m-%dT%H:%M") - ko_local.replace(tzinfo=None)).total_seconds()))
-                    temp, code = temps[best], codes[best]
-                except: pass
-            if temp is None:
-                # V237: Letzter Fallback - aktuelles Wetter!
+        # --- Quelle 1: Open-Meteo (V239: explizite Zeitzone statt auto!) ---
+        try:
+            if state == "in":
+                f = requests.get("https://api.open-meteo.com/v1/forecast", params={"latitude": lat, "longitude": lon, "current": "temperature_2m,weather_code", "timezone": tzname}, timeout=8, headers=_HDR238).json()
                 cur = f.get("current") or {}
                 temp, code = cur.get("temperature_2m"), cur.get("weather_code")
-        if temp is None or code is None:
-            _WETTER_DEBUG238 = "Forecast leer"
-            print(f"[WETTER] Kein Wetter fuer: {city} (state={state})")
-            return "", tz
-        fahr = round(float(temp) * 9/5 + 32)
-        cond = _WETTER235.get(int(code), "Wechselhaft")
-        return f"🌦️ Wetter: {cond}, {fahr}°F ({round(float(temp))}°C)", tz
+                _om_reason = str(f.get("reason") or "")[:60]
+            else:
+                f = requests.get("https://api.open-meteo.com/v1/forecast", params={"latitude": lat, "longitude": lon, "hourly": "temperature_2m,weather_code", "current": "temperature_2m,weather_code", "timezone": tzname, "forecast_days": 3}, timeout=8, headers=_HDR238).json()
+                _om_reason = str(f.get("reason") or "")[:60]
+                off = f.get("utc_offset_seconds", 0) or 0
+                from datetime import timezone as _tzmod235
+                ko_local = dt_kickoff.astimezone(_tzmod235.utc) + timedelta(seconds=off)
+                want = ko_local.strftime("%Y-%m-%dT%H:00")
+                hours = ((f.get("hourly") or {}).get("time") or [])
+                temps = ((f.get("hourly") or {}).get("temperature_2m") or [])
+                codes = ((f.get("hourly") or {}).get("weather_code") or [])
+                if want in hours:
+                    idx = hours.index(want); temp, code = temps[idx], codes[idx]
+                elif hours and len(temps) == len(hours) and len(codes) == len(hours):
+                    try:
+                        from datetime import datetime as _dt237
+                        best = min(range(len(hours)), key=lambda i: abs((_dt237.strptime(hours[i], "%Y-%m-%dT%H:%M") - ko_local.replace(tzinfo=None)).total_seconds()))
+                        temp, code = temps[best], codes[best]
+                    except: pass
+                if temp is None:
+                    cur = f.get("current") or {}
+                    temp, code = cur.get("temperature_2m"), cur.get("weather_code")
+        except Exception as _e239:
+            _om_reason = f"Abruf-Fehler: {str(_e239)[:50]}"
+        if temp is not None and code is not None:
+            fahr = round(float(temp) * 9/5 + 32)
+            cond = _WETTER235.get(int(code), "Wechselhaft")
+            return f"🌦️ Wetter: {cond}, {fahr}°F ({round(float(temp))}°C)", tz
+        # --- Quelle 2: wttr.in (V239: falls Open-Meteo leer ist!) ---
+        _wt_reason = ""
+        try:
+            w = requests.get(f"https://wttr.in/{city}", params={"format": "j1"}, timeout=8, headers=_HDR238).json()
+            _cc = ((w.get("current_condition") or [None])[0] or {})
+            _tf, _tc = _cc.get("temp_F"), _cc.get("temp_C")
+            _desc = ((_cc.get("weatherDesc") or [{}])[0] or {}).get("value") or ""
+            if _tf is not None and _tc is not None:
+                _cond239 = _WTTR239.get(_desc.strip().lower(), _desc or "Wechselhaft")
+                return f"🌦️ Wetter: {_cond239}, {round(float(_tf))}°F ({round(float(_tc))}°C)", tz
+            _wt_reason = "wttr leer"
+        except Exception as _e239b:
+            _wt_reason = f"wttr-Fehler: {str(_e239b)[:50]}"
+        _WETTER_DEBUG238 = f"OM: {_om_reason or 'leer'} | wttr: {_wt_reason or 'leer'}"
+        print(f"[WETTER] Kein Wetter fuer: {city} (state={state}) -> {_WETTER_DEBUG238}")
+        return "", tz
     except Exception as _e237:
         _WETTER_DEBUG238 = f"Fehler: {str(_e237)[:60]}"
         print(f"[WETTER] Fehler: {city} -> {_e237}")
