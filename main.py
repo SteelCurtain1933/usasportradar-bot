@@ -1,4 +1,4 @@
-# USA Sport Radar - V232 FINAL - Liste: Sender RAUS (steht in Details)! Sonst bricht 📺 immer noch auf Zeile 2 um - jetzt wirklich 1 Zeile pro Spiel!
+# USA Sport Radar - V234 FINAL - Liste: Kommende Spiele mit Record wie aufm ESPN-Scoreboard! MIA (4-7) @ BUF (7-4) - kein Fake-Score, kein Erfinden!
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -2822,7 +2822,20 @@ async def heute_morgen(update: Update, ctx: ContextTypes.DEFAULT_TYPE, morgen=Fa
                         _away231 = _home231 = None
                         for _c231 in _comp231.get("competitors", []):
                             _tm231 = _c231.get("team", {}) or {}
-                            _rec231 = ((_tm231.get("abbreviation", "") or "").upper(), _c231.get("score"))
+                            # V234: Record aus ESPN (z.B. "7-4") - wie aufm Scoreboard! Kein Record da = leer, nix erfinden!
+                            _rec234 = ""
+                            try:
+                                for _r234 in (_c231.get("records") or []):
+                                    _s234 = (_r234.get("summary") or "").strip()
+                                    if (_r234.get("type") or "") == "total" and "-" in _s234:
+                                        _rec234 = _s234; break
+                                if not _rec234:
+                                    for _r234 in (_c231.get("records") or []):
+                                        _s234 = (_r234.get("summary") or "").strip()
+                                        if "-" in _s234:
+                                            _rec234 = _s234; break
+                            except: _rec234 = ""
+                            _rec231 = ((_tm231.get("abbreviation", "") or "").upper(), _c231.get("score"), _rec234)
                             if _c231.get("homeAway", "") == "away": _away231 = _rec231
                             else: _home231 = _rec231
                         if _away231 and _home231:
@@ -2830,10 +2843,14 @@ async def heute_morgen(update: Update, ctx: ContextTypes.DEFAULT_TYPE, morgen=Fa
                             _work231 = _line_hm
                             if _work231.startswith("⭐ "): _star231, _work231 = "⭐ ", _work231[2:]
                             _segs231 = _work231.split(" • ", 1)
-                            _a231, _sa231 = _away231
-                            _h231, _sh231 = _home231
-                            if _sa231 is not None and _sh231 is not None:
+                            _a231, _sa231, _ra231 = _away231
+                            _h231, _sh231, _rh231 = _home231
+                            # V233: Score NUR bei Live/Final! ESPN liefert fuer kommende Spiele Score "0" -> sonst steht da "MIA 0 @ BUF 0" obwohl noch gar nicht gespielt wurde!
+                            if state in ("in", "post") and _sa231 is not None and _sh231 is not None:
                                 _match231 = f"{_a231} {_sa231} @ {_h231} {_sh231}"
+                            elif _ra231 and _rh231:
+                                # V234: Kommende Spiele mit Record - wie aufm ESPN-Scoreboard! MIA (4-7) @ BUF (7-4)
+                                _match231 = f"{_a231} ({_ra231}) @ {_h231} ({_rh231})"
                             else:
                                 _match231 = f"{_a231} @ {_h231}"
                             _line_hm = _star231 + _match231 + (f" • {_segs231[1]}" if len(_segs231) > 1 else "")
