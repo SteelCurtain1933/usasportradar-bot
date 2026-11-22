@@ -1,4 +1,4 @@
-# USA Sport Radar - V229 FINAL - Heute/Morgen: Kein 'LIVE' mehr in jeder Zeile! Oben steht schon 'Live:' als Ueberschrift - doppelt gemoppelt raus!
+# USA Sport Radar - V230 FINAL - Liste: Kuerzel statt Langnamen (jedes Spiel 1 Zeile)! Detail-Ansicht: echte Details (Stadion + Sender + Anpfiff) statt nur Schalter!
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -2815,6 +2815,16 @@ async def heute_morgen(update: Update, ctx: ContextTypes.DEFAULT_TYPE, morgen=Fa
                             if _is_fav_team(_tm_hm.get("displayName",""), _favs_hm, league):
                                 _is_fav_hm = True; break
                         if _is_fav_hm: _line_hm = "⭐ " + _line_hm
+                    except: pass
+                    # V230: Kuerzel statt Langnamen! UTAH statt "Utah Utes" -> jedes Spiel passt auf EINE Zeile!
+                    try:
+                        _comp230 = ev.get("competitions", [{}])[0]
+                        for _c230 in _comp230.get("competitors", []):
+                            _tm230 = _c230.get("team", {}) or {}
+                            _short230 = _tm230.get("shortDisplayName", "") or ""
+                            _abbr230 = (_tm230.get("abbreviation", "") or "").upper()
+                            if _short230 and _abbr230 and _short230 in _line_hm:
+                                _line_hm = _line_hm.replace(_short230, _abbr230)
                     except: pass
                     if state=="in":
                         # V229: Kein "LIVE" in jeder Zeile! Oben steht schon "🔴 Live:" als Ueberschrift - sonst doppelt gemoppelt!
@@ -6493,6 +6503,7 @@ async def next_live_list_cmd(update, ctx, league):
 async def next_live_pick_cmd(update, ctx, league, eid, num_mid=None):
     # Spiel-Name finden
     _name = f"Spiel {eid}"
+    _det230 = ""  # V230: Echte Details (Stadion + Sender + Anpfiff)!
     _post213 = False  # V213: Spiel schon vorbei?
     try:
         from datetime import date as _date
@@ -6505,6 +6516,24 @@ async def next_live_pick_cmd(update, ctx, league, eid, num_mid=None):
                     _name = game_line(ev, league)
                     try: _post213 = (ev.get("status",{}).get("type",{}).get("state","") == "post")
                     except: pass
+                    # V230: Echte Details! Sonst luegt "Details + Benachrichtigungen" - da kamen ja nur Schalter!
+                    try:
+                        _comp230 = ev.get("competitions", [{}])[0]
+                        _ven230 = _comp230.get("venue", {}) or {}
+                        _ven230_s = _ven230.get("fullName", "") or ""
+                        _city230 = ((_ven230.get("address", {}) or {}).get("city", "") or "")
+                        _bc230 = broadcast_line(ev) or ""
+                        _, _dt230 = fmt_dt(ev.get("date", ""))
+                        _parts230 = []
+                        _st230 = (ev.get("status", {}) or {}).get("type", {}).get("state", "")
+                        if _st230 == "pre" and _dt230:
+                            _today230 = datetime.now(BERLIN).date()
+                            _day230 = "heute" if _dt230.date() == _today230 else "morgen" if _dt230.date() == (_today230 + timedelta(days=1)) else _dt230.strftime("%d.%m.")
+                            _parts230.append(f"⏰ Anpfiff {_day230} {_dt230.strftime('%H:%M')} Uhr")
+                        if _ven230_s: _parts230.append(f"📍 {_ven230_s}" + (f", {_city230}" if _city230 else ""))
+                        if _bc230: _parts230.append(f"📺 {_bc230}")
+                        _det230 = " • ".join(_parts230)
+                    except: _det230 = ""
                     break
     except: pass
     # V213: Spiel schon vorbei? -> Keine Schalter mehr! Nur "Spiel vorbei" + Entfernen!
@@ -6513,7 +6542,7 @@ async def next_live_pick_cmd(update, ctx, league, eid, num_mid=None):
             [InlineKeyboardButton("🗑️ Aus Liste entfernen", callback_data=f"next_live_remove:{league}:{eid}")],
             [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
         ])
-        _win213 = await _cb_edit(update, f"🔴 Spiel-Benachrichtigungen\n\n{_name}\n\n🏁 Spiel schon vorbei! Da gibt's nix mehr einzustellen! 😁", _rm_kb)
+        _win213 = await _cb_edit(update, f"🔴 Spiel-Benachrichtigungen\n\n{_name}" + (f"\n{_det230}" if _det230 else "") + "\n\n🏁 Spiel schon vorbei! Da gibt's nix mehr einzustellen! 😁", _rm_kb)
         # V213: Fenster -> Zahl mappen (wie V210), damit die getippte Zahl mitgeloescht wird!
         try:
             if num_mid and _win213 is not None and getattr(_win213, "message_id", None):
@@ -6538,7 +6567,7 @@ async def next_live_pick_cmd(update, ctx, league, eid, num_mid=None):
         [InlineKeyboardButton(f"{'✅' if cfg.get('reminder') else '❌'} ⏰ Reminder", callback_data=f"next_live_toggle:{league}:{eid}:reminder")],
         [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
     ])
-    _win210 = await _cb_edit(update, f"🔴 Spiel-Benachrichtigungen\n\n{_name}\n\nTippe an / aus. Nur was du anmachst, schicke ich dir!\nNach dem Spiel wird es automatisch wieder aus!", kb)
+    _win210 = await _cb_edit(update, f"🔴 Spiel-Benachrichtigungen\n\n{_name}" + (f"\n{_det230}" if _det230 else "") + "\n\nTippe an / aus. Nur was du anmachst, schicke ich dir!\nNach dem Spiel wird es automatisch wieder aus!", kb)
     # V210: Fenster -> Zahl mappen! Damit 'Fenster schliessen' die getippte Zahl mitloescht!
     try:
         if num_mid and _win210 is not None and getattr(_win210, "message_id", None):
