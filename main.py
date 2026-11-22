@@ -1,4 +1,4 @@
-# USA Sport Radar - V234 FINAL - Liste: Kommende Spiele mit Record wie aufm ESPN-Scoreboard! MIA (4-7) @ BUF (7-4) - kein Fake-Score, kein Erfinden!
+# USA Sport Radar - V236 FINAL - Detail: Jede Info eigene Zeile! Kickoff / Ort / Sender je eigene Zeile - 2 Zeilen mehr, aber endlich uebersichtlich!
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -6533,10 +6533,49 @@ async def next_live_list_cmd(update, ctx, league):
     rows = [[InlineKeyboardButton("⬅️ Zurück", callback_data="back")]]
     await _cb_edit(update, "\n".join(lines), InlineKeyboardMarkup(rows))
 
-async def next_live_pick_cmd(update, ctx, league, eid, num_mid=None):
+# V235: Wetter via Open-Meteo (gratis, ohne Key)! ESPN liefert kein Wetter - also ueber den Stadion-Ort! Gibt (wetter_zeile, stadion_tz) zurueck!
+_WETTER235 = {0:"Klar", 1:"Überwiegend klar", 2:"Wechselhaft", 3:"Bedeckt", 45:"Nebel", 48:"Nebel mit Reif", 51:"Leichter Nieselregen", 53:"Nieselregen", 55:"Starker Nieselregen", 56:"Gefrierender Nieselregen", 57:"Gefrierender Nieselregen", 61:"Leichter Regen", 63:"Regen", 65:"Starker Regen", 66:"Gefrierender Regen", 67:"Gefrierender Regen", 71:"Leichter Schnee", 73:"Schnee", 75:"Starker Schnee", 77:"Schneekörner", 80:"Leichte Regenschauer", 81:"Regenschauer", 82:"Starke Regenschauer", 85:"Schneeschauer", 86:"Schneeschauer", 95:"Gewitter", 96:"Gewitter mit Hagel", 99:"Gewitter mit starkem Hagel"}
+def _game_weather235(city, dt_kickoff, state):
+    try:
+        g = requests.get("https://geocoding-api.open-meteo.com/v1/search", params={"name": city, "count": 1, "language": "de", "format": "json"}, timeout=6).json()
+        res = (g.get("results") or [None])[0]
+        if not res: return "", None
+        lat, lon = res.get("latitude"), res.get("longitude")
+        tzname = res.get("timezone") or "America/New_York"
+        try:
+            from zoneinfo import ZoneInfo
+            tz = ZoneInfo(tzname)
+        except: tz = None
+        if lat is None or lon is None: return "", tz
+        temp = code = None
+        if state == "in":
+            f = requests.get("https://api.open-meteo.com/v1/forecast", params={"latitude": lat, "longitude": lon, "current": "temperature_2m,weather_code", "timezone": "auto"}, timeout=6).json()
+            cur = f.get("current") or {}
+            temp, code = cur.get("temperature_2m"), cur.get("weather_code")
+        else:
+            f = requests.get("https://api.open-meteo.com/v1/forecast", params={"latitude": lat, "longitude": lon, "hourly": "temperature_2m,weather_code", "timezone": "auto", "forecast_days": 3}, timeout=6).json()
+            off = f.get("utc_offset_seconds", 0) or 0
+            from datetime import timezone as _tzmod235
+            ko_local = dt_kickoff.astimezone(_tzmod235.utc) + timedelta(seconds=off)
+            want = ko_local.strftime("%Y-%m-%dT%H:00")
+            hours = ((f.get("hourly") or {}).get("time") or [])
+            temps = ((f.get("hourly") or {}).get("temperature_2m") or [])
+            codes = ((f.get("hourly") or {}).get("weather_code") or [])
+            if want in hours:
+                idx = hours.index(want); temp, code = temps[idx], codes[idx]
+        if temp is None or code is None: return "", tz
+        fahr = round(float(temp) * 9/5 + 32)
+        cond = _WETTER235.get(int(code), "Wechselhaft")
+        return f"🌦️ Wetter: {cond}, {fahr}°F ({round(float(temp))}°C)", tz
+    except:
+        return "", None
+
+async def next_live_pick_cmd(update, ctx, league, eid, num_mid=None, expanded235=False):
     # Spiel-Name finden
     _name = f"Spiel {eid}"
     _det230 = ""  # V230: Echte Details (Stadion + Sender + Anpfiff)!
+    _wet235 = ""  # V235: Wetter-Zeile!
+    _tz235 = None  # V235: Stadion-Zeitzone fuer die Ami-Kickoff-Zeit!
     _post213 = False  # V213: Spiel schon vorbei?
     try:
         from datetime import date as _date
@@ -6549,6 +6588,11 @@ async def next_live_pick_cmd(update, ctx, league, eid, num_mid=None):
                     _name = game_line(ev, league)
                     try: _post213 = (ev.get("status",{}).get("type",{}).get("state","") == "post")
                     except: pass
+                    # V235: Doppelte Kickoff-Zeit raus! game_line hat schon "• ⏰ 22.11. 19:00 Uhr" - und unten steht Kickoff nochmal!
+                    try:
+                        if (ev.get("status",{}) or {}).get("type",{}).get("state","") == "pre":
+                            _name = _name.split(" • ⏰ ")[0]
+                    except: pass
                     # V230: Echte Details! Sonst luegt "Details + Benachrichtigungen" - da kamen ja nur Schalter!
                     try:
                         _comp230 = ev.get("competitions", [{}])[0]
@@ -6559,13 +6603,31 @@ async def next_live_pick_cmd(update, ctx, league, eid, num_mid=None):
                         _, _dt230 = fmt_dt(ev.get("date", ""))
                         _parts230 = []
                         _st230 = (ev.get("status", {}) or {}).get("type", {}).get("state", "")
+                        # V235: Wetter holen (NFL/NCAAF only) - liefert auch die Stadion-Zeitzone fuer die Ami-Kickoff-Zeit!
+                        if league in ("NFL", "NCAAF") and _st230 in ("pre", "in") and _city230 and _dt230:
+                            try: _wet235, _tz235 = _game_weather235(_city230, _dt230, _st230)
+                            except: _wet235, _tz235 = "", None
                         if _st230 == "pre" and _dt230:
                             _today230 = datetime.now(BERLIN).date()
                             _day230 = "heute" if _dt230.date() == _today230 else "morgen" if _dt230.date() == (_today230 + timedelta(days=1)) else _dt230.strftime("%d.%m.")
-                            _parts230.append(f"⏰ Anpfiff {_day230} {_dt230.strftime('%H:%M')} Uhr")
+                            # V235: Kickoff mit Ami-Zeit zuerst! "🏈 Kickoff 13:00 ET (19:00 Uhr)" - Stadion-Zeit oder ET als Fallback!
+                            try:
+                                from zoneinfo import ZoneInfo as _ZI235
+                                try: _tz235b = _tz235 or _ZI235("America/New_York")
+                                except: _tz235b = None
+                                if _tz235b is None:
+                                    from datetime import timezone as _tzmod235
+                                    _tz235b = _tzmod235(timedelta(hours=-5))
+                                _ko235 = _dt230.astimezone(_tz235b)
+                                _abbr235 = _ko235.strftime("%Z") or "ET"
+                                _day235 = f"{_day230} " if _day230 != "heute" else ""
+                                _parts230.append(f"🏈 Kickoff {_day235}{_ko235.strftime('%H:%M')} {_abbr235} ({_dt230.strftime('%H:%M')} Uhr)")
+                            except:
+                                _parts230.append(f"🏈 Kickoff {_day230} {_dt230.strftime('%H:%M')} Uhr")
                         if _ven230_s: _parts230.append(f"📍 {_ven230_s}" + (f", {_city230}" if _city230 else ""))
                         if _bc230: _parts230.append(f"📺 {_bc230}")
-                        _det230 = " • ".join(_parts230)
+                        # V236: Jede Info eigene Zeile! Kickoff / Ort / Sender je eigene Zeile - 2 Zeilen mehr, aber endlich uebersichtlich!
+                        _det230 = "\n".join(_parts230)
                     except: _det230 = ""
                     break
     except: pass
@@ -6575,7 +6637,7 @@ async def next_live_pick_cmd(update, ctx, league, eid, num_mid=None):
             [InlineKeyboardButton("🗑️ Aus Liste entfernen", callback_data=f"next_live_remove:{league}:{eid}")],
             [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
         ])
-        _win213 = await _cb_edit(update, f"🔴 Spiel-Benachrichtigungen\n\n{_name}" + (f"\n{_det230}" if _det230 else "") + "\n\n🏁 Spiel schon vorbei! Da gibt's nix mehr einzustellen! 😁", _rm_kb)
+        _win213 = await _cb_edit(update, f"📋 Spiel-Informationen\n\n{_name}" + (f"\n{_det230}" if _det230 else "") + "\n\n🏁 Spiel schon vorbei! Da gibt's nix mehr einzustellen! 😁", _rm_kb)
         # V213: Fenster -> Zahl mappen (wie V210), damit die getippte Zahl mitgeloescht wird!
         try:
             if num_mid and _win213 is not None and getattr(_win213, "message_id", None):
@@ -6591,16 +6653,26 @@ async def next_live_pick_cmd(update, ctx, league, eid, num_mid=None):
         save_settings(s)
     except: pass
     cfg = get_oneoff_live(update.effective_user.id, eid)
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"{'✅' if cfg['score'] else '❌'} Jeder Score", callback_data=f"next_live_toggle:{league}:{eid}:score")],
-        [InlineKeyboardButton(f"{'✅' if cfg['period'] else '❌'} {period_toggle_label(league)}", callback_data=f"next_live_toggle:{league}:{eid}:period")],
-        [InlineKeyboardButton(f"{'✅' if cfg['final'] else '❌'} Endstand", callback_data=f"next_live_toggle:{league}:{eid}:final")],
-        [InlineKeyboardButton(f"{'✅' if cfg.get('crunch') else '❌'} Crunch-Time (8 Min, knapp!)", callback_data=f"next_live_toggle:{league}:{eid}:crunch")],
-        [InlineKeyboardButton(f"{'✅' if cfg.get('breaking') else '❌'} 🚨 Spiel-Breaking", callback_data=f"next_live_toggle:{league}:{eid}:breaking")],
-        [InlineKeyboardButton(f"{'✅' if cfg.get('reminder') else '❌'} ⏰ Reminder", callback_data=f"next_live_toggle:{league}:{eid}:reminder")],
-        [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
-    ])
-    _win210 = await _cb_edit(update, f"🔴 Spiel-Benachrichtigungen\n\n{_name}" + (f"\n{_det230}" if _det230 else "") + "\n\nTippe an / aus. Nur was du anmachst, schicke ich dir!\nNach dem Spiel wird es automatisch wieder aus!", kb)
+    # V235: Buttons zum AUFKLAPPEN! Erst nur 1 Button - drauf tippen -> alle Schalter!
+    if expanded235:
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton(f"{'✅' if cfg['score'] else '❌'} Jeder Score", callback_data=f"next_live_toggle:{league}:{eid}:score")],
+            [InlineKeyboardButton(f"{'✅' if cfg['period'] else '❌'} {period_toggle_label(league)}", callback_data=f"next_live_toggle:{league}:{eid}:period")],
+            [InlineKeyboardButton(f"{'✅' if cfg['final'] else '❌'} Endstand", callback_data=f"next_live_toggle:{league}:{eid}:final")],
+            [InlineKeyboardButton(f"{'✅' if cfg.get('crunch') else '❌'} Crunch-Time (8 Min, knapp!)", callback_data=f"next_live_toggle:{league}:{eid}:crunch")],
+            [InlineKeyboardButton(f"{'✅' if cfg.get('breaking') else '❌'} 🚨 Spiel-Breaking", callback_data=f"next_live_toggle:{league}:{eid}:breaking")],
+            [InlineKeyboardButton(f"{'✅' if cfg.get('reminder') else '❌'} ⏰ Reminder", callback_data=f"next_live_toggle:{league}:{eid}:reminder")],
+            [InlineKeyboardButton("🔼 Einklappen", callback_data=f"next_live_collapse:{league}:{eid}")],
+            [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+        ])
+        _hint235 = "Tippe an / aus. Nur was du anmachst, schicke ich dir!\nNach dem Spiel wird es automatisch wieder aus!"
+    else:
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔔 Benachrichtigungen einstellen", callback_data=f"next_live_expand:{league}:{eid}")],
+            [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+        ])
+        _hint235 = "🔔 Tippe auf 'Benachrichtigungen einstellen', um zu wählen, was ich dir schicke!\nNach dem Spiel wird es automatisch wieder aus!"
+    _win210 = await _cb_edit(update, f"📋 Spiel-Informationen\n\n{_name}" + (f"\n{_det230}" if _det230 else "") + (f"\n{_wet235}" if _wet235 else "") + f"\n\n{_hint235}", kb)
     # V210: Fenster -> Zahl mappen! Damit 'Fenster schliessen' die getippte Zahl mitloescht!
     try:
         if num_mid and _win210 is not None and getattr(_win210, "message_id", None):
@@ -7424,7 +7496,13 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("next_live_toggle:"):
         _pp = data.split(":"); _lg3 = _pp[1]; _eid3 = _pp[2]; _kind3 = _pp[3]
         set_oneoff_live_toggle(update.effective_user.id, _eid3, _kind3)
-        await next_live_pick_cmd(update, ctx, _lg3, _eid3)
+        await next_live_pick_cmd(update, ctx, _lg3, _eid3, expanded235=True)  # V235: Nach Toggle aufgeklappt bleiben!
+    elif data.startswith("next_live_expand:"):
+        # V235: Buttons aufklappen!
+        _pp = data.split(":"); await next_live_pick_cmd(update, ctx, _pp[1], _pp[2], expanded235=True)
+    elif data.startswith("next_live_collapse:"):
+        # V235: Buttons wieder einklappen!
+        _pp = data.split(":"); await next_live_pick_cmd(update, ctx, _pp[1], _pp[2], expanded235=False)
     elif data.startswith("next_live_remove:"):
         # V213: Fertiges Spiel aus "Meine Live-Spiele" werfen!
         _pp = data.split(":"); _eid3 = _pp[2]
