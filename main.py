@@ -1,4 +1,4 @@
-# USA Sport Radar - V236 FINAL - Detail: Jede Info eigene Zeile! Kickoff / Ort / Sender je eigene Zeile - 2 Zeilen mehr, aber endlich uebersichtlich!
+# USA Sport Radar - V237 FINAL - FIX: Wetter mit Fallback-Kette (exakte Stunde -> naechste Stunde -> aktuell)! Zahlen-Cleanup auch bei Zurueck (vorher blieb '6' bei Zurueck fuer immer stehen)!
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -6536,10 +6536,23 @@ async def next_live_list_cmd(update, ctx, league):
 # V235: Wetter via Open-Meteo (gratis, ohne Key)! ESPN liefert kein Wetter - also ueber den Stadion-Ort! Gibt (wetter_zeile, stadion_tz) zurueck!
 _WETTER235 = {0:"Klar", 1:"Überwiegend klar", 2:"Wechselhaft", 3:"Bedeckt", 45:"Nebel", 48:"Nebel mit Reif", 51:"Leichter Nieselregen", 53:"Nieselregen", 55:"Starker Nieselregen", 56:"Gefrierender Nieselregen", 57:"Gefrierender Nieselregen", 61:"Leichter Regen", 63:"Regen", 65:"Starker Regen", 66:"Gefrierender Regen", 67:"Gefrierender Regen", 71:"Leichter Schnee", 73:"Schnee", 75:"Starker Schnee", 77:"Schneekörner", 80:"Leichte Regenschauer", 81:"Regenschauer", 82:"Starke Regenschauer", 85:"Schneeschauer", 86:"Schneeschauer", 95:"Gewitter", 96:"Gewitter mit Hagel", 99:"Gewitter mit starkem Hagel"}
 def _game_weather235(city, dt_kickoff, state):
+    # V237: Robust! Exakte Stunde -> naechste Stunde -> aktuelles Wetter. Vorher: exakte Stunde nicht gefunden = gar keine Wetter-Zeile!
     try:
-        g = requests.get("https://geocoding-api.open-meteo.com/v1/search", params={"name": city, "count": 1, "language": "de", "format": "json"}, timeout=6).json()
-        res = (g.get("results") or [None])[0]
-        if not res: return "", None
+        # V237: Kickoff-Zeit ist Berlin-Zeit! Falls ohne Zeitzone -> Berlin annehmen!
+        try:
+            if getattr(dt_kickoff, "tzinfo", None) is None:
+                dt_kickoff = dt_kickoff.replace(tzinfo=BERLIN)
+        except: pass
+        res = None
+        for _q237 in (city, f"{city}, USA"):  # V237: Geo-Retry mit Land, falls Stadt allein nix findet!
+            try:
+                g = requests.get("https://geocoding-api.open-meteo.com/v1/search", params={"name": _q237, "count": 1, "language": "de", "format": "json"}, timeout=6).json()
+                res = (g.get("results") or [None])[0]
+                if res: break
+            except: continue
+        if not res:
+            print(f"[WETTER] Geo nix gefunden: {city}")
+            return "", None
         lat, lon = res.get("latitude"), res.get("longitude")
         tzname = res.get("timezone") or "America/New_York"
         try:
@@ -6553,7 +6566,7 @@ def _game_weather235(city, dt_kickoff, state):
             cur = f.get("current") or {}
             temp, code = cur.get("temperature_2m"), cur.get("weather_code")
         else:
-            f = requests.get("https://api.open-meteo.com/v1/forecast", params={"latitude": lat, "longitude": lon, "hourly": "temperature_2m,weather_code", "timezone": "auto", "forecast_days": 3}, timeout=6).json()
+            f = requests.get("https://api.open-meteo.com/v1/forecast", params={"latitude": lat, "longitude": lon, "hourly": "temperature_2m,weather_code", "current": "temperature_2m,weather_code", "timezone": "auto", "forecast_days": 3}, timeout=6).json()
             off = f.get("utc_offset_seconds", 0) or 0
             from datetime import timezone as _tzmod235
             ko_local = dt_kickoff.astimezone(_tzmod235.utc) + timedelta(seconds=off)
@@ -6563,11 +6576,25 @@ def _game_weather235(city, dt_kickoff, state):
             codes = ((f.get("hourly") or {}).get("weather_code") or [])
             if want in hours:
                 idx = hours.index(want); temp, code = temps[idx], codes[idx]
-        if temp is None or code is None: return "", tz
+            elif hours and len(temps) == len(hours) and len(codes) == len(hours):
+                # V237: Naechste Stunde zum Kickoff - besser als gar kein Wetter!
+                try:
+                    from datetime import datetime as _dt237
+                    best = min(range(len(hours)), key=lambda i: abs((_dt237.strptime(hours[i], "%Y-%m-%dT%H:%M") - ko_local.replace(tzinfo=None)).total_seconds()))
+                    temp, code = temps[best], codes[best]
+                except: pass
+            if temp is None:
+                # V237: Letzter Fallback - aktuelles Wetter!
+                cur = f.get("current") or {}
+                temp, code = cur.get("temperature_2m"), cur.get("weather_code")
+        if temp is None or code is None:
+            print(f"[WETTER] Kein Wetter fuer: {city} (state={state})")
+            return "", tz
         fahr = round(float(temp) * 9/5 + 32)
         cond = _WETTER235.get(int(code), "Wechselhaft")
         return f"🌦️ Wetter: {cond}, {fahr}°F ({round(float(temp))}°C)", tz
-    except:
+    except Exception as _e237:
+        print(f"[WETTER] Fehler: {city} -> {_e237}")
         return "", None
 
 async def next_live_pick_cmd(update, ctx, league, eid, num_mid=None, expanded235=False):
@@ -7511,6 +7538,15 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         except: pass
         try: await q.message.edit_text("✅ Raus aus der Liste! 🗑️\n\nTippe /start für ein neues Fenster!")
         except: pass
+        # V237: Zahl zum Fenster mitloeschen - wie bei 'close'/'back'!
+        try:
+            _uid237r = update.effective_user.id if update.effective_user else 0
+            _mid237r = q.message.message_id if q.message else None
+            _num237r = _CLOSE_NUM_MAP.pop((_uid237r, int(_mid237r)), None) if _mid237r else None
+            if _num237r:
+                try: await ctx.bot.delete_message(chat_id=_uid237r, message_id=int(_num237r))
+                except: pass
+        except: pass
     elif data.startswith("live_clean_yes:"):
         _eid = data.split(":")[1]; _uid = update.effective_user.id if update.effective_user else 0
         _ids = list(_LIVE_MSG_IDS.get((_uid, str(_eid)), []))
@@ -7530,10 +7566,22 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             if _is_main_msg(q.message): return
         except: pass
+        # V237: Zahl zum Fenster mitloeschen - wie bei 'close'! Vorher blieb die getippte Zahl (z.B. '6') bei Zurueck fuer immer stehen!
+        try:
+            _uid237 = update.effective_user.id if update.effective_user else 0
+            _chain_remove(_uid237, q.message.message_id if q.message else None)
+        except: pass
         try: await q.message.delete()
         except:
             try: await q.message.edit_text("⬅️ Zurück zum Hauptmenü!\n\nDein Hauptmenü nach /start ist noch da! 👆", reply_markup=None)
             except: pass
+        try:
+            _mid237 = q.message.message_id if q.message else None
+            _num237 = _CLOSE_NUM_MAP.pop((_uid237, int(_mid237)), None) if _mid237 else None
+            if _num237:
+                try: await ctx.bot.delete_message(chat_id=_uid237, message_id=int(_num237))
+                except: pass
+        except: pass
     elif data=="help":
         _sec = ""
         try: _sec = ctx.user_data.get("last_section", "main") or "main"
