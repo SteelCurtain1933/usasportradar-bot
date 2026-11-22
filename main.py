@@ -1,4 +1,4 @@
-# USA Sport Radar - V231 FINAL - Liste: Kuerzel sauber neu aufgebaut (V230-Bug: 'San Diego St' ist nur Praefix -> 'SDSUate'! Kein Substring-Replace mehr!)
+# USA Sport Radar - V232 FINAL - Liste: Sender RAUS (steht in Details)! Sonst bricht 📺 immer noch auf Zeile 2 um - jetzt wirklich 1 Zeile pro Spiel!
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -2837,6 +2837,10 @@ async def heute_morgen(update: Update, ctx: ContextTypes.DEFAULT_TYPE, morgen=Fa
                             else:
                                 _match231 = f"{_a231} @ {_h231}"
                             _line_hm = _star231 + _match231 + (f" • {_segs231[1]}" if len(_segs231) > 1 else "")
+                    except: pass
+                    # V232: Sender RAUS aus der Liste! Steht jetzt in den Details - und 📺 + Sender waren die 2 Zeichen, die die Zeile immer noch umbrechen liessen!
+                    try:
+                        if " • 📺 " in _line_hm: _line_hm = _line_hm.split(" • 📺 ")[0]
                     except: pass
                     if state=="in":
                         # V229: Kein "LIVE" in jeder Zeile! Oben steht schon "🔴 Live:" als Ueberschrift - sonst doppelt gemoppelt!
