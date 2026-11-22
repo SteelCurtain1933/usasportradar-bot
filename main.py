@@ -1,4 +1,4 @@
-# USA Sport Radar - V237 FINAL - FIX: Wetter mit Fallback-Kette (exakte Stunde -> naechste Stunde -> aktuell)! Zahlen-Cleanup auch bei Zurueck (vorher blieb '6' bei Zurueck fuer immer stehen)!
+# USA Sport Radar - V238 FINAL - FIX: Wetter mit User-Agent (Open-Meteo blockt Pythons Default-UA)! + Debug-Zeile, falls Wetter trotzdem nicht klappt (nur bis der Bug gefunden ist)!
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -6535,8 +6535,13 @@ async def next_live_list_cmd(update, ctx, league):
 
 # V235: Wetter via Open-Meteo (gratis, ohne Key)! ESPN liefert kein Wetter - also ueber den Stadion-Ort! Gibt (wetter_zeile, stadion_tz) zurueck!
 _WETTER235 = {0:"Klar", 1:"Überwiegend klar", 2:"Wechselhaft", 3:"Bedeckt", 45:"Nebel", 48:"Nebel mit Reif", 51:"Leichter Nieselregen", 53:"Nieselregen", 55:"Starker Nieselregen", 56:"Gefrierender Nieselregen", 57:"Gefrierender Nieselregen", 61:"Leichter Regen", 63:"Regen", 65:"Starker Regen", 66:"Gefrierender Regen", 67:"Gefrierender Regen", 71:"Leichter Schnee", 73:"Schnee", 75:"Starker Schnee", 77:"Schneekörner", 80:"Leichte Regenschauer", 81:"Regenschauer", 82:"Starke Regenschauer", 85:"Schneeschauer", 86:"Schneeschauer", 95:"Gewitter", 96:"Gewitter mit Hagel", 99:"Gewitter mit starkem Hagel"}
+_WETTER_DEBUG238 = ""  # V238: Debug-Grund, warum Wetter nicht klappt (nur bis der Bug gefunden ist, dann fliegt die Zeile wieder raus)!
 def _game_weather235(city, dt_kickoff, state):
     # V237: Robust! Exakte Stunde -> naechste Stunde -> aktuelles Wetter. Vorher: exakte Stunde nicht gefunden = gar keine Wetter-Zeile!
+    # V238: User-Agent dazu! Alle anderen Abrufe im Bot schicken Mozilla/5.0 - nur Open-Meteo lief mit Pythons Default-UA (python-requests) - und der wird oft geblockt!
+    global _WETTER_DEBUG238
+    _WETTER_DEBUG238 = ""
+    _HDR238 = {"User-Agent": "Mozilla/5.0"}
     try:
         # V237: Kickoff-Zeit ist Berlin-Zeit! Falls ohne Zeitzone -> Berlin annehmen!
         try:
@@ -6546,11 +6551,12 @@ def _game_weather235(city, dt_kickoff, state):
         res = None
         for _q237 in (city, f"{city}, USA"):  # V237: Geo-Retry mit Land, falls Stadt allein nix findet!
             try:
-                g = requests.get("https://geocoding-api.open-meteo.com/v1/search", params={"name": _q237, "count": 1, "language": "de", "format": "json"}, timeout=6).json()
+                g = requests.get("https://geocoding-api.open-meteo.com/v1/search", params={"name": _q237, "count": 1, "language": "de", "format": "json"}, timeout=8, headers=_HDR238).json()
                 res = (g.get("results") or [None])[0]
                 if res: break
             except: continue
         if not res:
+            _WETTER_DEBUG238 = "Geo leer"
             print(f"[WETTER] Geo nix gefunden: {city}")
             return "", None
         lat, lon = res.get("latitude"), res.get("longitude")
@@ -6562,11 +6568,11 @@ def _game_weather235(city, dt_kickoff, state):
         if lat is None or lon is None: return "", tz
         temp = code = None
         if state == "in":
-            f = requests.get("https://api.open-meteo.com/v1/forecast", params={"latitude": lat, "longitude": lon, "current": "temperature_2m,weather_code", "timezone": "auto"}, timeout=6).json()
+            f = requests.get("https://api.open-meteo.com/v1/forecast", params={"latitude": lat, "longitude": lon, "current": "temperature_2m,weather_code", "timezone": "auto"}, timeout=8, headers=_HDR238).json()
             cur = f.get("current") or {}
             temp, code = cur.get("temperature_2m"), cur.get("weather_code")
         else:
-            f = requests.get("https://api.open-meteo.com/v1/forecast", params={"latitude": lat, "longitude": lon, "hourly": "temperature_2m,weather_code", "current": "temperature_2m,weather_code", "timezone": "auto", "forecast_days": 3}, timeout=6).json()
+            f = requests.get("https://api.open-meteo.com/v1/forecast", params={"latitude": lat, "longitude": lon, "hourly": "temperature_2m,weather_code", "current": "temperature_2m,weather_code", "timezone": "auto", "forecast_days": 3}, timeout=8, headers=_HDR238).json()
             off = f.get("utc_offset_seconds", 0) or 0
             from datetime import timezone as _tzmod235
             ko_local = dt_kickoff.astimezone(_tzmod235.utc) + timedelta(seconds=off)
@@ -6588,12 +6594,14 @@ def _game_weather235(city, dt_kickoff, state):
                 cur = f.get("current") or {}
                 temp, code = cur.get("temperature_2m"), cur.get("weather_code")
         if temp is None or code is None:
+            _WETTER_DEBUG238 = "Forecast leer"
             print(f"[WETTER] Kein Wetter fuer: {city} (state={state})")
             return "", tz
         fahr = round(float(temp) * 9/5 + 32)
         cond = _WETTER235.get(int(code), "Wechselhaft")
         return f"🌦️ Wetter: {cond}, {fahr}°F ({round(float(temp))}°C)", tz
     except Exception as _e237:
+        _WETTER_DEBUG238 = f"Fehler: {str(_e237)[:60]}"
         print(f"[WETTER] Fehler: {city} -> {_e237}")
         return "", None
 
@@ -6602,6 +6610,7 @@ async def next_live_pick_cmd(update, ctx, league, eid, num_mid=None, expanded235
     _name = f"Spiel {eid}"
     _det230 = ""  # V230: Echte Details (Stadion + Sender + Anpfiff)!
     _wet235 = ""  # V235: Wetter-Zeile!
+    _wetdbg238 = ""  # V238: Debug-Grund, falls Wetter nicht klappt!
     _tz235 = None  # V235: Stadion-Zeitzone fuer die Ami-Kickoff-Zeit!
     _post213 = False  # V213: Spiel schon vorbei?
     try:
@@ -6634,6 +6643,7 @@ async def next_live_pick_cmd(update, ctx, league, eid, num_mid=None, expanded235
                         if league in ("NFL", "NCAAF") and _st230 in ("pre", "in") and _city230 and _dt230:
                             try: _wet235, _tz235 = _game_weather235(_city230, _dt230, _st230)
                             except: _wet235, _tz235 = "", None
+                            if not _wet235: _wetdbg238 = _WETTER_DEBUG238 or "Unbekannt"  # V238: Debug-Grund merken!
                         if _st230 == "pre" and _dt230:
                             _today230 = datetime.now(BERLIN).date()
                             _day230 = "heute" if _dt230.date() == _today230 else "morgen" if _dt230.date() == (_today230 + timedelta(days=1)) else _dt230.strftime("%d.%m.")
@@ -6699,7 +6709,7 @@ async def next_live_pick_cmd(update, ctx, league, eid, num_mid=None, expanded235
             [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
         ])
         _hint235 = "🔔 Tippe auf 'Benachrichtigungen einstellen', um zu wählen, was ich dir schicke!\nNach dem Spiel wird es automatisch wieder aus!"
-    _win210 = await _cb_edit(update, f"📋 Spiel-Informationen\n\n{_name}" + (f"\n{_det230}" if _det230 else "") + (f"\n{_wet235}" if _wet235 else "") + f"\n\n{_hint235}", kb)
+    _win210 = await _cb_edit(update, f"📋 Spiel-Informationen\n\n{_name}" + (f"\n{_det230}" if _det230 else "") + (f"\n{_wet235}" if _wet235 else "") + (f"\n🌦️ Wetter: konnte nicht laden (Debug: {_wetdbg238})" if _wetdbg238 else "") + f"\n\n{_hint235}", kb)
     # V210: Fenster -> Zahl mappen! Damit 'Fenster schliessen' die getippte Zahl mitloescht!
     try:
         if num_mid and _win210 is not None and getattr(_win210, "message_id", None):
