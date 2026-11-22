@@ -1,4 +1,4 @@
-# USA Sport Radar - V245 FINAL - FIX: Getippte Zahl bei Live-Stats blieb stehen! Zahl wird jetzt zum Detail-Fenster gemappt - beim Schliessen fliegt sie mit weg (wie bei Final Stats)! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# USA Sport Radar - V246 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -1280,7 +1280,7 @@ async def top10_league_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, leagu
         # V219: Gleichstand = fruehere Anstosszeit zuerst (deterministisch, kein Zufall)!
         all_games.sort(key=lambda x: (-x[0], x[2].get("date","")))
         top = all_games[:10]
-        ctx.user_data["top10_list"] = [(s, lg, ev, bd) for s, lg, ev, bd in top]
+        ctx.user_data["top10_list"] = [(s, lg, ev, bd) for s, lg, ev, bd in top]; ctx.user_data["await_live_stats_pick"] = False  # V246: Live-Flag aus! Diese Liste gewinnt jetzt!
         title = "Alle Ligen" if league=="ALL" else league
         lines=[f"🏆 Top 10 - {title}\n💡 Zahl tippen für Rating + Details!\n📅 Diese Woche: {today.strftime('%d.%m.')} – {_win_end.strftime('%d.%m.')}\n"]
         if not top:
@@ -2300,7 +2300,7 @@ async def tables_div_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, league:
     # V214: Zahl tippen = Team-Fenster! Liste merken (sortiert, wie angezeigt)!
     lines.append("")
     lines.append("💡 Zahl tippen = Team-Fenster! (z.B. 1 für Platz 1)")
-    try: ctx.user_data["tables_team_list"] = {"league": league, "div": div, "rows": list(rows), "back": f"tables_div:{league}:{div}"}
+    try: ctx.user_data["tables_team_list"] = {"league": league, "div": div, "rows": list(rows), "back": f"tables_div:{league}:{div}"}; ctx.user_data["await_live_stats_pick"] = False  # V246: Live-Flag aus! Diese Liste gewinnt jetzt!
     except: pass
     _kb_rows = [[InlineKeyboardButton("📊 Andere Division", callback_data=f"tables_league:{league}")], [InlineKeyboardButton("⭐ Meine Teams", callback_data="tables_mine")], [InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")]]
     if league=="NHL":
@@ -2344,7 +2344,7 @@ async def tables_conf_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, league
     # V214: Zahl tippen = Team-Fenster!
     lines.append("")
     lines.append("💡 Zahl tippen = Team-Fenster! (z.B. 1 für Platz 1)")
-    try: ctx.user_data["tables_team_list"] = {"league": league, "div": conf, "rows": list(rows), "back": f"tables_conf:{league}:{conf}"}
+    try: ctx.user_data["tables_team_list"] = {"league": league, "div": conf, "rows": list(rows), "back": f"tables_conf:{league}:{conf}"}; ctx.user_data["await_live_stats_pick"] = False  # V246: Live-Flag aus! Diese Liste gewinnt jetzt!
     except: pass
     _kb_rows2 = [[InlineKeyboardButton("📊 Andere Division", callback_data=f"tables_league:{league}")], [InlineKeyboardButton("⭐ Meine Teams", callback_data="tables_mine")], [InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")]]
     if league=="NHL":
@@ -2380,7 +2380,7 @@ async def tables_top25_cmd(update, ctx, league: str, divs):
     # V214: Zahl tippen = Team-Fenster!
     lines.append("")
     lines.append("💡 Zahl tippen = Team-Fenster! (z.B. 1 für Platz 1)")
-    try: ctx.user_data["tables_team_list"] = {"league": league, "div": "Top 25", "rows": list(top), "back": "tables_league:NCAAF"}
+    try: ctx.user_data["tables_team_list"] = {"league": league, "div": "Top 25", "rows": list(top), "back": "tables_league:NCAAF"}; ctx.user_data["await_live_stats_pick"] = False  # V246: Live-Flag aus! Diese Liste gewinnt jetzt!
     except: pass
     kb = InlineKeyboardMarkup([[InlineKeyboardButton("⭐ Meine Teams", callback_data="tables_mine")],[InlineKeyboardButton("⬅️ Zurück", callback_data="back")],[InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")],])
     _m201 = await target.reply_text("\n".join(lines), reply_markup=kb)
@@ -2918,7 +2918,7 @@ async def heute_morgen(update: Update, ctx: ContextTypes.DEFAULT_TYPE, morgen=Fa
     if live_lines or _up_hm:
         lines.append("\n✍️ Zahl schreiben für Details + Benachrichtigungen! (z.B. 1 für Spiel 1)")
         try:
-            ctx.user_data["next_games_list"] = _ng227  # V227: Zahlen-Liste merken!
+            ctx.user_data["next_games_list"] = _ng227; ctx.user_data["await_live_stats_pick"] = False  # V227: Zahlen-Liste merken! V246: Live-Flag aus!
             ctx.user_data["my_live_list"] = None  # V227: Andere Zahlen-Listen leeren - sonst frisst Meine-Live-Spiele die Zahl!
             ctx.user_data["next_live_list"] = None
             ctx.user_data["results_list"] = None
@@ -2953,7 +2953,7 @@ async def heute_morgen(update: Update, ctx: ContextTypes.DEFAULT_TYPE, morgen=Fa
         # V227: Nur die wirklich angezeigten Spiele in der Zahlen-Liste behalten!
         try:
             _shown227 = sum(1 for _ln in _cut if _ln and _ln.split(". ", 1)[0].isdigit())
-            ctx.user_data["next_games_list"] = _ng227[:_shown227]
+            ctx.user_data["next_games_list"] = _ng227[:_shown227]; ctx.user_data["await_live_stats_pick"] = False  # V246: Live-Flag aus! Diese Liste gewinnt jetzt!
             if _shown227 < len(_ng227):
                 _cut.append("✍️ Zahl schreiben für Details + Benachrichtigungen!")
         except: pass
@@ -3447,8 +3447,6 @@ async def live_stats_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def live_stats_one_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, idx: int, num_mid=None):
     target=update.message or update.callback_query.message
     _live=ctx.user_data.get("live_events_v147") or []
-    try: ctx.user_data["await_live_stats_pick"]=False
-    except Exception: pass
     if not _live or not (0 <= idx < len(_live)):
         await target.reply_text("Spiel nicht mehr gefunden.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")]])); return
     lg,eid,ev=_live[idx]
@@ -3635,7 +3633,7 @@ async def live_mine_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         if fav_map and not any((lgx is None or lgx==_lg2) and fnx in _tt2 for lgx, fnx in fav_map): continue
                         if _ev2.get("status",{}).get("type",{}).get("state","")=="post":
                             _lf.append((_lg2, str(_ev2.get("id",""))))
-                ctx.user_data["live_finals_list"] = _lf[:5]
+                ctx.user_data["live_finals_list"] = _lf[:5]; ctx.user_data["await_live_stats_pick"] = False  # V246: Live-Flag aus! Diese Liste gewinnt jetzt!
             except: ctx.user_data["live_finals_list"] = None
             lines.append("\n✅ Letzte Endergebnisse deiner Favoriten:")
             # Nummerierte Zeilen: nur die reinen Spiel-Zeilen nummerieren (keine Shootout/Scorer-Zeilen)
@@ -4918,7 +4916,7 @@ async def my_live_games_cmd(update, ctx):
                 except: pass
             save_settings(_s209)
         except: pass
-    try: ctx.user_data["my_live_list"] = _shown209
+    try: ctx.user_data["my_live_list"] = _shown209; ctx.user_data["await_live_stats_pick"] = False  # V246: Live-Flag aus! Diese Liste gewinnt jetzt!
     except: pass
     if not _shown209:
         await _cb_edit(update, "🔴 Meine Live-Spiele\n\nKeine einzelnen Spiele mehr - die fertigen sind automatisch rausgeflogen! 🧹\nGeh zu Next Games → Heute/Morgen → Zahl vom Spiel schreiben, dann tauchen sie hier auf!", InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Zurück zu Teams", callback_data="notif_teams")]])); return
@@ -5595,7 +5593,7 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             _live2=ctx.user_data.get("live_events_v147") or []
             _n=int(_txt0)
             if 1 <= _n <= len(_live2):
-                ctx.user_data["await_live_stats_pick"]=False
+                # V246: Flag BLEIBT an! Sonst ging nach dem Schliessen eines Spiels die naechste Zahl nicht mehr!
                 await live_stats_one_cmd(update, ctx, _n-1, num_mid=update.message.message_id); return
     except Exception:
         pass
@@ -8197,7 +8195,7 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("live_stats_one:"): await live_stats_one_cmd(update, ctx, int(data.split(":")[1]))
     elif data=="remind": await remind_cmd(update, ctx)
     elif data=="fav_add":
-        ctx.user_data["awaiting_fav"]=True
+        ctx.user_data["awaiting_fav"]=True; ctx.user_data["await_live_stats_pick"] = False  # V246: Live-Flag aus! Favoriten-Anlage gewinnt!
         await q.message.reply_text("Bitte Teamnamen eingeben:")
     elif data=="fav_list":
         favs=favs_for(update.effective_user.id)
