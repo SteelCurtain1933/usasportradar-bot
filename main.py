@@ -1,4 +1,4 @@
-# USA Sport Radar - V228 FINAL - Liste: Aktualisieren-Knopf + Stand-Zeit! XP rollt auch OHNE Scorer rein (vorher blieb Nachricht ewig beim TD-Stand)!
+# USA Sport Radar - V229 FINAL - Heute/Morgen: Kein 'LIVE' mehr in jeder Zeile! Oben steht schon 'Live:' als Ueberschrift - doppelt gemoppelt raus!
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -2817,6 +2817,8 @@ async def heute_morgen(update: Update, ctx: ContextTypes.DEFAULT_TYPE, morgen=Fa
                         if _is_fav_hm: _line_hm = "⭐ " + _line_hm
                     except: pass
                     if state=="in":
+                        # V229: Kein "LIVE" in jeder Zeile! Oben steht schon "🔴 Live:" als Ueberschrift - sonst doppelt gemoppelt!
+                        _line_hm = _line_hm.replace(" • 🔴 LIVE", "").replace("🔴 LIVE • ", "").replace("🔴 LIVE", "")
                         live_lines.append((_eid_hm, league, _line_hm))  # V227: eid + Liga mitnehmen fuer Zahlen-Pick!
                     else:
                         # V209: Anstosszeit raus aus der Zeile - sie steht 1x als Gruppen-Ueberschrift!
