@@ -1,4 +1,4 @@
-# USA Sport Radar - V244 FINAL - NEU: Live-Liste als Scoreboard-Ticker (Variante B)! Nur Kuerzel + Stand + Spielzeit! Kein LIVE-Label, kein Sender in der Liste! Sender + aktuelle Stats in der Detail-Ansicht! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# USA Sport Radar - V245 FINAL - FIX: Getippte Zahl bei Live-Stats blieb stehen! Zahl wird jetzt zum Detail-Fenster gemappt - beim Schliessen fliegt sie mit weg (wie bei Final Stats)! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -3444,7 +3444,7 @@ async def live_stats_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         _m201 = await target.reply_text(_txt_pick, reply_markup=_kb_pick)
         try: _chain_add(update.effective_user.id if update.effective_user else 0, _m201.message_id)
         except: pass
-async def live_stats_one_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, idx: int):
+async def live_stats_one_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, idx: int, num_mid=None):
     target=update.message or update.callback_query.message
     _live=ctx.user_data.get("live_events_v147") or []
     try: ctx.user_data["await_live_stats_pick"]=False
@@ -3466,7 +3466,13 @@ async def live_stats_one_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, idx
             try: await update.callback_query.answer()
             except Exception: pass
         else:
-            await target.reply_text(_msg, reply_markup=_kb)
+            _m245 = await target.reply_text(_msg, reply_markup=_kb)
+            try: _chain_add(update.effective_user.id if update.effective_user else 0, _m245.message_id)
+            except: pass
+            # V245: Getippte Zahl zum Fenster mappen (auch im Keine-Stats-Fall)!
+            try:
+                if num_mid: _CLOSE_NUM_MAP[(int(update.effective_user.id if update.effective_user else 0), int(_m245.message_id))] = int(num_mid)
+            except: pass
         return
     # V148: Frisches Event für Situation (Down & Distance, Feldposition) - gespeichertes ev ist alt!
     try:
@@ -3527,6 +3533,10 @@ async def live_stats_one_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, idx
     else:
         _m201 = await target.reply_text(_txt, reply_markup=_kb)
         try: _chain_add(update.effective_user.id if update.effective_user else 0, _m201.message_id)
+        except: pass
+        # V245: Getippte Zahl zum Fenster mappen! Beim Schliessen fliegt die Zahl gleich mit weg (wie bei Final Stats)!
+        try:
+            if num_mid: _CLOSE_NUM_MAP[(int(update.effective_user.id if update.effective_user else 0), int(_m201.message_id))] = int(num_mid)
         except: pass
 async def live_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # V206: Live-Hub! Vorher: Live zeigte NUR Favoriten -> "kein Favorit live" obwohl andere Spiele liefen! Jetzt: 2 Faecher!
@@ -5586,7 +5596,7 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             _n=int(_txt0)
             if 1 <= _n <= len(_live2):
                 ctx.user_data["await_live_stats_pick"]=False
-                await live_stats_one_cmd(update, ctx, _n-1); return
+                await live_stats_one_cmd(update, ctx, _n-1, num_mid=update.message.message_id); return
     except Exception:
         pass
     await _typing(update, ctx)
