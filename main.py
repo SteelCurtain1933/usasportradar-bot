@@ -1,4 +1,4 @@
-# USA Sport Radar - V242 FINAL - NEU: NERD-MODUS (Phase 1)! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# USA Sport Radar - V243 FINAL - NEU: NERD-MODUS Option 1! EIN Fenster, das sich umbaut (wie _cb_edit bei allen anderen Flows)! Getippte Zahlen werden geloescht - Chat bleibt sauber! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -7585,25 +7585,66 @@ async def draft_preview_cmd(update, ctx):
 
 
 
-# ===== V242: NERD-MODUS Handler =====
+# ===== V243: NERD-MODUS Handler - Option 1: EIN Fenster, das sich umbaut! =====
 def _nerd_clear_lists(ctx):
     # V242: Nerd-Zahlenlisten sind exklusiv! Sonst klaut eine alte Liste (Next Games etc.) die getippte Zahl!
     for _k in ("my_live_list", "next_live_list", "next_games_list", "results_list", "live_finals_list", "top10_list", "tables_team_list", "await_live_stats_pick", "nerd_teams_list", "nerd_hof_list"):
         try: ctx.user_data[_k] = None
         except: pass
 
+async def _nerd_show(update, ctx, text, kb):
+    # V243: Option 1 - EIN Nerd-Fenster, das sich umbaut!
+    # Button-Tap -> _cb_edit (Hauptmenue = neues Fenster, sonst gleiches Fenster umbauen - wie bei allen anderen Flows)!
+    # Getippte Zahl -> letztes Nerd-Fenster umbauen + Zahl loeschen (Chat bleibt sauber)!
+    try:
+        if update.callback_query is not None:
+            _m = await _cb_edit(update, text, kb)
+            try:
+                if _m is not None: ctx.user_data["nerd_window_id"] = _m.message_id
+            except: pass
+            return True
+    except Exception:
+        pass
+    try:
+        if update.message is not None:
+            _uid = update.effective_user.id if update.effective_user else 0
+            _wid = None
+            try: _wid = ctx.user_data.get("nerd_window_id")
+            except: pass
+            if _wid:
+                try:
+                    await ctx.bot.edit_message_text(chat_id=_uid, message_id=int(_wid), text=text, reply_markup=_with_close(kb))
+                    try: await ctx.bot.delete_message(chat_id=_uid, message_id=update.message.message_id)
+                    except: pass
+                    return True
+                except Exception as _e243:
+                    if "not modified" in str(_e243).lower():
+                        try: await ctx.bot.delete_message(chat_id=_uid, message_id=update.message.message_id)
+                        except: pass
+                        return True
+            # Fallback: altes Fenster weg/geloescht -> neues Fenster + Zahl loeschen!
+            try:
+                _m2 = await _cb_edit(update, text, kb)
+                try:
+                    if _m2 is not None: ctx.user_data["nerd_window_id"] = _m2.message_id
+                except: pass
+                try: await ctx.bot.delete_message(chat_id=_uid, message_id=update.message.message_id)
+                except: pass
+                return True
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return False
+
 async def nerd_cmd(update, ctx):
     try:
-        target = update.message or update.callback_query.message
-        uid = update.effective_user.id if update.effective_user else 0
         _kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("📖 NFL Regeln", callback_data="nerd_rules")],
             [InlineKeyboardButton("🏈 NFL Teams", callback_data="nerd_teams")],
             [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
         ])
-        _m = await target.reply_text("🧠 Nerd-Modus\nDein Lexikon für US-Sport – Regeln, Teams & Legenden!\n\n📖 NFL Regeln – so funktioniert Football\n🏈 NFL Teams – alle 32 Teams + Hall of Famers\n\nNBA, NHL, MLB & NCAAF kommen in Phase 2!", reply_markup=_with_close(_kb))
-        try: _chain_add(uid, _m.message_id)
-        except: pass
+        await _nerd_show(update, ctx, "🧠 Nerd-Modus\nDein Lexikon für US-Sport – Regeln, Teams & Legenden!\n\n📖 NFL Regeln – so funktioniert Football\n🏈 NFL Teams – alle 32 Teams + Hall of Famers\n\nNBA, NHL, MLB & NCAAF kommen in Phase 2!", _kb)
     except Exception:
         try:
             target = update.message or update.callback_query.message
@@ -7612,15 +7653,11 @@ async def nerd_cmd(update, ctx):
 
 async def nerd_rules_cmd(update, ctx):
     try:
-        target = update.message or update.callback_query.message
-        uid = update.effective_user.id if update.effective_user else 0
         _kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("🏈 NFL Teams", callback_data="nerd_teams")],
             [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
         ])
-        _m = await target.reply_text(NFL_RULES_TEXT, reply_markup=_with_close(_kb))
-        try: _chain_add(uid, _m.message_id)
-        except: pass
+        await _nerd_show(update, ctx, NFL_RULES_TEXT, _kb)
     except Exception:
         try:
             target = update.message or update.callback_query.message
@@ -7629,8 +7666,6 @@ async def nerd_rules_cmd(update, ctx):
 
 async def nerd_teams_cmd(update, ctx):
     try:
-        target = update.message or update.callback_query.message
-        uid = update.effective_user.id if update.effective_user else 0
         _nerd_clear_lists(ctx)
         _keys = list(NFL_TEAMS_NERD.keys())
         ctx.user_data["nerd_teams_list"] = _keys
@@ -7646,9 +7681,7 @@ async def nerd_teams_cmd(update, ctx):
             [InlineKeyboardButton("🧠 Nerd-Modus", callback_data="nerd")],
             [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
         ])
-        _m = await target.reply_text("\n".join(lines), reply_markup=_with_close(_kb))
-        try: _chain_add(uid, _m.message_id)
-        except: pass
+        await _nerd_show(update, ctx, "\n".join(lines), _kb)
     except Exception:
         try:
             target = update.message or update.callback_query.message
@@ -7657,10 +7690,9 @@ async def nerd_teams_cmd(update, ctx):
 
 async def nerd_team_cmd(update, ctx, key):
     try:
-        target = update.message or update.callback_query.message
-        uid = update.effective_user.id if update.effective_user else 0
         _t = NFL_TEAMS_NERD.get(key)
         if not _t:
+            target = update.message or update.callback_query.message
             await target.reply_text("😅 Team nicht gefunden!", reply_markup=small_kb()); return
         lines = [f"🏈 {_t['name']}", f"📍 {_t['city']} | 🏟️ {_t['stadion']}", f"📅 Gegründet: {_t['gegr']}", f"🏆 {_t['titel']}", f"🎨 Farben: {_t['farben']}", f"📂 Division: {_t['div']}", "", "📖 Geschichte:", _t["geschichte"]]
         _kb = InlineKeyboardMarkup([
@@ -7668,9 +7700,7 @@ async def nerd_team_cmd(update, ctx, key):
             [InlineKeyboardButton("🏈 Alle Teams", callback_data="nerd_teams")],
             [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
         ])
-        _m = await target.reply_text("\n".join(lines), reply_markup=_with_close(_kb))
-        try: _chain_add(uid, _m.message_id)
-        except: pass
+        await _nerd_show(update, ctx, "\n".join(lines), _kb)
     except Exception:
         try:
             target = update.message or update.callback_query.message
@@ -7679,12 +7709,11 @@ async def nerd_team_cmd(update, ctx, key):
 
 async def nerd_hof_cmd(update, ctx, key):
     try:
-        target = update.message or update.callback_query.message
-        uid = update.effective_user.id if update.effective_user else 0
         _nerd_clear_lists(ctx)
         _t = NFL_TEAMS_NERD.get(key)
         _names = NFL_HOF.get(key) or []
         if not _t or not _names:
+            target = update.message or update.callback_query.message
             await target.reply_text("😅 Für dieses Team gibt's noch keine HOF-Liste!", reply_markup=small_kb()); return
         ctx.user_data["nerd_hof_list"] = {"team": key, "names": [n for n, p in _names]}
         lines = [f"⭐ Hall of Famers – {_t['name']}", "Tippe die Zahl für die Story!", ""]
@@ -7695,9 +7724,7 @@ async def nerd_hof_cmd(update, ctx, key):
             [InlineKeyboardButton("🏈 Alle Teams", callback_data="nerd_teams")],
             [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
         ])
-        _m = await target.reply_text("\n".join(lines), reply_markup=_with_close(_kb))
-        try: _chain_add(uid, _m.message_id)
-        except: pass
+        await _nerd_show(update, ctx, "\n".join(lines), _kb)
     except Exception:
         try:
             target = update.message or update.callback_query.message
@@ -7706,11 +7733,10 @@ async def nerd_hof_cmd(update, ctx, key):
 
 async def nerd_hof_detail_cmd(update, ctx, key, idx):
     try:
-        target = update.message or update.callback_query.message
-        uid = update.effective_user.id if update.effective_user else 0
         _t = NFL_TEAMS_NERD.get(key)
         _names = NFL_HOF.get(key) or []
         if idx < 0 or idx >= len(_names):
+            target = update.message or update.callback_query.message
             await target.reply_text("😅 Legende nicht gefunden!", reply_markup=small_kb()); return
         _nm, _pos = _names[idx]
         _det = NFL_HOF_DETAILS.get(_nm)
@@ -7723,9 +7749,7 @@ async def nerd_hof_detail_cmd(update, ctx, key, idx):
             [InlineKeyboardButton("🏈 Team-Seite", callback_data=f"nerd_team:{key}")],
             [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
         ])
-        _m = await target.reply_text(_txt, reply_markup=_with_close(_kb))
-        try: _chain_add(uid, _m.message_id)
-        except: pass
+        await _nerd_show(update, ctx, _txt, _kb)
     except Exception:
         try:
             target = update.message or update.callback_query.message
@@ -7767,6 +7791,11 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             _uid_c = update.effective_user.id if update.effective_user else 0
             _chain_remove(_uid_c, q.message.message_id if q.message else None)
+        except: pass
+        # V243: Nerd-Fenster-ID loeschen, damit eine spaeter getippte Zahl nicht ins tote Fenster editiert!
+        try:
+            if ctx.user_data.get("nerd_window_id") == (q.message.message_id if q.message else None):
+                ctx.user_data["nerd_window_id"] = None
         except: pass
         try: await q.message.delete()
         except:
@@ -7926,6 +7955,11 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             _uid237 = update.effective_user.id if update.effective_user else 0
             _chain_remove(_uid237, q.message.message_id if q.message else None)
+        except: pass
+        # V243: Nerd-Fenster-ID loeschen, damit eine spaeter getippte Zahl nicht ins tote Fenster editiert!
+        try:
+            if ctx.user_data.get("nerd_window_id") == (q.message.message_id if q.message else None):
+                ctx.user_data["nerd_window_id"] = None
         except: pass
         try: await q.message.delete()
         except:
