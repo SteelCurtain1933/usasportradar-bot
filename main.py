@@ -1,4 +1,5 @@
-# USA Sport Radar - V248 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# USA Sport Radar - V249 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# V249: Auto-Schliessen FIX - V248 hing nur an _cb_edit, aber die meisten Listen schicken per reply_text direkt -> nie gegriffen! Jetzt zentral im Dispatcher on_cb: Klick aus Hauptmenue -> alte Fenster zu!
 # V248: Lade-Anzeigen fuer Detailansicht/Naechste Spiele/Team-News + Auto-Schliessen: Neues Fenster aus Hauptmenue macht alte Fenster zu (An/Aus in Einstellungen, Standard AN)!
 # V247 CACHE: Team-News (5 Min), Tabellen (5 Min), Verletzungen (5 Min), Spiel-Details (60 Sek) cachen - Fenster oeffnen sich sofort! Scoreboard-Cache gab es schon seit V114 (30 Sek)!
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
@@ -7931,6 +7932,17 @@ async def nerd_hof_detail_cmd(update, ctx, key, idx):
 async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query; await q.answer()
     data=q.data
+    # V249: Auto-Schliessen FIX - zentral hier, weil die meisten Listen per reply_text direkt schicken und den _cb_edit-Hook aus V248 nie sehen! Klick aus Hauptmenue -> alte Fenster zu! Klick aus Meine Woche (News/Next/Tabellen/CFP) -> alte Fenster zu, Meine Woche bleibt! Detail-Fenster per Zahl + Back bleiben unberuehrt (kein Callback aus Hauptmenue)!
+    try:
+        if data not in ("close", "close_all", "back"):
+            _qm249 = q.message if q else None
+            _qt249 = (_qm249.text or "") if _qm249 is not None and getattr(_qm249, "text", None) else ""
+            _uid249 = update.effective_user.id if update.effective_user else 0
+            if _qt249.startswith("Willkommen beim USA Sport Radar"):
+                await _autoclose_prev(ctx, _uid249)
+            elif _qt249.startswith("📅 Meine Woche") and (data.split(":")[0] if data else "") in ("news", "next", "tables", "cfp_top25"):
+                await _autoclose_prev(ctx, _uid249, keep_mid=_qm249.message_id)
+    except: pass
     if data=="myweek":
         await myweek_cmd(update, ctx); return
     if data=="myweek_refresh":
