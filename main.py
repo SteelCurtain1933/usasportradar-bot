@@ -1,4 +1,5 @@
-# USA Sport Radar - V247 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# USA Sport Radar - V248 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# V248: Lade-Anzeigen fuer Detailansicht/Naechste Spiele/Team-News + Auto-Schliessen: Neues Fenster aus Hauptmenue macht alte Fenster zu (An/Aus in Einstellungen, Standard AN)!
 # V247 CACHE: Team-News (5 Min), Tabellen (5 Min), Verletzungen (5 Min), Spiel-Details (60 Sek) cachen - Fenster oeffnen sich sofort! Scoreboard-Cache gab es schon seit V114 (30 Sek)!
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
@@ -165,6 +166,12 @@ def get_reminder_minutes(user_id):
     except: return 60
 def set_reminder_minutes(user_id, minutes):
     s = load_settings(); s.setdefault(str(user_id), {})["reminder_minutes"] = minutes; save_settings(s)
+def get_autoclose(uid):
+    # V248: Alte Fenster auto-schliessen? Default AN (User-Wunsch)! Aus in Einstellungen!
+    try: return bool(load_settings().get(str(uid), {}).get("autoclose", True))
+    except: return True
+def set_autoclose(uid, val):
+    s = load_settings(); s.setdefault(str(uid), {})["autoclose"] = bool(val); save_settings(s)
 def fmt_reminder(minutes):
     if minutes is None: return "Aus"
     if minutes>=60: return f"{minutes//60}h vorher" if minutes%60==0 else f"{minutes} Min vorher"
@@ -2778,10 +2785,13 @@ async def game_info_games_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, le
     _filt=[x for x in _all if x[1]==league]
     if not _filt:
         await target.reply_text("Keine Spiele in dieser Liga.", reply_markup=small_kb()); return
+    _load = await _loading_start(target, "⏳ Ich hole die Spiele... einen Moment")
     _rows=[]
     for _dt,_lg,_ev,_f in _filt:
         _rows.append([InlineKeyboardButton(f"{game_line(_ev,_lg,show_broadcast=False)[:60]}", callback_data=f"game_info_detail:{_ev.get('id')}")])
     _rows.append([InlineKeyboardButton("⬅️ Zurück", callback_data="game_info_leagues")])
+    try: await _loading_done(ctx, update.effective_user.id if update.effective_user else 0, _load)
+    except: pass
     await _cb_edit(update, f"ℹ️ Mehr Infos — {LEAGUES[league]['emoji']} {league}\n\nWelches Spiel?", InlineKeyboardMarkup(_rows))
 def _team_form(league, team_full):
     try:
@@ -2805,6 +2815,7 @@ async def game_info_detail_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, e
     _lg=(ctx.user_data.get("game_info_league",{}) or {}).get(str(eid))
     if not _ev or not _lg:
         await target.reply_text("Spiel nicht mehr gefunden. Bitte nochmal über Next Games öffnen.", reply_markup=small_kb()); return
+    _load = await _loading_start(target, "⏳ Ich hole die Spiel-Infos... einen Moment")
     _teams,_comp=event_teams(_ev)
     _home=next((x for x in _teams if (x[1] or "").lower()=="home"), _teams[1] if len(_teams)>1 else _teams[0])
     _away=next((x for x in _teams if (x[1] or "").lower()=="away"), _teams[0])
@@ -2830,6 +2841,8 @@ async def game_info_detail_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, e
     lines.append("Keine Daten — wird noch ausgebaut!")
     lines.append("\n**Was steht auf dem Spiel?**")
     lines.append("Playoffs kommen näher – jeder Sieg zählt! Keine Wetten, nur Sport! 😅")
+    try: await _loading_done(ctx, update.effective_user.id if update.effective_user else 0, _load)
+    except: pass
     await target.reply_text("\n".join(lines), reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Zurück zu den Spielen", callback_data="game_info_leagues")], [InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")]]))
 async def fav_remove_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     target=update.message or update.callback_query.message
@@ -3736,6 +3749,7 @@ async def settings_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("⭐ Favoriten verwalten", callback_data="fav_list")],
         [InlineKeyboardButton("🔔 Benachrichtigungen", callback_data="notif")],
         [InlineKeyboardButton("🔕 Nicht stören", callback_data="dnd")],
+        [InlineKeyboardButton(f"🧹 Alte Fenster auto-schließen: {'✅ AN' if get_autoclose(uid) else '❌ AUS'}", callback_data="autoclose_toggle")],
         [InlineKeyboardButton("❓ Allgemeine Hilfe", callback_data="help")],
         [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
     ])
@@ -3898,6 +3912,34 @@ async def _chain_delete_all(ctx, uid, current_mid=None):
         _chain_clear(uid)
     except: pass
 
+async def _autoclose_prev(ctx, uid, keep_mid=None):
+    # V248: Auto-Schliessen AN? -> Alle bisherigen Fenster zu (wie 'Alle Fenster schliessen'), ausser keep_mid (z.B. Meine Woche bleibt!) + Hauptmenue (steht nie in der Kette)!
+    try:
+        if not get_autoclose(uid): return
+        _ids = list(_CLOSE_CHAIN.get(int(uid), []) or [])
+        _seen = set(); _del = []
+        for _m in _ids:
+            if int(_m) in _seen: continue
+            _seen.add(int(_m))
+            if keep_mid and int(_m) == int(keep_mid): continue
+            _del.append(int(_m))
+        for _mid in _del:
+            try: await ctx.bot.delete_message(chat_id=int(uid), message_id=int(_mid))
+            except: pass
+            try: await asyncio.sleep(0.05)
+            except: pass
+            # Zahl zu dem Fenster mitloeschen (wie beim Schliessen-Button)!
+            try:
+                _num = _CLOSE_NUM_MAP.pop((int(uid), int(_mid)), None)
+                if _num:
+                    try: await ctx.bot.delete_message(chat_id=int(uid), message_id=int(_num))
+                    except: pass
+            except: pass
+        # Geloeschte aus der Kette nehmen, keep_mid behalten!
+        try: _CLOSE_CHAIN[int(uid)] = [m for m in _ids if keep_mid and int(m) == int(keep_mid)]
+        except: pass
+    except: pass
+
 async def _cb_edit(update, text, kb):
     # V95: /start-Hauptmenue bleibt IMMER da! Nie bearbeiten!
     # Wenn der Klick aus dem Hauptmenue kommt, NEUE Nachricht als Fenster schicken, Hauptmenue bleibt oben!
@@ -3907,6 +3949,7 @@ async def _cb_edit(update, text, kb):
             _uid_cb = update.effective_user.id if update.effective_user else 0
             if _mt.startswith("Willkommen beim USA Sport Radar"):
                 # V201: _chain_clear RAUS! Vorher wurde bei jedem neuen Flow aus dem Hauptmenue die ganze Schliessen-Liste geloescht -> 'Alle schliessen' hat nur den letzten Flow erwischt (2 von 3 weg, Rest blieb)! Jetzt bleibt die Liste ueber alle Flows bestehen!
+                await _autoclose_prev(ctx, _uid_cb)
                 _m = await update.callback_query.message.reply_text(text, reply_markup=_with_close(kb))
                 try: _chain_add(_uid_cb, _m.message_id)
                 except: pass
@@ -3923,6 +3966,7 @@ async def _cb_edit(update, text, kb):
                             try:
                                 await update.callback_query.bot.edit_message_text(chat_id=_uid_cb, message_id=_mid196, text=text, reply_markup=_with_close(kb)); return update.callback_query.message  # V210
                             except: pass
+                        await _autoclose_prev(ctx, _uid_cb, keep_mid=update.callback_query.message.message_id)
                         _m196 = await update.callback_query.message.reply_text(text, reply_markup=_with_close(kb))
                         try:
                             _chain_add(_uid_cb, _m196.message_id); _MYWEEK_SUB[_key196] = _m196.message_id
@@ -7333,9 +7377,11 @@ async def team_window_cmd(update, ctx, league, row, place, div_name, back_cb="",
 
 async def team_next_cmd(update, ctx, league, team_full):
     # V214: Alle naechsten Spiele EINES Teams (naechste 30 Tage, max 8)!
+    _load = None
     try:
         target = update.message or update.callback_query.message
         uid = update.effective_user.id if update.effective_user else 0
+        _load = await _loading_start(target, "⏳ Ich hole die nächsten Spiele... einen Moment")
         from datetime import date as _d214
         out = []
         _today = _d214.today()
@@ -7349,6 +7395,8 @@ async def team_next_cmd(update, ctx, league, team_full):
                 out.append(_ev)
                 if len(out) >= 8: break
             if len(out) >= 8: break
+        try: await _loading_done(ctx, uid, _load)
+        except: pass
         _em = LEAGUES.get(league, {}).get("emoji", "🏈")
         if not out:
             await target.reply_text(f"⏭️ Alle nächsten Spiele – {team_full}\n\nKeine kommenden Spiele gefunden.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Zurück", callback_data="back")]]))
@@ -7369,6 +7417,8 @@ async def team_next_cmd(update, ctx, league, team_full):
         try: _chain_add(uid, _m.message_id)
         except: pass
     except Exception:
+        try: await _loading_done(ctx, update.effective_user.id if update.effective_user else 0, _load)
+        except: pass
         try:
             target = update.message or update.callback_query.message
             await target.reply_text("😅 Nächste Spiele konnten grad nicht geladen werden!", reply_markup=small_kb())
@@ -7376,9 +7426,13 @@ async def team_next_cmd(update, ctx, league, team_full):
 
 async def team_news_cmd(update, ctx, league, team_full):
     # V214: News fuer EIN Team (auch wenn kein Favorit)! Headline + Link, gefiltert wie ueberall!
+    _load = None
     try:
         target = update.message or update.callback_query.message
+        _load = await _loading_start(target, "⏳ Ich hole die News... einen Moment")
         arts, _src = _team_news_all(league, team_full, limit=8)
+        try: await _loading_done(ctx, update.effective_user.id if update.effective_user else 0, _load)
+        except: pass
         arts = [a for a in arts if not _v136_is_scam_news(a.get("headline", ""), a.get("link", ""))]
         arts = _dedupe_news(arts)
         _em = LEAGUES.get(league, {}).get("emoji", "🏈")
@@ -7404,6 +7458,8 @@ async def team_news_cmd(update, ctx, league, team_full):
         except Exception:
             await _cb_edit(update, "\n".join([f"📰 News – {team_full}\n"] + [f"{i}. {a['headline']}" for i, a in enumerate(arts, 1)]), _kb)
     except Exception:
+        try: await _loading_done(ctx, update.effective_user.id if update.effective_user else 0, _load)
+        except: pass
         try:
             target = update.message or update.callback_query.message
             await target.reply_text("😅 News konnten grad nicht geladen werden!", reply_markup=small_kb())
@@ -8183,6 +8239,9 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif data=="dnd_spoiler":
         _du = update.effective_user.id if update.effective_user else 0
         set_dnd(_du, spoiler=not get_dnd(_du)["spoiler"]); await dnd_cmd(update, ctx)
+    elif data=="autoclose_toggle":
+        _du = update.effective_user.id if update.effective_user else 0
+        set_autoclose(_du, not get_autoclose(_du)); await settings_cmd(update, ctx)
     elif data=="dnd_pick_start": await dnd_pick_cmd(update, ctx, "start")
     elif data=="dnd_pick_end": await dnd_pick_cmd(update, ctx, "end")
     elif data.startswith("dnd_set_start:"):
