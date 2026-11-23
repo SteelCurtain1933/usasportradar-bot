@@ -1,4 +1,5 @@
-# USA Sport Radar - V246 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# USA Sport Radar - V247 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# V247 CACHE: Team-News (5 Min), Tabellen (5 Min), Verletzungen (5 Min), Spiel-Details (60 Sek) cachen - Fenster oeffnen sich sofort! Scoreboard-Cache gab es schon seit V114 (30 Sek)!
 # Laeuft auf Render / Pydroid. Token kommt aus Umgebungsvariable BOT_TOKEN.
 import os, json, logging, re
 from datetime import datetime, timedelta, timezone
@@ -393,6 +394,12 @@ def fmt_dt(iso):
 # V114: Caching - Scoreboard 30 Sek merken, damit alles flüssiger geht!
 _SCORE_CACHE = {}
 
+# V247 CACHE: News, Tabellen, Verletzungen, Spiel-Details - Scoreboard (V114) gab es schon, das hier ist neu!
+_V247_NEWS_CACHE = {}
+_V247_STAND_CACHE = {}
+_V247_INJ_CACHE = {}
+_V247_SUMMARY_CACHE = {}
+
 def _scoreboard_dates(league):
     # V221: Live-Ansichten duerfen sich NICHT auf ESPNs No-Dates-Standard-Slate verlassen!
     # Der hat Navy @ Memphis (live, 7-7 Q1!) rausgeworfen -> Bot sagte "kein Favorit live".
@@ -434,7 +441,7 @@ def espn_scoreboard(league, days=7, dates=None):
     except Exception as e:
         logger.warning(f"ESPN langsam / Fehler bei {league}: {e}"); return _SCORE_CACHE.get(_ck, (0, []))[1] if _ck in _SCORE_CACHE else []
 
-def espn_injuries(league):
+def _espn_injuries_uncached(league):
     if league == "NCAAF": return []
     _sport = "football" if league in ("NFL",) else "baseball" if league == "MLB" else "hockey" if league == "NHL" else "basketball"
     _key = LEAGUES[league]["espn"]
@@ -444,6 +451,21 @@ def espn_injuries(league):
         return j.get("injuries", []) or []
     except Exception:
         return []
+
+def espn_injuries(league):
+    # V247 CACHE: Verletzungen aendern sich langsam -> 5 Min cachen! Team-Fenster oeffnen sich sofort!
+    import time as _time2
+    _ck = ("inj", league)
+    try:
+        if _ck in _V247_INJ_CACHE:
+            _ts, _data = _V247_INJ_CACHE[_ck]
+            if (_time2.time() - _ts) < 300:
+                return _data
+    except: pass
+    _res = _espn_injuries_uncached(league)
+    try: _V247_INJ_CACHE[_ck] = (_time2.time(), _res)
+    except: pass
+    return _res
 def _team_injuries(league, team_full):
     if league == "NCAAF": return []
     try:
@@ -793,7 +815,7 @@ def last_scorer(ev, league):
         return ""
 
 
-def espn_summary_details(ev, league):
+def _espn_summary_details_uncached(ev, league):
     # Holt die Play-by-Play Details aus der ESPN Summary-API, wenn das Scoreboard keine SO-Versuche hat
     # Scoreboard hat oft keine einzelnen SO-Versuche, Summary schon: "Ben Kindel Goal", "Ivar Stenberg Miss"
     try:
@@ -837,6 +859,24 @@ def espn_summary_details(ev, league):
         return dets
     except Exception:
         return []
+
+def espn_summary_details(ev, league):
+    # V247 CACHE: Spiel-Details 60 Sek cachen! Detailansicht beim 2. Oeffnen sofort da, Live bleibt frisch (60 Sek, wie Scoreboard 30 Sek)!
+    import time as _time2
+    try: _eid = ev.get("id") if isinstance(ev, dict) else None
+    except: _eid = None
+    _ck = ("sum", _eid, league)
+    try:
+        if _eid and _ck in _V247_SUMMARY_CACHE:
+            _ts, _data = _V247_SUMMARY_CACHE[_ck]
+            if (_time2.time() - _ts) < 60:
+                return _data
+    except: pass
+    _res = _espn_summary_details_uncached(ev, league)
+    try:
+        if _eid: _V247_SUMMARY_CACHE[_ck] = (_time2.time(), _res)
+    except: pass
+    return _res
 def shootout_lines(ev, league):
     # Nur NHL Shootout: zeigt jeden Versuch mit ✅ / ❌, wie bei ESPN: "Ben Kindel ✅, Ivar Stenberg ❌"
     if league!="NHL": return []
@@ -1754,7 +1794,7 @@ def _cfbd_overall_for(team_full, cfbd=None):
         return None
     except: return None
 
-def espn_standings(league):
+def _espn_standings_uncached(league):
     # V65: NHL zuerst über offizielle NHL-API!
     if league=="NHL":
         nhl=_nhl_standings()
@@ -1850,6 +1890,21 @@ def espn_standings(league):
     except Exception:
         pass
     return raw
+
+def espn_standings(league):
+    # V247 CACHE: Tabellen aendern sich selten -> 5 Min cachen! Tabellen-Fenster sofort da!
+    import time as _time2
+    _ck = ("stand", league)
+    try:
+        if _ck in _V247_STAND_CACHE:
+            _ts, _data = _V247_STAND_CACHE[_ck]
+            if (_time2.time() - _ts) < 300:
+                return _data
+    except: pass
+    _res = _espn_standings_uncached(league)
+    try: _V247_STAND_CACHE[_ck] = (_time2.time(), _res)
+    except: pass
+    return _res
 def standings_conferences(league, divs):
     # Für NBA/NHL: Eastern/Western als Sammel-Liste (sortiert nach Wins)
     # Division -> Conference Mapping
@@ -4591,7 +4646,7 @@ def _v215_is_opponent_news(headline, team_full):
         return False
     except: return False
 
-def _team_news_all(league, team_full, limit=8):
+def _team_news_all_uncached(league, team_full, limit=8):
     # V137: 2. Filter-Layer! Auch wenn RSS/ESPN mal Scam liefert, fliegt er hier raus!
     arts=_espn_team_news(league,team_full,limit=limit)
     arts=[a for a in arts if not _v136_is_scam_news(a.get("headline",""), a.get("link","")) and not _news_is_filler(a.get("headline","")) and not _v215_is_opponent_news(a.get("headline",""), team_full)]
@@ -4626,6 +4681,21 @@ def _team_news_all(league, team_full, limit=8):
     arts2=[a for a in arts2 if not _v136_is_scam_news(a.get("headline",""), a.get("link","")) and not _news_is_filler(a.get("headline","")) and not _v215_is_opponent_news(a.get("headline",""), team_full)]
     if arts2: return _dedupe_news(arts2), "Google News (ESPN leer)"
     return [], "ESPN"
+
+def _team_news_all(league, team_full, limit=8):
+    # V247 CACHE: Team-News 5 Min cachen! News braucht bis zu 4 Abrufe (ESPN + Google) -> Team-Fenster oeffnen sich sofort!
+    import time as _time2
+    _ck = ("news", league, team_full, limit)
+    try:
+        if _ck in _V247_NEWS_CACHE:
+            _ts, _data = _V247_NEWS_CACHE[_ck]
+            if (_time2.time() - _ts) < 300:
+                return _data
+    except: pass
+    _res = _team_news_all_uncached(league, team_full, limit=limit)
+    try: _V247_NEWS_CACHE[_ck] = (_time2.time(), _res)
+    except: pass
+    return _res
 # ===== /V135 HELPERS =====
 
 def espn_news(league, limit=8):
