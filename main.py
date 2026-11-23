@@ -1,4 +1,6 @@
-# USA Sport Radar - V249 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# USA Sport Radar - V251 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# V251: Hilfe-Split - Riesen-Fenster weg! Ueberall nur noch Kategorien (8 Themen, neu geschrieben fuer alle neuen Features)! "Ganze Hilfe" = Kategorien-Menue!
+# V250: Meine Woche geht nie mehr per Auto-Schliessen weg - sie kriegt den gleichen Schutz wie das Hauptmenue (nur Zurueck / Fenster schliessen / Alle schliessen macht sie zu)!
 # V249: Auto-Schliessen FIX - V248 hing nur an _cb_edit, aber die meisten Listen schicken per reply_text direkt -> nie gegriffen! Jetzt zentral im Dispatcher on_cb: Klick aus Hauptmenue -> alte Fenster zu!
 # V248: Lade-Anzeigen fuer Detailansicht/Naechste Spiele/Team-News + Auto-Schliessen: Neues Fenster aus Hauptmenue macht alte Fenster zu (An/Aus in Einstellungen, Standard AN)!
 # V247 CACHE: Team-News (5 Min), Tabellen (5 Min), Verletzungen (5 Min), Spiel-Details (60 Sek) cachen - Fenster oeffnen sich sofort! Scoreboard-Cache gab es schon seit V114 (30 Sek)!
@@ -1238,7 +1240,7 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     except: pass
     await update.message.reply_text(START_TEXT, reply_markup=main_kb(with_close=False, uid=update.effective_user.id if update.effective_user else None))
 async def help_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    _hkb = InlineKeyboardMarkup([[InlineKeyboardButton("\U0001f4d6 Grundlagen (Gast @ Heim, \u2b50, 📺)", callback_data="help_cat:grund")],[InlineKeyboardButton("\U0001f3c8 Spiele / Live / Next Games", callback_data="help_cat:spiele")],[InlineKeyboardButton("\U0001f4ca Tabellen / Top 10", callback_data="help_cat:tabellen")],[InlineKeyboardButton("\U0001f514 Benachrichtigungen", callback_data="help_cat:benach")],[InlineKeyboardButton("\U0001f4f0 News / Verletzungen / Breaking", callback_data="help_cat:news")],[InlineKeyboardButton("\U0001fa9f Fenster", callback_data="help_cat:fenster")],[InlineKeyboardButton("⬅️ Zurück", callback_data="back")],])
+    _hkb = _help_cats_kb()
     await update.message.reply_text("❓ Hilfe - Was willst du wissen?\n\nTippe eine Kategorie an - nur das Thema, kein Batzen Text!", reply_markup=_hkb)
 
 async def fav_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -3872,6 +3874,7 @@ _REMINDER_SENT = set()
 _CLOSE_CHAIN = {}
 _CLOSE_NUM_MAP = {}  # V201: (uid, bot_fenster_mid) -> user_zahlen_mid - damit 'Fenster schliessen' die Zahl mitloescht!
 _MYWEEK_SUB={}  # (uid, kind) -> message_id des Unter-Fensters aus Meine Woche (News/Next/Tabellen/CFP)
+_MYWEEK_MSG={}  # V250: uid -> message_id der AKTUELLEN Meine-Woche-Nachricht - die wird NIE auto-geschlossen (wie Hauptmenue)!
 _MYWEEK_CACHE={}  # uid -> (timestamp, lines, has_ncaaf)
 def _chain_add(uid, mid):
     try:
@@ -3918,11 +3921,16 @@ async def _autoclose_prev(ctx, uid, keep_mid=None):
     try:
         if not get_autoclose(uid): return
         _ids = list(_CLOSE_CHAIN.get(int(uid), []) or [])
+        # V250: Meine Woche ist geschuetzt wie das Hauptmenue - nie auto-schliessen!
+        _prot250 = None
+        try: _prot250 = _MYWEEK_MSG.get(int(uid))
+        except: pass
         _seen = set(); _del = []
         for _m in _ids:
             if int(_m) in _seen: continue
             _seen.add(int(_m))
             if keep_mid and int(_m) == int(keep_mid): continue
+            if _prot250 and int(_m) == int(_prot250): continue
             _del.append(int(_m))
         for _mid in _del:
             try: await ctx.bot.delete_message(chat_id=int(uid), message_id=int(_mid))
@@ -3936,8 +3944,8 @@ async def _autoclose_prev(ctx, uid, keep_mid=None):
                     try: await ctx.bot.delete_message(chat_id=int(uid), message_id=int(_num))
                     except: pass
             except: pass
-        # Geloeschte aus der Kette nehmen, keep_mid behalten!
-        try: _CLOSE_CHAIN[int(uid)] = [m for m in _ids if keep_mid and int(m) == int(keep_mid)]
+        # Geloeschte aus der Kette nehmen, keep_mid + geschuetzte Meine Woche behalten!
+        try: _CLOSE_CHAIN[int(uid)] = [m for m in _ids if (keep_mid and int(m) == int(keep_mid)) or (_prot250 and int(m) == int(_prot250))]
         except: pass
     except: pass
 
@@ -5905,25 +5913,41 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 # V134: Hilfe in Kategorien - nicht mehr ein Batzen Text!
 HELP_CATS = {
- "grund": "❓ Hilfe - Grundlagen\n\n**Gast @ Heim**\nErstes Team = Auswärts, zweites = Heim!\nZ.B. Vikings @ Packers = Vikings spielt bei den Packers!\n\n**⭐ = Dein Team**\nDas ist einer deiner Favoriten!\n\n**📺 = US-Sender**\nSender in den USA (CBS / FOX / ESPN...). Deutsche Sender zeigen wir nicht, Rechte ändern sich ständig!\n\n**📍 / 🏟️ = Stadion / Ort**\nWo das Spiel stattfindet!",
- "spiele": "❓ Hilfe - Spiele / Live / Next Games\n\n**🔴 Live**\nLäuft gerade! Nach Spielende: Fenster schließen reicht!\n\n**⏭️ Next Games**\nHeute / Morgen = alle Spiele! Nur Favoriten = nur deine Teams!\nDa kannst du auch die Zahl vom Spiel schreiben für Details + Benachrichtigungen!\n\n**✅ Ergebnisse**\nWie die letzten Spiele ausgingen, mit Final Stats!",
- "tabellen": "❓ Hilfe - Tabellen / Top 10\n\n**📊 Tabellen**\nW-L-OTL = Siege - Niederlagen - Overtime-Niederlagen.\nNHL: Sieg = 2 Punkte, Overtime-Niederlage = 1 Punkt!\n\n**👉 Zahl tippen = Team-Fenster!**\nIn der Tabelle die Zahl vom Team tippen (z.B. 1) → Platz, Bilanz, Punkte/GB, Heim/Auswärts, Streak, Letzte 10, nächste 3, letzte 3, News + Key Spieler!\n\n**🏆 Top 10**\nTippe Zahl 1-10 für Rating + Warum so bewertet!\nRating (z.B. ⭐ 9,9/10) steht nur im Detail!",
- "benach": "❓ Hilfe - Benachrichtigungen\n\nIn ⚙️ Einstellungen → 🔔 Benachrichtigungen:\n**⏰ Reminder** - 3h / 2h / 1h / 30 Min / Aus. 2 Favoriten gleichzeitig = 1 Nachricht für beide, mit Sender!\n**🔴 Live-Scores** - Nur für Favoriten, pro Team: Jeder Score / Spielstart + Quarter-Wechsel / Endstand / Crunch-Time / Spiel-Breaking!\nAlles aus = kein Spam!",
+ "grund": "❓ Hilfe - Grundlagen\n\n**Gast @ Heim**\nErstes Team = Auswärts, zweites = Heim!\nZ.B. Vikings @ Packers = Vikings spielt bei den Packers!\n\n**⭐ = Dein Team**\nDas ist einer deiner Favoriten!\n\n**📺 = US-Sender**\nSender in den USA (CBS / FOX / ESPN...). Deutsche Sender zeigen wir nicht, Rechte ändern sich ständig!\n\n**📍 / 🏟️ = Stadion / Ort**\nWo das Spiel stattfindet!\n\n**Kürzel in Listen**\nSF = 49ers, MIN = Vikings, DAL = Cowboys - kurz + schnell! Volle Namen stehen im Detail!",
+ "spiele": "❓ Hilfe - Spiele / Live / Next Games\n\n**🔴 Live**\nLäuft gerade! Scoreboard: Kürzel + Punktestand + Zeit! Scorer rollt rein, wenn einer punktet! Nach Spielende: Fenster schließen reicht!\n\n**⏭️ Next Games**\nHeute / Morgen = alle Spiele! Nur Favoriten = nur deine Teams! Zahl vom Spiel schreiben = Details + Benachrichtigungen!\n\n**✅ Ergebnisse**\nWie die letzten Spiele ausgingen, mit Final Stats!\n\n**ℹ️ Mehr Infos zum Spiel**\nSpiel-Informationen: Kickoff (US-Zeit zuerst, dann DE-Zeit), Wetter, Ort + Sender als eigene Zeilen! Zahl = Benachrichtigungen für das Spiel!",
+ "tabellen": "❓ Hilfe - Tabellen / Top 10\n\n**📊 Tabellen**\nW-L-OTL = Siege - Niederlagen - Overtime-Niederlagen.\nNHL: Sieg = 2 Punkte, Overtime-Niederlage = 1 Punkt!\n\n**👉 Zahl tippen = Team-Fenster!**\nIn der Tabelle die Zahl vom Team tippen (z.B. 1) → Platz, Bilanz, Punkte/GB, Heim/Auswärts, Streak, Letzte 10, nächste 3, letzte 3, News + Key Spieler!\n\n**🏆 Top 10**\nTippe Zahl 1-10 für Rating + Warum so bewertet!\nRating (z.B. ⭐ 9,9/10) steht nur im Detail!\n\n**🎓 CFP Top 25**\nNur NCAAF: Die besten 25 College-Teams + nächstes Ranking!",
+ "benach": "❓ Hilfe - Benachrichtigungen\n\nIn ⚙️ Einstellungen → 🔔 Benachrichtigungen:\n**⏰ Reminder** - 3h / 2h / 1h / 30 Min / Aus. 2 Favoriten gleichzeitig = 1 Nachricht für beide, mit Sender!\n**🔴 Live-Scores** - Nur für Favoriten, pro Team: Jeder Score / Spielstart + Quarter-Wechsel / Endstand / Crunch-Time / Spiel-Breaking!\n**🌙 DND / Nicht stören** - Nachts keine Nachrichten! Danach kommt eine Zusammenfassung!\nAlles aus = kein Spam!",
  "news": "❓ Hilfe - News / Verletzungen / Breaking\n\n**📰 News** - Nur deine Favoriten! Nur Headline + Link!\nQuelle: ESPN! Artikel sind auf Englisch!\nKein Push-Spam - du holst dir News, wenn du willst!\n\n**🌍 Liga-Breaking** - In News ganz oben als Toggle! Nur große Sachen: International Series, Schedule, Super Bowl, Playoffs, Trade Deadline! Push, aber nur 1x!\n\n**🚨 Spiel-Breaking** - Bei Favorit / Live-Spiel: Nur OUT / RULED OUT / Ejection! Nur 1x pro Spieler!\n\n**🏥 Verletzungen** - Daten von Sleeper (NFL) / ESPN (NBA, NHL, MLB). Offizielle Team-Apps können bis zu 15 Min schneller sein - Bot holt alle 15 Min neu!",
- "fenster": "❓ Hilfe - Fenster\n\n**🪟 Fenster**\nAuswahl = Fenster ändert sich! Detail = neues Fenster! ✖️ = Fenster weg!\n\n**Einfach auf Knöpfe drücken** - kein @, kein Befehl nötig!",
+ "myweek": "❓ Hilfe - Meine Woche\n\n**📅 Meine Woche**\nAlle deine Favoriten auf einen Blick: Platz + Bilanz + neue News (24 Std.)! Bei NCAAF auch CFP-Ranking!\n\n**Knöpfe**\nNext Games / News / Tabellen / CFP Top 25 öffnen sich als Unter-Fenster - Meine Woche bleibt stehen!\n\n**🔄 Aktualisieren**\nHolt alles neu! Innerhalb von 5 Min kommt der Cache (Stand-Zeit steht oben)!",
+ "nerd": "❓ Hilfe - Nerd-Modus / Draft\n\n**🧠 Nerd-Modus**\nNFL + Hall of Famers: Pro Spieler Detail-Seite mit echten Werten (nix erfunden)! Ein Fenster, kein Stapel!\n\n**🏆 NFL Draft-Vorschau**\nDraft 29.04.-01.05.2027, Washington D.C.! Reihenfolge nach aktuellem Tabellenstand (schlechtestes Team zuerst) + Top-10-Prospects!",
+ "fenster": "❓ Hilfe - Fenster\n\n**🪟 Fenster**\nAuswahl = Fenster ändert sich! Detail = neues Fenster! ✖️ = Fenster weg!\n\n**🧹 Auto-Schließen**\nIn ⚙️ Einstellungen → 🪟 Fenster: AN = altes Fenster schließt sich, wenn du aus dem Hauptmenü was Neues öffnest! Hauptmenü + Meine Woche bleiben immer! AUS = alles bleibt offen!\n\n**Einfach auf Knöpfe drücken** - kein @, kein Befehl nötig!",
 }
 HELP_SHORT = {
     "top10": "❓ Hilfe - Top 10\n\nTippe eine Zahl 1-10 in den Chat für Rating + Warum!\nRating steht nur im Detail, nicht in der Übersicht!\n\n📅 Top 10 zeigt nur Spiele dieser Woche (heute bis Sonntag)! Spiele von nächster Woche sind NICHT dabei!",
     "tables": "❓ Hilfe - Tabellen\n\nW-L-OTL = Siege - Niederlagen - Overtime-Niederlagen.\nBei NHL: Sieg = 2 Punkte, Overtime-Niederlage = 1 Punkt!\n\n💡 Zahl tippen = Team-Fenster! (z.B. 1 für Platz 1)",
     "next": "❓ Hilfe - Next Games\n\nHeute / Morgen = alle Spiele!\nNur Favoriten = nur deine Teams!\n✍️ In Heute/Morgen: Zahl vom Spiel schreiben = Details + Benachrichtigungen!",
-    "live": "❓ Hilfe - Live\n\nLäuft gerade!\nNach Spielende: Fenster schließen reicht!",
+    "live": "❓ Hilfe - Live\n\nLäuft gerade! Scorer rollt rein, wenn einer punktet!\nNach Spielende: Fenster schließen reicht!",
     "results": "❓ Hilfe - Ergebnisse\n\nWelche Liga? Dann siehst du, wie die letzten Spiele ausgingen!",
-    "settings": "❓ Hilfe - Einstellungen\n\nHier: Favoriten + Benachrichtigungen!\nReminder + Live-Scores sind unter Benachrichtigungen!",
+    "settings": "❓ Hilfe - Einstellungen\n\nHier: Favoriten + Benachrichtigungen + Fenster!\nReminder + Live-Scores sind unter Benachrichtigungen!\nAuto-Schließen ist unter Fenster!",
     "notif": "❓ Hilfe - Benachrichtigungen\n\nReminder + Live-Scores!\nLive nur für Favoriten, pro Team: Jeder Score / Perioden-Ende + Weiter / Endstand!",
     "fav": "❓ Hilfe - Favoriten\n\nFavorit hinzufügen / entfernen!\n⭐ = dein Team!",
     "injuries": "❓ Hilfe - Verletzungen\n\nDaten von Sleeper / ESPN, bis zu 15 Min verzögert!\nOffizielle Team-Apps sind schneller!",
     "game_info": "❓ Hilfe - Mehr Infos\n\nWetter, Form, Wer fehlt?\nWähle Liga → Spiel → Detail!",
 }
+
+def _help_cats_kb():
+    # V251: EIN Kategorien-Menue fuer ueberall - Hauptmenue, /help, Einstellungen, Kontext-Hilfe!
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📖 Grundlagen (Gast @ Heim, ⭐, 📺)", callback_data="help_cat:grund")],
+        [InlineKeyboardButton("🏈 Spiele / Live / Next Games", callback_data="help_cat:spiele")],
+        [InlineKeyboardButton("📊 Tabellen / Top 10", callback_data="help_cat:tabellen")],
+        [InlineKeyboardButton("🔔 Benachrichtigungen", callback_data="help_cat:benach")],
+        [InlineKeyboardButton("📰 News / Verletzungen / Breaking", callback_data="help_cat:news")],
+        [InlineKeyboardButton("📅 Meine Woche", callback_data="help_cat:myweek")],
+        [InlineKeyboardButton("🧠 Nerd-Modus / Draft-Vorschau", callback_data="help_cat:nerd")],
+        [InlineKeyboardButton("🪟 Fenster", callback_data="help_cat:fenster")],
+        [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+    ])
 
 
 def get_expert_stats_text(eid, lg):
@@ -6934,7 +6958,11 @@ async def myweek_cmd(update, ctx, force=False):
             _ts_c, _lines_c, _ncaaf_c = _MYWEEK_CACHE[_uid_c]
             import time as _time_c
             if _time_c.time() - _ts_c < 300:
-                await _cb_edit(update, "\n".join(_lines_c), _myweek_kb(_ncaaf_c)); return
+                _mw250 = await _cb_edit(update, "\n".join(_lines_c), _myweek_kb(_ncaaf_c))
+                try:
+                    if _mw250 is not None and getattr(_mw250, "message_id", None): _MYWEEK_MSG[int(_uid_c)] = int(_mw250.message_id)
+                except: pass
+                return
     except: pass
     # V201 MEINE WOCHE: Pro Liga das, was da zählt! Nur Ligen, die man als Favorit hat! + News pro Team! + Dynamische Knöpfe!
     try: _load=await _loading_start(update.callback_query.message if update.callback_query else update.message, "⏳ Ich hole deine Woche... einen Moment")
@@ -6942,7 +6970,11 @@ async def myweek_cmd(update, ctx, force=False):
     user=update.effective_user or (update.callback_query.from_user if update.callback_query else None)
     favs=favs_for(user.id) if user else []
     if not favs:
-        await _cb_edit(update, "📅 Meine Woche\n\nNoch keine Favoriten!\nFüg erst Teams hinzu, dann siehst du hier alles auf einen Blick!", InlineKeyboardMarkup([[InlineKeyboardButton("➕ Favorit hinzufügen", callback_data="fav_add")],[InlineKeyboardButton("⬅️ Zurück", callback_data="back")]])); return
+        _mw250 = await _cb_edit(update, "📅 Meine Woche\n\nNoch keine Favoriten!\nFüg erst Teams hinzu, dann siehst du hier alles auf einen Blick!", InlineKeyboardMarkup([[InlineKeyboardButton("➕ Favorit hinzufügen", callback_data="fav_add")],[InlineKeyboardButton("⬅️ Zurück", callback_data="back")]]))
+        try:
+            if _mw250 is not None and getattr(_mw250, "message_id", None): _MYWEEK_MSG[int(_uid_c)] = int(_mw250.message_id)
+        except: pass
+        return
     _EMOJI={"NFL":"🏈","NHL":"🏒","NBA":"🏀","MLB":"⚾","NCAAF":"🎓"}
     lines=[f"📅 Meine Woche - Alle deine Favoriten auf einen Blick (Stand: {datetime.now(BERLIN).strftime(chr(37)+'H'+chr(58)+chr(37)+'M')})\n"]
     _has_ncaaf=False
@@ -7042,7 +7074,10 @@ async def myweek_cmd(update, ctx, force=False):
         _uid_s = update.effective_user.id if update.effective_user else 0
         if _uid_s: _MYWEEK_CACHE[_uid_s]=(_time_s.time(), list(lines), _has_ncaaf)
     except: pass
-    await _cb_edit(update, "\n".join(lines), kb)
+    _mw250 = await _cb_edit(update, "\n".join(lines), kb)
+    try:
+        if _mw250 is not None and getattr(_mw250, "message_id", None): _MYWEEK_MSG[int(_uid_c)] = int(_mw250.message_id)
+    except: pass
 
 # ===== V214: TEAM-FENSTER + KEY SPIELER + DRAFT-VORSCHAU =====
 # Team-Fenster: Zahl in Tabellen tippen -> Detail-Fenster mit Platz, Bilanz, Punkten/GB, Heim/Auswaerts, Streak, Last 10, naechste 3, letzte 3, News-Zaehler, Key Spieler!
@@ -8165,32 +8200,24 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         except: _from_main = False
         if _from_main:
             # V134: Hilfe = Kategorien, nicht mehr Batzen! Wähl nur, was du wissen willst!
-            _hkb = InlineKeyboardMarkup([
-                [InlineKeyboardButton("📖 Grundlagen (Gast @ Heim, ⭐, 📺)", callback_data="help_cat:grund")],
-                [InlineKeyboardButton("🏈 Spiele / Live / Next Games", callback_data="help_cat:spiele")],
-                [InlineKeyboardButton("📊 Tabellen / Top 10", callback_data="help_cat:tabellen")],
-                [InlineKeyboardButton("🔔 Benachrichtigungen", callback_data="help_cat:benach")],
-                [InlineKeyboardButton("📰 News / Verletzungen / Breaking", callback_data="help_cat:news")],
-                [InlineKeyboardButton("🪟 Fenster", callback_data="help_cat:fenster")],
-                [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
-            ])
+            _hkb = _help_cats_kb()
             await q.message.reply_text("❓ Hilfe - Was willst du wissen?\n\nTippe eine Kategorie an - nur das Thema, kein Batzen Text!", reply_markup=_hkb)
         elif _sec in HELP_SHORT:
-            _hkb = InlineKeyboardMarkup([[InlineKeyboardButton("📖 Ganze Hilfe", callback_data="help_all")], [InlineKeyboardButton("⬅️ Zurück", callback_data="back")], [InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")]])
+            _hkb = InlineKeyboardMarkup([[InlineKeyboardButton("📖 Alle Hilfe-Kategorien", callback_data="help_cats")], [InlineKeyboardButton("⬅️ Zurück", callback_data="back")], [InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")]])
             await q.message.edit_text(HELP_SHORT[_sec], reply_markup=_hkb)
         else:
-            await q.message.edit_text(HELP_TEXT, reply_markup=small_kb())
+            await q.message.edit_text("❓ Hilfe - Was willst du wissen?\n\nTippe eine Kategorie an - nur das Thema, kein Batzen Text!", reply_markup=_help_cats_kb())
     elif data.startswith("help_cat:"):
         _k=data.split(":")[1]; _txt=HELP_CATS.get(_k,"❓ Hilfe\n\nTippe eine Kategorie an!")
-        _hkb2=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Zurück zu Hilfe", callback_data="help")],[InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")]])
+        _hkb2=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Zurück zu Hilfe", callback_data="help_cats")],[InlineKeyboardButton("✖️ Fenster schließen", callback_data="close")]])
         try: await q.message.edit_text(_txt, reply_markup=_hkb2)
         except: await q.message.reply_text(_txt, reply_markup=_hkb2)
-    elif data=="help_all":
-        # V95: Ganze Hilfe auch nie ins Hauptmenue reinschreiben!
-        try:
-            if _is_main_msg(q.message): await q.message.reply_text(HELP_TEXT, reply_markup=small_kb())
-            else: await q.message.edit_text(HELP_TEXT, reply_markup=small_kb())
-        except: pass
+    elif data in ("help_all", "help_cats"):
+        # V251: Riesen-Fenster ist weg! Ganze Hilfe = Kategorien-Menue!
+        try: await q.message.edit_text("❓ Hilfe - Was willst du wissen?\n\nTippe eine Kategorie an - nur das Thema, kein Batzen Text!", reply_markup=_help_cats_kb())
+        except:
+            try: await q.message.reply_text("❓ Hilfe - Was willst du wissen?\n\nTippe eine Kategorie an - nur das Thema, kein Batzen Text!", reply_markup=_help_cats_kb())
+            except: pass
     elif data=="top10": await top10_cmd(update, ctx)
     elif data=="news": await news_cmd(update, ctx)
     elif data=="news_league_expand":
