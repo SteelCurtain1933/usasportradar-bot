@@ -1,4 +1,5 @@
-# USA Sport Radar - V252 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# USA Sport Radar - V253 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# V253: Meine Woche + naechstes Spiel pro Favorit (Gegner, US-Zeit zuerst, DE-Zeit in Klammern)! Nur wenn es eins in den naechsten 14 Tagen gibt!
 # V252: Ergebnisse im Scoreboard-Stil - Kuerzel statt Kurznamen, Gast @ Heim, wie in Alle Spiele! (Alle Ergebnisse + Nur meine Favoriten)!
 # V251: Hilfe-Split - Riesen-Fenster weg! Ueberall nur noch Kategorien (8 Themen, neu geschrieben fuer alle neuen Features)! "Ganze Hilfe" = Kategorien-Menue!
 # V250: Meine Woche geht nie mehr per Auto-Schliessen weg - sie kriegt den gleichen Schutz wie das Hauptmenue (nur Zurueck / Fenster schliessen / Alle schliessen macht sie zu)!
@@ -5930,7 +5931,7 @@ HELP_CATS = {
  "tabellen": "❓ Hilfe - Tabellen / Top 10\n\n**📊 Tabellen**\nW-L-OTL = Siege - Niederlagen - Overtime-Niederlagen.\nNHL: Sieg = 2 Punkte, Overtime-Niederlage = 1 Punkt!\n\n**👉 Zahl tippen = Team-Fenster!**\nIn der Tabelle die Zahl vom Team tippen (z.B. 1) → Platz, Bilanz, Punkte/GB, Heim/Auswärts, Streak, Letzte 10, nächste 3, letzte 3, News + Key Spieler!\n\n**🏆 Top 10**\nTippe Zahl 1-10 für Rating + Warum so bewertet!\nRating (z.B. ⭐ 9,9/10) steht nur im Detail!\n\n**🎓 CFP Top 25**\nNur NCAAF: Die besten 25 College-Teams + nächstes Ranking!",
  "benach": "❓ Hilfe - Benachrichtigungen\n\nIn ⚙️ Einstellungen → 🔔 Benachrichtigungen:\n**⏰ Reminder** - 3h / 2h / 1h / 30 Min / Aus. 2 Favoriten gleichzeitig = 1 Nachricht für beide, mit Sender!\n**🔴 Live-Scores** - Nur für Favoriten, pro Team: Jeder Score / Spielstart + Quarter-Wechsel / Endstand / Crunch-Time / Spiel-Breaking!\n**🌙 DND / Nicht stören** - Nachts keine Nachrichten! Danach kommt eine Zusammenfassung!\nAlles aus = kein Spam!",
  "news": "❓ Hilfe - News / Verletzungen / Breaking\n\n**📰 News** - Nur deine Favoriten! Nur Headline + Link!\nQuelle: ESPN! Artikel sind auf Englisch!\nKein Push-Spam - du holst dir News, wenn du willst!\n\n**🌍 Liga-Breaking** - In News ganz oben als Toggle! Nur große Sachen: International Series, Schedule, Super Bowl, Playoffs, Trade Deadline! Push, aber nur 1x!\n\n**🚨 Spiel-Breaking** - Bei Favorit / Live-Spiel: Nur OUT / RULED OUT / Ejection! Nur 1x pro Spieler!\n\n**🏥 Verletzungen** - Daten von Sleeper (NFL) / ESPN (NBA, NHL, MLB). Offizielle Team-Apps können bis zu 15 Min schneller sein - Bot holt alle 15 Min neu!",
- "myweek": "❓ Hilfe - Meine Woche\n\n**📅 Meine Woche**\nAlle deine Favoriten auf einen Blick: Platz + Bilanz + neue News (24 Std.)! Bei NCAAF auch CFP-Ranking!\n\n**Knöpfe**\nNext Games / News / Tabellen / CFP Top 25 öffnen sich als Unter-Fenster - Meine Woche bleibt stehen!\n\n**🔄 Aktualisieren**\nHolt alles neu! Innerhalb von 5 Min kommt der Cache (Stand-Zeit steht oben)!",
+ "myweek": "❓ Hilfe - Meine Woche\n\n**📅 Meine Woche**\nAlle deine Favoriten auf einen Blick: Platz + Bilanz + neue News (24 Std.) + nächstes Spiel! Bei NCAAF auch CFP-Ranking!\n\n**Knöpfe**\nNext Games / News / Tabellen / CFP Top 25 öffnen sich als Unter-Fenster - Meine Woche bleibt stehen!\n\n**🔄 Aktualisieren**\nHolt alles neu! Innerhalb von 5 Min kommt der Cache (Stand-Zeit steht oben)!",
  "nerd": "❓ Hilfe - Nerd-Modus / Draft\n\n**🧠 Nerd-Modus**\nNFL + Hall of Famers: Pro Spieler Detail-Seite mit echten Werten (nix erfunden)! Ein Fenster, kein Stapel!\n\n**🏆 NFL Draft-Vorschau**\nDraft 29.04.-01.05.2027, Washington D.C.! Reihenfolge nach aktuellem Tabellenstand (schlechtestes Team zuerst) + Top-10-Prospects!",
  "fenster": "❓ Hilfe - Fenster\n\n**🪟 Fenster**\nAuswahl = Fenster ändert sich! Detail = neues Fenster! ✖️ = Fenster weg!\n\n**🧹 Auto-Schließen**\nIn ⚙️ Einstellungen → 🪟 Fenster: AN = altes Fenster schließt sich, wenn du aus dem Hauptmenü was Neues öffnest! Hauptmenü + Meine Woche bleiben immer! AUS = alles bleibt offen!\n\n**Einfach auf Knöpfe drücken** - kein @, kein Befehl nötig!",
 }
@@ -7069,6 +7070,39 @@ async def myweek_cmd(update, ctx, force=False):
                 lines.append("   📰 Keine neuen News (24 Std.)")
         except:
             lines.append("   📰 Keine neuen News (24 Std.)")
+        # V253: Naechstes Spiel des Favoriten dazu! Nur wenn es eins in den naechsten 14 Tagen gibt - sonst keine Zeile, kein Zuemllen!
+        try:
+            _nx253 = _v214_team_next_games(_flg, _name, n=1)
+            if _nx253:
+                _ev253 = _nx253[0]
+                _comp253 = (_ev253.get("competitions", [{}])[0] or {})
+                _comps253 = _comp253.get("competitors", []) or []
+                _opp253 = ""; _vs253 = "vs"
+                for _c253 in _comps253:
+                    _tm253 = (_c253.get("team", {}) or {})
+                    _dn253 = (_tm253.get("displayName", "") or "")
+                    _is_fav253 = _name.lower() in _dn253.lower() or _dn253.lower() in _name.lower()
+                    if _is_fav253:
+                        if (_c253.get("homeAway", "") or "").lower() == "away": _vs253 = "@"
+                        else: _vs253 = "vs"
+                    else:
+                        _opp253 = _tm253.get("shortDisplayName", "") or _dn253
+                if _opp253:
+                    _, _dt253 = fmt_dt(_ev253.get("date", ""))
+                    if _dt253:
+                        from zoneinfo import ZoneInfo as _ZI253
+                        try: _tz253 = _ZI253("America/New_York")
+                        except: _tz253 = None
+                        if _tz253 is None:
+                            from datetime import timezone as _tzmod253
+                            _tz253 = _tzmod253(timedelta(hours=-5))
+                        _ko253 = _dt253.astimezone(_tz253)
+                        _abbr253 = _ko253.strftime("%Z") or "ET"
+                        _wd253 = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
+                        _day_us253 = f"{_wd253[_ko253.weekday()]} {_ko253.strftime('%d.%m.')}"
+                        _day_de253 = f"{_wd253[_dt253.weekday()]} " if _dt253.weekday() != _ko253.weekday() else ""
+                        lines.append(f"   ➡️ Nächstes: {_vs253} {_opp253}, {_day_us253} {_ko253.strftime('%H:%M')} {_abbr253} ({_day_de253}{_dt253.strftime('%H:%M')} bei uns)")
+        except: pass
         lines.append("")
     # V201: Verweis, was 'neu' heisst! Nur 1 Zeile, kein Knopf-Wahnsinn!
     lines.append("📰 Neu = letzte 24 Std. Details bei 📰 News!")
