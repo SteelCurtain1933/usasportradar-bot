@@ -1,4 +1,5 @@
-# USA Sport Radar - V263 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# USA Sport Radar - V264 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# V264: NCAAF ehrlich gemacht! NCAAF hat in echt ueber 130 FBS-Teams - wir zeigen nur die 28 groessten! "Alle 28" -> "die 28 groessten" + Hinweis in der Team-Liste. NFL/NBA/NHL/MLB bleiben "alle Teams" (da haben wir wirklich alle)!
 # V263: Nerd-Modus Phase 2 KOMPLETT! MLB (30 Teams + Baseball Hall of Fame) + NCAAF (28 Top-Teams + Legenden) dazu! Nerd-Modus hat jetzt alle 5 Ligen: NFL, NBA, NHL, MLB, NCAAF!
 # V262: Start-Nachricht NUR an den Owner! /myid zeigt die Chat-ID (kommt auf Render als OWNER_CHAT_ID rein). Beim Start schickt der Bot dem Owner "Bot ist wieder online!" - ohne ID passiert einfach nix, kein Fehler!
 # V261: Nerd-Modus CLEANUP! "Nerd-Modus"-Knopf auf allen Nerd-Unter-Seiten entfernt (Zurueck reicht)! Nur Hauptmenue behaelt den Nerd-Modus-Einstieg!
@@ -8584,7 +8585,8 @@ async def nerd_league_cmd(update, ctx, league):
             [InlineKeyboardButton(f"{_m['emoji']} {_m['teams']}", callback_data=f"nerd_teams:{league}")],
             [InlineKeyboardButton("⬅️ Zurück", callback_data="nerd")],
         ])
-        await _nerd_show(update, ctx, f"{_m['emoji']} {_m['label']}\nDein Lexikon für {_m['label']} – Regeln, Teams & Legenden!\n\n📖 {_m['label']} Regeln – so funktioniert {_m['label']}\n{_m['emoji']} {_m['teams']} – alle Teams + {_m['hof']}\n\nTippe auf einen Knopf – los geht's!", _kb)
+        _teams_label = "die 28 größten Teams" if league == "NCAAF" else "alle Teams"
+        await _nerd_show(update, ctx, f"{_m['emoji']} {_m['label']}\nDein Lexikon für {_m['label']} – Regeln, Teams & Legenden!\n\n📖 {_m['label']} Regeln – so funktioniert {_m['label']}\n{_m['emoji']} {_m['teams']} – {_teams_label} + {_m['hof']}\n\nTippe auf einen Knopf – los geht's!", _kb)
     except Exception:
         try:
             target = update.message or update.callback_query.message
@@ -8620,7 +8622,10 @@ async def nerd_league_teams_cmd(update, ctx, league):
             await target.reply_text("😅 Team-Liste nicht gefunden!", reply_markup=small_kb()); return
         _keys = list(_teams.keys())
         ctx.user_data["nerd_teams_list"] = {"league": league, "keys": _keys}  # V259: Dict-Format (NFL = alte Liste)!
-        lines = [f"{_m['emoji']} {_m['teams']} – alle {len(_keys)}!", "Tippe die Zahl für dein Team!", ""]
+        if league == "NCAAF":
+            lines = [f"{_m['emoji']} {_m['teams']} – die {len(_keys)} größten!", "Tippe die Zahl für dein Team!", "", "Insgesamt gibt es über 130 FBS-Teams – hier sind die 28 größten & bekanntesten!", ""]
+        else:
+            lines = [f"{_m['emoji']} {_m['teams']} – alle {len(_keys)}!", "Tippe die Zahl für dein Team!", ""]
         _last_div = ""
         for _i, _k in enumerate(_keys, 1):
             _t = _teams[_k]
