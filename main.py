@@ -1,4 +1,5 @@
-# USA Sport Radar - V258 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# USA Sport Radar - V259 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# V259: Nerd-Modus Phase 2, Teil 1! NBA + NHL: Regeln, alle Teams, Hall of Famers + Detail-Seiten! Generische Liga-Funktionen (nerd_league:*), NFL bleibt unveraendert! MLB + NCAAF kommen in V260!
 # V258: Live-Hub komplett im Ticker-Stil! Favoriten-Live + Favoriten-Finals + Meine Live-Spiele (live/fertig) = Kuerzel + Stand + Spielzeit, Sender -> Detail-Ansicht! Anstehende Einzel-Spiele bleiben game_line (Anpfiff-Zeit)!
 # V257: Lade-Ticker ohne Stoppuhr! Statt "laedt schon Xs" rotieren beruhigende Saetze (kurzer Moment -> gleich da -> fast geschafft -> dauert heute laenger)! Keine falsche Restzeit, die kennt der Bot nicht!
 # V256: Lade-Dauer-Ticker! Lade-Nachricht zeigt nach 10s live die Dauer (alle 15s aktualisiert, ab 60s als Min:Sek)! + ESPN-Bilanz-Fallback 6h gecached (war die lange Meine-Woche-Ladezeit)!
@@ -5938,17 +5939,27 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # V242: Zahl für Nerd-Modus Teams (1-32)!
     if txt.isdigit() and ctx.user_data.get("nerd_teams_list") and not ctx.user_data.get("awaiting_fav"):
         _nt242 = ctx.user_data.get("nerd_teams_list") or []
-        _nn242 = int(txt)
-        if 1 <= _nn242 <= len(_nt242):
-            # V240: Liste BEHALTEN!
-            await nerd_team_cmd(update, ctx, _nt242[_nn242-1]); return
+        # V259: Neue Ligen = Dict {league, keys}! NFL = alte Liste!
+        if isinstance(_nt242, dict):
+            _keys259 = _nt242.get("keys") or []
+            _nn259 = int(txt)
+            if 1 <= _nn259 <= len(_keys259):
+                # V240: Liste BEHALTEN!
+                await nerd_league_team_cmd(update, ctx, _nt242.get("league", ""), _keys259[_nn259-1]); return
+        else:
+            _nn242 = int(txt)
+            if 1 <= _nn242 <= len(_nt242):
+                # V240: Liste BEHALTEN!
+                await nerd_team_cmd(update, ctx, _nt242[_nn242-1]); return
     # V242: Zahl für Nerd-Modus Hall of Famers!
     if txt.isdigit() and ctx.user_data.get("nerd_hof_list") and not ctx.user_data.get("awaiting_fav"):
         _nh242 = ctx.user_data.get("nerd_hof_list") or {}
         _names242 = _nh242.get("names") or []
         _nhn242 = int(txt)
         if 1 <= _nhn242 <= len(_names242):
-            # V240: Liste BEHALTEN!
+            # V240: Liste BEHALTEN! V259: Mit Liga = neue Ligen!
+            if _nh242.get("league"):
+                await nerd_league_hof_detail_cmd(update, ctx, _nh242.get("league", ""), _nh242.get("team", ""), _nhn242-1); return
             await nerd_hof_detail_cmd(update, ctx, _nh242.get("team", ""), _nhn242-1); return
     if not ctx.user_data.get("awaiting_fav"): return
     ctx.user_data["awaiting_fav"]=False
@@ -6034,7 +6045,7 @@ HELP_CATS = {
  "benach": "❓ Hilfe - Benachrichtigungen\n\nIn ⚙️ Einstellungen → 🔔 Benachrichtigungen:\n**⏰ Reminder** - 3h / 2h / 1h / 30 Min / Aus. 2 Favoriten gleichzeitig = 1 Nachricht für beide, mit Sender!\n**🔴 Live-Scores** - Nur für Favoriten, pro Team: Jeder Score / Spielstart + Quarter-Wechsel / Endstand / Crunch-Time / Spiel-Breaking!\n**🌙 DND / Nicht stören** - Nachts keine Nachrichten! Danach kommt eine Zusammenfassung!\nAlles aus = kein Spam!",
  "news": "❓ Hilfe - News / Verletzungen / Breaking\n\n**📰 News** - Nur deine Favoriten! Nur Headline + Link!\nQuelle: ESPN! Artikel sind auf Englisch!\nKein Push-Spam - du holst dir News, wenn du willst!\n\n**🌍 Liga-Breaking** - In News ganz oben als Toggle! Nur große Sachen: International Series, Schedule, Super Bowl, Playoffs, Trade Deadline! Push, aber nur 1x!\n\n**🚨 Spiel-Breaking** - Bei Favorit / Live-Spiel: Nur OUT / RULED OUT / Ejection! Nur 1x pro Spieler!\n\n**🏥 Verletzungen** - Daten von Sleeper (NFL) / ESPN (NBA, NHL, MLB). Offizielle Team-Apps können bis zu 15 Min schneller sein - Bot holt alle 15 Min neu!",
  "myweek": "❓ Hilfe - Meine Woche\n\n**📅 Meine Woche**\nAlle deine Favoriten auf einen Blick: Platz + Bilanz + neue News (24 Std.) + nächstes Spiel! Bei NCAAF auch CFP-Ranking!\n\nIn ⚙️ Einstellungen → 📅 Meine Woche anpassen stellst du ein, welche Zeilen du siehst (News / Nächstes Spiel / Letztes Ergebnis / CFP-Zeile)!\n\n**Knöpfe**\nNext Games / News / Tabellen / CFP Top 25 öffnen sich als Unter-Fenster - Meine Woche bleibt stehen!\n\n**🔄 Aktualisieren**\nHolt alles neu! Innerhalb von 5 Min kommt der Cache (Stand-Zeit steht oben)!",
- "nerd": "❓ Hilfe - Nerd-Modus / Draft\n\n**🧠 Nerd-Modus**\nNFL + Hall of Famers: Pro Spieler Detail-Seite mit echten Werten (nix erfunden)! Ein Fenster, kein Stapel!\n\n**🏆 NFL Draft-Vorschau**\nDraft 29.04.-01.05.2027, Washington D.C.! Reihenfolge nach aktuellem Tabellenstand (schlechtestes Team zuerst) + Top-10-Prospects!",
+ "nerd": "❓ Hilfe - Nerd-Modus / Draft\n\n**🧠 Nerd-Modus**\nNFL, NBA, NHL + Hall of Famers: Pro Spieler Detail-Seite mit echten Werten (nix erfunden)! Ein Fenster, kein Stapel!\n\n**🏆 NFL Draft-Vorschau**\nDraft 29.04.-01.05.2027, Washington D.C.! Reihenfolge nach aktuellem Tabellenstand (schlechtestes Team zuerst) + Top-10-Prospects!",
  "fenster": "❓ Hilfe - Fenster\n\n**🪟 Fenster**\nAuswahl = Fenster ändert sich! Detail = neues Fenster! ✖️ = Fenster weg!\n\n**🧹 Auto-Schließen**\nIn ⚙️ Einstellungen → 🪟 Fenster: AN = altes Fenster schließt sich, wenn du aus dem Hauptmenü was Neues öffnest! Hauptmenü + Meine Woche bleiben immer! AUS = alles bleibt offen!\n\n**Einfach auf Knöpfe drücken** - kein @, kein Befehl nötig!",
 }
 HELP_SHORT = {
@@ -7726,6 +7737,202 @@ def _v215_nfl_overall_records():
 
 
 # ===== V242: NERD-MODUS (Phase 1: NFL) - alle Fakten kuratiert & geprueft! =====
+
+# V259: Nerd-Modus Phase 2 (Teil 1: NBA + NHL)! Generische Liga-Daten: Regeln, Teams, Hall of Famers, Detail-Seiten!
+NERD_LEAGUES = {
+    "NBA": {"emoji": "🏀", "label": "NBA", "teams": "NBA Teams", "hof": "Hall of Fame"},
+    "NHL": {"emoji": "🏒", "label": "NHL", "teams": "NHL Teams", "hof": "Hockey Hall of Fame"},
+}
+NERD_RULES = {
+    "NBA": """🏀 NBA – Die Regeln (kurz & knackig)
+
+🏀 5 gegen 5, 4 Viertel à 12 Minuten – bei Gleichstand 5 Minuten Verlängerung!
+⏱️ 24-Sekunden-Shot-Clock: Innerhalb von 24 Sekunden muss der Ball den Ring berühren!
+⏱️ 8 Sekunden für die Überquerung der Mittellinie!
+🎯 2 Punkte aus dem Feld, 3 Punkte hinter der Dreierlinie, 1 Punkt pro Freiwurf!
+🚫 6 Fouls = raus! (In der NCAA: 5 Fouls)
+🚫 3-Sekunden-Regel: Kein Angreifer darf länger als 3 Sekunden in der Zone stehen!
+🔄 82 Spiele Regular Season, dann Play-In (Plätze 7–10) + Playoffs (Best-of-7)!
+🏆 Playoffs: Best-of-7-Serien – wer zuerst 4 Spiele gewinnt, ist weiter!
+📋 Draft: 2 Runden à 30 Picks – die schlechtesten Teams haben die besten Chancen (Lotterie)!
+⭐ Die NBA ist die stärkste Basketball-Liga der Welt – seit 1946!""",
+    "NHL": """🏒 NHL – Die Regeln (kurz & knackig)
+
+🏒 5 gegen 5 plus Torwart, 3 Drittel à 20 Minuten – bei Gleichstand Verlängerung!
+⏱️ Verlängerung: 5 Minuten 3 gegen 3 (Sudden Death) – danach Penaltyschießen!
+🥅 Tore zählen nur, wenn der Puck komplett hinter der Linie ist!
+🚫 Abseits: Der Puck muss vor allen Angreifern in die Zone!
+🚫 Icing: Weitschuss über 2 Linien ohne Gegnerkontakt = Abpfiff + Bully in der eigenen Zone!
+🥊 Strafen: 2 Minuten (klein), 5 Minuten (groß) – Powerplay für den Gegner!
+🥊 Fighting: In der NHL mit 5 Minuten Strafe geahndet, aber kein Platzverweis!
+🔄 82 Spiele Regular Season, dann Playoffs (Best-of-7)!
+🏆 Playoffs: 16 Teams, 4 Runden – wer 16 Spiele gewinnt, holt den Stanley Cup!
+📋 Draft: 7 Runden – die schlechtesten Teams haben die besten Chancen (Lotterie)!
+⭐ Die NHL ist die stärkste Eishockey-Liga der Welt – seit 1917!""",
+}
+NERD_TEAMS = {
+    "NBA": {
+        "celtics": {"name": "Boston Celtics", "city": "Boston", "stadion": "TD Garden", "gegr": "1946", "div": "Eastern – Atlantic", "farben": "Grün-Weiß", "titel": "18× NBA Champion (zuletzt 2024)", "geschichte": "Die erfolgreichste Franchise der NBA – 18 Titel, die Ära Bill Russell mit 11 Titeln in 13 Jahren bleibt unerreicht."},
+        "nets": {"name": "Brooklyn Nets", "city": "Brooklyn (New York)", "stadion": "Barclays Center", "gegr": "1967 (als New Jersey Americans, ABA)", "div": "Eastern – Atlantic", "farben": "Schwarz-Weiß", "titel": "0× NBA Champion (2× ABA-Champion 1974, 1976)", "geschichte": "ABA-Gründungsmitglied, seit 2012 in Brooklyn – der Umzug nach Brooklyn machte die Nets zum Stadt-Rivalen der Knicks."},
+        "knicks": {"name": "New York Knicks", "city": "New York", "stadion": "Madison Square Garden", "gegr": "1946", "div": "Eastern – Atlantic", "farben": "Blau-Orange", "titel": "2× NBA Champion (1970, 1973)", "geschichte": "Gründungsmitglied der NBA, spielt seit 1946 im Madison Square Garden – dem 'Mecca of Basketball'."},
+        "76ers": {"name": "Philadelphia 76ers", "city": "Philadelphia", "stadion": "Wells Fargo Center", "gegr": "1946 (als Syracuse Nationals)", "div": "Eastern – Atlantic", "farben": "Blau-Rot-Weiß", "titel": "3× NBA Champion (1955, 1967, 1983)", "geschichte": "Als Syracuse Nationals gegründet, seit 1963 in Philadelphia – 1983 holte Moses Malone mit 'Fo, Fo, Fo' den Titel."},
+        "raptors": {"name": "Toronto Raptors", "city": "Toronto", "stadion": "Scotiabank Arena", "gegr": "1995", "div": "Eastern – Atlantic", "farben": "Rot-Schwarz", "titel": "1× NBA Champion (2019)", "geschichte": "Einziges NBA-Team außerhalb der USA – 2019 holte Kawhi Leonard den ersten Titel nach Kanada."},
+        "bulls": {"name": "Chicago Bulls", "city": "Chicago", "stadion": "United Center", "gegr": "1966", "div": "Eastern – Central", "farben": "Rot-Schwarz", "titel": "6× NBA Champion (1991–93, 1996–98)", "geschichte": "Michael Jordans Bulls dominierten die 90er mit zwei Three-Peats – die berühmteste Dynastie der NBA."},
+        "cavaliers": {"name": "Cleveland Cavaliers", "city": "Cleveland", "stadion": "Rocket Mortgage FieldHouse", "gegr": "1970", "div": "Eastern – Central", "farben": "Weinrot-Gold", "titel": "1× NBA Champion (2016)", "geschichte": "2016 holte LeBron James mit dem 3:1-Comeback gegen die 73-Siege-Warriors den ersten Titel nach Cleveland."},
+        "pistons": {"name": "Detroit Pistons", "city": "Detroit", "stadion": "Little Caesars Arena", "gegr": "1941 (als Fort Wayne Pistons)", "div": "Eastern – Central", "farben": "Blau-Rot", "titel": "3× NBA Champion (1989, 1990, 2004)", "geschichte": "Die 'Bad Boys' um Isiah Thomas prägten die späten 80er, 2004 schlug das Team ohne Superstar die Lakers."},
+        "pacers": {"name": "Indiana Pacers", "city": "Indianapolis", "stadion": "Gainbridge Fieldhouse", "gegr": "1967 (ABA)", "div": "Eastern – Central", "farben": "Marineblau-Gold", "titel": "0× NBA Champion (3× ABA-Champion)", "geschichte": "ABA-Dynastie der 70er mit 3 Titeln – in der NBA nie Meister, aber 2000 und 2025 im Finale."},
+        "bucks": {"name": "Milwaukee Bucks", "city": "Milwaukee", "stadion": "Fiserv Forum", "gegr": "1968", "div": "Eastern – Central", "farben": "Grün-Creme", "titel": "2× NBA Champion (1971, 2021)", "geschichte": "1971 mit Kareem Abdul-Jabbar, 2021 mit Giannis Antetokounmpo – 50 Jahre zwischen den Titeln."},
+        "hawks": {"name": "Atlanta Hawks", "city": "Atlanta", "stadion": "State Farm Arena", "gegr": "1946 (als Buffalo Bisons)", "div": "Eastern – Southeast", "farben": "Rot-Weiß", "titel": "1× NBA Champion (1958 als St. Louis Hawks)", "geschichte": "Eine der ältesten Franchises – 1958 als St. Louis Hawks Meister, seit 1968 in Atlanta."},
+        "hornets": {"name": "Charlotte Hornets", "city": "Charlotte", "stadion": "Spectrum Center", "gegr": "1988", "div": "Eastern – Southeast", "farben": "Lila-Türkis", "titel": "0× NBA Champion", "geschichte": "1988 gegründet, 2002 nach New Orleans verloren, 2004 mit den Bobcats ein neues Team bekommen – seit 2014 wieder Hornets."},
+        "heat": {"name": "Miami Heat", "city": "Miami", "stadion": "Kaseya Center", "gegr": "1988", "div": "Eastern – Southeast", "farben": "Rot-Schwarz", "titel": "3× NBA Champion (2006, 2012, 2013)", "geschichte": "2006 mit Wade & Shaq, 2012/13 mit der 'Big Three' um LeBron – Pat Rileys Heat-Kultur ist legendär."},
+        "magic": {"name": "Orlando Magic", "city": "Orlando", "stadion": "Kia Center", "gegr": "1989", "div": "Eastern – Southeast", "farben": "Blau-Schwarz", "titel": "0× NBA Champion", "geschichte": "1995 und 2009 im Finale – Shaq, Penny, später Dwight Howard prägten die Franchise."},
+        "wizards": {"name": "Washington Wizards", "city": "Washington", "stadion": "Capital One Arena", "gegr": "1961 (als Chicago Packers)", "div": "Eastern – Southeast", "farben": "Rot-Blau", "titel": "1× NBA Champion (1978 als Washington Bullets)", "geschichte": "1978 als Bullets Meister mit Wes Unseld und Elvin Hayes – seitdem wartet Washington auf den nächsten Titel."},
+        "nuggets": {"name": "Denver Nuggets", "city": "Denver", "stadion": "Ball Arena", "gegr": "1967 (ABA)", "div": "Western – Northwest", "farben": "Marineblau-Gold", "titel": "1× NBA Champion (2023)", "geschichte": "2023 holte Nikola Jokić den ersten Titel nach Denver – vorher 47 Jahre ohne Meisterschaft."},
+        "timberwolves": {"name": "Minnesota Timberwolves", "city": "Minneapolis", "stadion": "Target Center", "gegr": "1989", "div": "Western – Northwest", "farben": "Marineblau-Grün", "titel": "0× NBA Champion", "geschichte": "Seit 1989 in der Liga – 2004 mit Garnett einmal im Conference-Finale, 2024 wieder."},
+        "thunder": {"name": "Oklahoma City Thunder", "city": "Oklahoma City", "stadion": "Paycom Center", "gegr": "1967 (als Seattle SuperSonics)", "div": "Western – Northwest", "farben": "Blau-Orange", "titel": "2× NBA Champion (1979 als Sonics, 2025 als Thunder)", "geschichte": "Als Seattle SuperSonics 1979 Meister, 2008 nach Oklahoma City umgezogen – 2025 der erste Titel als Thunder."},
+        "blazers": {"name": "Portland Trail Blazers", "city": "Portland", "stadion": "Moda Center", "gegr": "1970", "div": "Western – Northwest", "farben": "Rot-Schwarz", "titel": "1× NBA Champion (1977)", "geschichte": "1977 mit Bill Walton Meister – Portland ist bis heute die einzige Major-League-Franchise der Stadt."},
+        "jazz": {"name": "Utah Jazz", "city": "Salt Lake City", "stadion": "Delta Center", "gegr": "1974 (als New Orleans Jazz)", "div": "Western – Northwest", "farben": "Marineblau-Gelb", "titel": "0× NBA Champion", "geschichte": "1979 nach Utah umgezogen – 1997 und 1998 im Finale, beide Male an Jordans Bulls gescheitert."},
+        "warriors": {"name": "Golden State Warriors", "city": "San Francisco", "stadion": "Chase Center", "gegr": "1946 (als Philadelphia Warriors)", "div": "Western – Pacific", "farben": "Blau-Gold", "titel": "7× NBA Champion (zuletzt 2022)", "geschichte": "1947 erster Meister der Liga, dann die Curry-Dynastie mit 4 Titeln zwischen 2015 und 2022."},
+        "clippers": {"name": "LA Clippers", "city": "Los Angeles", "stadion": "Intuit Dome", "gegr": "1970 (als Buffalo Braves)", "div": "Western – Pacific", "farben": "Blau-Rot", "titel": "0× NBA Champion", "geschichte": "Jahrzehnte im Schatten der Lakers – erst mit Chris Paul und später Kawhi/PG wurde das Team ernsthaft konkurrenzfähig."},
+        "lakers": {"name": "Los Angeles Lakers", "city": "Los Angeles", "stadion": "Crypto.com Arena", "gegr": "1947 (als Minneapolis Lakers)", "div": "Western – Pacific", "farben": "Lila-Gold", "titel": "17× NBA Champion (zuletzt 2020)", "geschichte": "Von Minneapolis nach L.A. – Mikan, Magic, Kobe, LeBron: Die Lakers sind das Glamour-Team der NBA."},
+        "suns": {"name": "Phoenix Suns", "city": "Phoenix", "stadion": "Footprint Center", "gegr": "1968", "div": "Western – Pacific", "farben": "Lila-Orange", "titel": "0× NBA Champion", "geschichte": "1968 gegründet, dreimal im Finale (1976, 1993, 2021) – aber noch nie Meister."},
+        "kings": {"name": "Sacramento Kings", "city": "Sacramento", "stadion": "Golden 1 Center", "gegr": "1923 (als Rochester Seagrams)", "div": "Western – Pacific", "farben": "Lila-Grau", "titel": "1× NBA Champion (1951 als Rochester Royals)", "geschichte": "Eine der ältesten Franchises der Liga – 1951 als Rochester Royals Meister, seit 1985 in Sacramento."},
+        "mavericks": {"name": "Dallas Mavericks", "city": "Dallas", "stadion": "American Airlines Center", "gegr": "1980", "div": "Western – Southwest", "farben": "Blau-Silber", "titel": "1× NBA Champion (2011)", "geschichte": "2011 schlug Dirk Nowitzki mit Dallas die favorisierten Heat – der größte Moment der Franchise."},
+        "rockets": {"name": "Houston Rockets", "city": "Houston", "stadion": "Toyota Center", "gegr": "1967 (als San Diego Rockets)", "div": "Western – Southwest", "farben": "Rot-Silber", "titel": "2× NBA Champion (1994, 1995)", "geschichte": "Hakeem Olajuwon holte in Jordans Baseball-Pause zwei Titel – danach die Yao- und Harden-Ären."},
+        "grizzlies": {"name": "Memphis Grizzlies", "city": "Memphis", "stadion": "FedExForum", "gegr": "1995 (als Vancouver Grizzlies)", "div": "Western – Southwest", "farben": "Marineblau-Grau", "titel": "0× NBA Champion", "geschichte": "1995 in Vancouver gegründet, 2001 nach Memphis – die 'Grit and Grind'-Ära um Gasol und Randolph."},
+        "pelicans": {"name": "New Orleans Pelicans", "city": "New Orleans", "stadion": "Smoothie King Center", "gegr": "2002 (als New Orleans Hornets)", "div": "Western – Southwest", "farben": "Marineblau-Gold", "titel": "0× NBA Champion", "geschichte": "2002 als Hornets gegründet, 2013 in Pelicans umbenannt – noch ohne Conference-Finale."},
+        "spurs": {"name": "San Antonio Spurs", "city": "San Antonio", "stadion": "Frost Bank Center", "gegr": "1967 (als Dallas Chaparrals, ABA)", "div": "Western – Southwest", "farben": "Schwarz-Silber", "titel": "5× NBA Champion (1999, 2003, 2005, 2007, 2014)", "geschichte": "Die Muster-Franchise der NBA: 20 Jahre Playoffs in Folge unter Gregg Popovich, Duncan-Parker-Ginóbili-Ära."},
+    },
+    "NHL": {
+        "bruins": {"name": "Boston Bruins", "city": "Boston", "stadion": "TD Garden", "gegr": "1924", "div": "Eastern – Atlantic", "farben": "Schwarz-Gold", "titel": "6× Stanley-Cup-Champion (zuletzt 2011)", "geschichte": "Eines der Original Six – 1924 als erstes US-Team der NHL gegründet, 2011 der letzte Cup."},
+        "sabres": {"name": "Buffalo Sabres", "city": "Buffalo", "stadion": "KeyBank Center", "gegr": "1970", "div": "Eastern – Atlantic", "farben": "Blau-Gold", "titel": "0× Stanley-Cup-Champion", "geschichte": "1970 gegründet – 1975 und 1999 im Finale, aber noch nie Meister. Längste Playoff-Durststrecke der NHL."},
+        "redwings": {"name": "Detroit Red Wings", "city": "Detroit", "stadion": "Little Caesars Arena", "gegr": "1926", "div": "Eastern – Atlantic", "farben": "Rot-Weiß", "titel": "11× Stanley-Cup-Champion (zuletzt 2008)", "geschichte": "Original Six – die 'Hockeytown'-Dynastie um Yzerman, Lidström und Co. holte 4 Cups zwischen 1997 und 2008."},
+        "panthers": {"name": "Florida Panthers", "city": "Sunrise", "stadion": "Amerant Bank Arena", "gegr": "1993", "div": "Eastern – Atlantic", "farben": "Rot-Gold", "titel": "2× Stanley-Cup-Champion (2024, 2025)", "geschichte": "1993 gegründet – 1996 sensationell im Finale, 2024 und 2025 dann Back-to-Back-Champion."},
+        "canadiens": {"name": "Montreal Canadiens", "city": "Montreal", "stadion": "Bell Centre", "gegr": "1909", "div": "Eastern – Atlantic", "farben": "Rot-Blau-Weiß", "titel": "24× Stanley-Cup-Champion (zuletzt 1993)", "geschichte": "Das erfolgreichste Team der NHL – 24 Cups, mehr als jede andere Franchise. Seit 1993 wartet Montreal auf den nächsten."},
+        "senators": {"name": "Ottawa Senators", "city": "Ottawa", "stadion": "Canadian Tire Centre", "gegr": "1992", "div": "Eastern – Atlantic", "farben": "Rot-Schwarz", "titel": "0× Stanley-Cup-Champion", "geschichte": "1992 als Nachfolger der alten Senators gegründet – 2007 einmal im Finale."},
+        "lightning": {"name": "Tampa Bay Lightning", "city": "Tampa", "stadion": "Benchmark International Arena", "gegr": "1992", "div": "Eastern – Atlantic", "farben": "Blau-Weiß", "titel": "3× Stanley-Cup-Champion (2004, 2020, 2021)", "geschichte": "1992 gegründet – 2004 der erste Cup, 2020/21 Back-to-Back in der Bubble und danach."},
+        "leafs": {"name": "Toronto Maple Leafs", "city": "Toronto", "stadion": "Scotiabank Arena", "gegr": "1917", "div": "Eastern – Atlantic", "farben": "Blau-Weiß", "titel": "13× Stanley-Cup-Champion (zuletzt 1967)", "geschichte": "Original Six – 13 Cups, aber seit 1967 wartet Toronto. Die längste Titel-Durststrecke der NHL."},
+        "hurricanes": {"name": "Carolina Hurricanes", "city": "Raleigh", "stadion": "Lenovo Center", "gegr": "1972 (als New England Whalers)", "div": "Eastern – Metropolitan", "farben": "Rot-Schwarz", "titel": "1× Stanley-Cup-Champion (2006)", "geschichte": "Als WHA-Whalers gegründet, 1997 nach Carolina – 2006 mit Rod Brind'Amour der erste Cup."},
+        "bluejackets": {"name": "Columbus Blue Jackets", "city": "Columbus", "stadion": "Nationwide Arena", "gegr": "2000", "div": "Eastern – Metropolitan", "farben": "Marineblau-Rot", "titel": "0× Stanley-Cup-Champion", "geschichte": "Seit 2000 in der Liga – 2019 der erste Playoff-Seriensieg (Sweep gegen Tampa!), aber noch kein Cup."},
+        "devils": {"name": "New Jersey Devils", "city": "Newark", "stadion": "Prudential Center", "gegr": "1974 (als Kansas City Scouts)", "div": "Eastern – Metropolitan", "farben": "Rot-Schwarz", "titel": "3× Stanley-Cup-Champion (1995, 2000, 2003)", "geschichte": "Als Scouts gegründet, über Colorado nach New Jersey – die Trap-Ära um Brodeur holte 3 Cups."},
+        "islanders": {"name": "New York Islanders", "city": "Elmont", "stadion": "UBS Arena", "gegr": "1972", "div": "Eastern – Metropolitan", "farben": "Blau-Orange", "titel": "4× Stanley-Cup-Champion (1980–83)", "geschichte": "Vier Cups in Folge Anfang der 80er – eine der größten Dynastien der NHL-Geschichte."},
+        "rangers": {"name": "New York Rangers", "city": "New York", "stadion": "Madison Square Garden", "gegr": "1926", "div": "Eastern – Metropolitan", "farben": "Blau-Rot", "titel": "4× Stanley-Cup-Champion (zuletzt 1994)", "geschichte": "Original Six – 1940 bis 1994: 54 Jahre ohne Cup, dann 'Messier garantiert den Sieg' und der Titel."},
+        "flyers": {"name": "Philadelphia Flyers", "city": "Philadelphia", "stadion": "Wells Fargo Center", "gegr": "1967", "div": "Eastern – Metropolitan", "farben": "Orange-Schwarz", "titel": "2× Stanley-Cup-Champion (1974, 1975)", "geschichte": "Die 'Broad Street Bullies' holten 1974/75 Back-to-Back-Cups – seitdem wartet Philly."},
+        "penguins": {"name": "Pittsburgh Penguins", "city": "Pittsburgh", "stadion": "PPG Paints Arena", "gegr": "1967", "div": "Eastern – Metropolitan", "farben": "Schwarz-Gold", "titel": "5× Stanley-Cup-Champion (1991, 1992, 2009, 2016, 2017)", "geschichte": "Lemieux, Jagr, Crosby, Malkin – Pittsburgh hatte über 30 Jahre lang immer einen Superstar."},
+        "capitals": {"name": "Washington Capitals", "city": "Washington", "stadion": "Capital One Arena", "gegr": "1974", "div": "Eastern – Metropolitan", "farben": "Rot-Blau", "titel": "1× Stanley-Cup-Champion (2018)", "geschichte": "2018 holte Ovechkin den ersten Cup nach Washington – nach 44 Jahren Warten."},
+        "blackhawks": {"name": "Chicago Blackhawks", "city": "Chicago", "stadion": "United Center", "gegr": "1926", "div": "Central", "farben": "Rot-Schwarz", "titel": "6× Stanley-Cup-Champion (zuletzt 2015)", "geschichte": "Original Six – die Toews/Kane-Dynastie holte 2010, 2013 und 2015 drei Cups."},
+        "avalanche": {"name": "Colorado Avalanche", "city": "Denver", "stadion": "Ball Arena", "gegr": "1972 (als Quebec Nordiques)", "div": "Central", "farben": "Burgunder-Blau", "titel": "3× Stanley-Cup-Champion (1996, 2001, 2022)", "geschichte": "Als Nordiques gegründet, 1995 nach Denver – sofort 1996 Meister, 2022 der dritte Cup."},
+        "stars": {"name": "Dallas Stars", "city": "Dallas", "stadion": "American Airlines Center", "gegr": "1967 (als Minnesota North Stars)", "div": "Central", "farben": "Grün-Schwarz", "titel": "1× Stanley-Cup-Champion (1999)", "geschichte": "Als North Stars gegründet, 1993 nach Dallas – 1999 mit Brett Hulls umstrittenem Tor der Cup."},
+        "wild": {"name": "Minnesota Wild", "city": "Saint Paul", "stadion": "Xcel Energy Center", "gegr": "2000", "div": "Central", "farben": "Grün-Weizen", "titel": "0× Stanley-Cup-Champion", "geschichte": "Seit 2000 in der Liga – 2003 einmal im Conference-Finale, aber noch kein Cup."},
+        "predators": {"name": "Nashville Predators", "city": "Nashville", "stadion": "Bridgestone Arena", "gegr": "1998", "div": "Central", "farben": "Gold-Marineblau", "titel": "0× Stanley-Cup-Champion", "geschichte": "1998 gegründet – 2017 einmal im Finale, mit der lautesten Arena der Liga."},
+        "blues": {"name": "St. Louis Blues", "city": "St. Louis", "stadion": "Enterprise Center", "gegr": "1967", "div": "Central", "farben": "Blau-Gelb", "titel": "1× Stanley-Cup-Champion (2019)", "geschichte": "1967 gegründet, 52 Jahre gewartet – 2019 vom letzten Platz im Januar zum Cup im Juni."},
+        "jets": {"name": "Winnipeg Jets", "city": "Winnipeg", "stadion": "Canada Life Centre", "gegr": "1999 (als Atlanta Thrashers)", "div": "Central", "farben": "Marineblau-Silber", "titel": "0× Stanley-Cup-Champion", "geschichte": "Die Thrashers zogen 2011 nach Winnipeg – der Name Jets lebt wieder, der Cup fehlt noch."},
+        "mammoth": {"name": "Utah Mammoth", "city": "Salt Lake City", "stadion": "Delta Center", "gegr": "2024", "div": "Central", "farben": "Schwarz-Blau", "titel": "0× Stanley-Cup-Champion", "geschichte": "2024 als Utah Hockey Club gegründet, seit 2025 als Mammoth – das jüngste Team der NHL."},
+        "ducks": {"name": "Anaheim Ducks", "city": "Anaheim", "stadion": "Honda Center", "gegr": "1993 (als Mighty Ducks)", "div": "Pacific", "farben": "Orange-Schwarz", "titel": "1× Stanley-Cup-Champion (2007)", "geschichte": "1993 von Disney gegründet – 2007 mit Pronger und Niedermayer der erste Cup."},
+        "flames": {"name": "Calgary Flames", "city": "Calgary", "stadion": "Scotiabank Saddledome", "gegr": "1972 (als Atlanta Flames)", "div": "Pacific", "farben": "Rot-Gelb", "titel": "1× Stanley-Cup-Champion (1989)", "geschichte": "1972 in Atlanta gegründet, 1980 nach Calgary – 1989 der einzige Cup."},
+        "oilers": {"name": "Edmonton Oilers", "city": "Edmonton", "stadion": "Rogers Place", "gegr": "1972 (WHA)", "div": "Pacific", "farben": "Blau-Orange", "titel": "5× Stanley-Cup-Champion (zuletzt 1990)", "geschichte": "Die Gretzky-Dynastie holte 5 Cups in 7 Jahren – danach 1990 der letzte, trotz McDavid/Draisaitl noch keiner."},
+        "kings": {"name": "Los Angeles Kings", "city": "Los Angeles", "stadion": "Crypto.com Arena", "gegr": "1967", "div": "Pacific", "farben": "Schwarz-Silber", "titel": "2× Stanley-Cup-Champion (2012, 2014)", "geschichte": "1967 gegründet – 2012 und 2014 mit Kopitar und Quick die ersten Cups."},
+        "sharks": {"name": "San Jose Sharks", "city": "San Jose", "stadion": "SAP Center", "gegr": "1991", "div": "Pacific", "farben": "Türkis-Schwarz", "titel": "0× Stanley-Cup-Champion", "geschichte": "Seit 1991 in der Liga – 2016 einmal im Finale, aber noch nie Meister."},
+        "kraken": {"name": "Seattle Kraken", "city": "Seattle", "stadion": "Climate Pledge Arena", "gegr": "2021", "div": "Pacific", "farben": "Tiefsee-Blau", "titel": "0× Stanley-Cup-Champion", "geschichte": "2021 als 32. Team der NHL gegründet – 2023 gleich in Runde 2 der Playoffs."},
+        "canucks": {"name": "Vancouver Canucks", "city": "Vancouver", "stadion": "Rogers Arena", "gegr": "1945 (NHL seit 1970)", "div": "Pacific", "farben": "Blau-Grün", "titel": "0× Stanley-Cup-Champion", "geschichte": "1970 in die NHL gekommen – 1982, 1994 und 2011 im Finale, aber noch nie Meister."},
+        "knights": {"name": "Vegas Golden Knights", "city": "Las Vegas", "stadion": "T-Mobile Arena", "gegr": "2017", "div": "Pacific", "farben": "Stahlgrau-Gold", "titel": "1× Stanley-Cup-Champion (2023)", "geschichte": "2017 gegründet, sofort im Finale – 2023, nur sechs Jahre später, der erste Cup."},
+    },
+}
+NERD_HOF = {
+    "NBA": {
+        "celtics": [("Bill Russell", "C"), ("Larry Bird", "SF"), ("Bob Cousy", "PG"), ("John Havlicek", "SF"), ("Paul Pierce", "SF"), ("Kevin Garnett", "PF")],
+        "nets": [("Jason Kidd", "PG"), ("Julius Erving", "SF"), ("Rick Barry", "SF"), ("Dražen Petrović", "SG")],
+        "knicks": [("Walt Frazier", "PG"), ("Willis Reed", "C"), ("Patrick Ewing", "C"), ("Earl Monroe", "SG")],
+        "76ers": [("Julius Erving", "SF"), ("Allen Iverson", "SG"), ("Moses Malone", "C"), ("Wilt Chamberlain", "C"), ("Charles Barkley", "PF")],
+        "raptors": [("Vince Carter", "SG"), ("Tracy McGrady", "SG"), ("Chris Bosh", "PF")],
+        "bulls": [("Michael Jordan", "SG"), ("Scottie Pippen", "SF"), ("Dennis Rodman", "PF"), ("Artis Gilmore", "C")],
+        "cavaliers": [("Nate Thurmond", "C"), ("Wayne Embry", "C")],
+        "pistons": [("Isiah Thomas", "PG"), ("Joe Dumars", "SG"), ("Ben Wallace", "C"), ("Dave Bing", "PG"), ("Dennis Rodman", "PF")],
+        "pacers": [("Reggie Miller", "SG"), ("Mel Daniels", "C"), ("Roger Brown", "SF"), ("George McGinnis", "PF")],
+        "bucks": [("Kareem Abdul-Jabbar", "C"), ("Oscar Robertson", "PG"), ("Ray Allen", "SG"), ("Sidney Moncrief", "SG")],
+        "hawks": [("Dominique Wilkins", "SF"), ("Bob Pettit", "PF"), ("Lenny Wilkens", "PG"), ("Dikembe Mutombo", "C")],
+        "hornets": [("Alonzo Mourning", "C"), ("Vlade Divac", "C")],
+        "heat": [("Dwyane Wade", "SG"), ("Alonzo Mourning", "C"), ("Chris Bosh", "PF"), ("Shaquille O'Neal", "C")],
+        "magic": [("Shaquille O'Neal", "C"), ("Tracy McGrady", "SG"), ("Dwight Howard", "C")],
+        "wizards": [("Wes Unseld", "C"), ("Elvin Hayes", "PF"), ("Earl Monroe", "SG")],
+        "nuggets": [("Alex English", "SF"), ("Dikembe Mutombo", "C"), ("David Thompson", "SG"), ("Dan Issel", "C")],
+        "timberwolves": [("Kevin Garnett", "PF")],
+        "thunder": [("Gary Payton", "PG"), ("Jack Sikma", "C"), ("Spencer Haywood", "PF")],
+        "blazers": [("Clyde Drexler", "SG"), ("Bill Walton", "C"), ("Arvydas Sabonis", "C"), ("Dražen Petrović", "SG")],
+        "jazz": [("Karl Malone", "PF"), ("John Stockton", "PG"), ("Adrian Dantley", "SF"), ("Pete Maravich", "SG"), ("Jerry Sloan", "Trainer")],
+        "warriors": [("Wilt Chamberlain", "C"), ("Rick Barry", "SF"), ("Chris Mullin", "SF"), ("Nate Thurmond", "C"), ("Neil Johnston", "C")],
+        "clippers": [("Bob McAdoo", "C"), ("Bill Walton", "C")],
+        "lakers": [("Magic Johnson", "PG"), ("Kareem Abdul-Jabbar", "C"), ("Kobe Bryant", "SG"), ("Shaquille O'Neal", "C"), ("Jerry West", "SG"), ("Elgin Baylor", "SF"), ("James Worthy", "SF"), ("George Mikan", "C")],
+        "suns": [("Charles Barkley", "PF"), ("Steve Nash", "PG"), ("Connie Hawkins", "PF"), ("Grant Hill", "SF")],
+        "kings": [("Oscar Robertson", "PG"), ("Nate Archibald", "PG"), ("Chris Webber", "PF"), ("Mitch Richmond", "SG")],
+        "mavericks": [("Dirk Nowitzki", "PF"), ("Jason Kidd", "PG")],
+        "rockets": [("Hakeem Olajuwon", "C"), ("Moses Malone", "C"), ("Calvin Murphy", "PG"), ("Rudy Tomjanovich", "Trainer")],
+        "grizzlies": [("Pau Gasol", "PF")],
+        "pelicans": [],
+        "spurs": [("Tim Duncan", "PF"), ("David Robinson", "C"), ("George Gervin", "SG"), ("Manu Ginóbili", "SG"), ("Tony Parker", "PG"), ("Gregg Popovich", "Trainer")],
+    },
+    "NHL": {
+        "bruins": [("Bobby Orr", "D"), ("Phil Esposito", "C"), ("Ray Bourque", "D"), ("Johnny Bucyk", "LW"), ("Cam Neely", "RW")],
+        "sabres": [("Gilbert Perreault", "C"), ("Dominik Hašek", "G"), ("Pat LaFontaine", "C"), ("Dave Andreychuk", "LW")],
+        "redwings": [("Gordie Howe", "RW"), ("Steve Yzerman", "C"), ("Nicklas Lidström", "D"), ("Terry Sawchuk", "G"), ("Ted Lindsay", "LW"), ("Alex Delvecchio", "C"), ("Sergei Fedorov", "C"), ("Pavel Datsyuk", "C")],
+        "panthers": [("Roberto Luongo", "G"), ("Pavel Bure", "RW")],
+        "canadiens": [("Maurice Richard", "RW"), ("Jean Béliveau", "C"), ("Guy Lafleur", "RW"), ("Jacques Plante", "G"), ("Ken Dryden", "G"), ("Larry Robinson", "D"), ("Patrick Roy", "G")],
+        "senators": [("Daniel Alfredsson", "RW"), ("Marian Hossa", "RW")],
+        "lightning": [("Vincent Lecavalier", "C"), ("Martin St. Louis", "RW"), ("Dave Andreychuk", "LW")],
+        "leafs": [("Dave Keon", "C"), ("Darryl Sittler", "C"), ("Mats Sundin", "C"), ("Johnny Bower", "G"), ("Borje Salming", "D"), ("Doug Gilmour", "C"), ("Lanny McDonald", "RW")],
+        "hurricanes": [("Ron Francis", "C")],
+        "bluejackets": [],
+        "devils": [("Martin Brodeur", "G"), ("Scott Stevens", "D"), ("Scott Niedermayer", "D")],
+        "islanders": [("Mike Bossy", "RW"), ("Denis Potvin", "D"), ("Billy Smith", "G"), ("Clark Gillies", "LW")],
+        "rangers": [("Mark Messier", "C"), ("Brian Leetch", "D"), ("Rod Gilbert", "RW"), ("Eddie Giacomin", "G"), ("Andy Bathgate", "RW"), ("Henrik Lundqvist", "G")],
+        "flyers": [("Bobby Clarke", "C"), ("Bernie Parent", "G"), ("Eric Lindros", "C"), ("Bill Barber", "LW"), ("Mark Howe", "D")],
+        "penguins": [("Mario Lemieux", "C"), ("Jaromír Jágr", "RW"), ("Paul Coffey", "D"), ("Ron Francis", "C"), ("Marc-André Fleury", "G")],
+        "capitals": [("Rod Langway", "D"), ("Scott Stevens", "D"), ("Mike Gartner", "RW"), ("Dino Ciccarelli", "RW")],
+        "blackhawks": [("Stan Mikita", "C"), ("Bobby Hull", "LW"), ("Tony Esposito", "G"), ("Pierre Pilote", "D"), ("Glenn Hall", "G"), ("Chris Chelios", "D"), ("Marian Hossa", "RW")],
+        "avalanche": [("Joe Sakic", "C"), ("Peter Forsberg", "C"), ("Patrick Roy", "G"), ("Rob Blake", "D")],
+        "stars": [("Mike Modano", "C"), ("Ed Belfour", "G"), ("Brett Hull", "RW"), ("Joe Nieuwendyk", "C")],
+        "wild": [],
+        "predators": [],
+        "blues": [("Brett Hull", "RW"), ("Bernie Federko", "C"), ("Al MacInnis", "D"), ("Chris Pronger", "D")],
+        "jets": [("Teemu Selänne", "RW"), ("Dale Hawerchuk", "C")],
+        "mammoth": [],
+        "ducks": [("Teemu Selänne", "RW"), ("Paul Kariya", "LW"), ("Scott Niedermayer", "D")],
+        "flames": [("Jarome Iginla", "RW"), ("Lanny McDonald", "RW"), ("Al MacInnis", "D"), ("Joe Nieuwendyk", "C")],
+        "oilers": [("Wayne Gretzky", "C"), ("Mark Messier", "C"), ("Jari Kurri", "RW"), ("Grant Fuhr", "G"), ("Paul Coffey", "D"), ("Glenn Anderson", "RW")],
+        "kings": [("Marcel Dionne", "C"), ("Luc Robitaille", "LW"), ("Rob Blake", "D"), ("Wayne Gretzky", "C"), ("Rogie Vachon", "G")],
+        "sharks": [],
+        "kraken": [],
+        "canucks": [("Pavel Bure", "RW"), ("Roberto Luongo", "G"), ("Daniel Sedin", "LW"), ("Henrik Sedin", "C")],
+        "knights": [("Marc-André Fleury", "G")],
+    },
+}
+NERD_HOF_DETAILS = {
+    "Michael Jordan": "6× NBA Champion mit den Chicago Bulls (1991–93, 1996–98) – zwei Three-Peats! 5× MVP, 14× All-Star, 10× Scoring-Champion. Gilt als der beste Basketballer aller Zeiten – 'His Airness'.",
+    "Kobe Bryant": "5× NBA Champion mit den Lakers (2000–02, 2009, 2010). 81 Punkte in einem Spiel (2006) – zweitmeiste aller Zeiten. 20 Saisons nur für die Lakers, beide Trikotnummern (8 und 24) retired.",
+    "Shaquille O'Neal": "4× NBA Champion (Lakers 2000–02, Heat 2006). 3× Finals-MVP, 2000 MVP. Der dominanteste Center seiner Ära – kaum zu stoppen in der Zone.",
+    "Tim Duncan": "5× NBA Champion mit den Spurs (1999–2014). 2× MVP, 3× Finals-MVP. 'The Big Fundamental' – 19 Saisons nur in San Antonio.",
+    "Larry Bird": "3× NBA Champion mit den Celtics (1981, 1984, 1986). 3× MVP in Folge (1984–86). Die Rivalität mit Magic Johnson prägte die NBA der 80er.",
+    "Magic Johnson": "5× NBA Champion mit den Lakers (1980, 1982, 1985, 1987, 1988). 3× MVP, 3× Finals-MVP. Als 2,06-m-Point-Guard revolutionierte er das Spiel – 'Showtime'.",
+    "Kareem Abdul-Jabbar": "6× NBA Champion (Bucks 1971, Lakers 1980, 1982, 1985, 1987, 1988). 6× MVP (Rekord). 38.387 Punkte – jahrzehntelang NBA-Rekord, bis LeBron ihn 2023 übertraf. Der Skyhook war unverteidigbar.",
+    "Bill Russell": "11× NBA Champion mit den Celtics (1957–69) – 11 Titel in 13 Jahren! 5× MVP. Der größte Gewinner der NBA-Geschichte und Bürgerrechts-Ikone.",
+    "Wilt Chamberlain": "2× NBA Champion (76ers 1967, Lakers 1972). 100 Punkte in einem Spiel (1962) – bis heute Rekord! 4× MVP, 7× Scoring-Champion.",
+    "Dirk Nowitzki": "1× NBA Champion mit Dallas (2011) – Finals-MVP. 2007 MVP. 31.560 Punkte, Platz 6 aller Zeiten. Der beste europäische Spieler der NBA-Geschichte, 21 Saisons nur für Dallas.",
+    "Kevin Garnett": "1× NBA Champion mit Boston (2008). 2004 MVP, 2008 Defensive Player of the Year. 15× All-Star – 'The Big Ticket'.",
+    "Allen Iverson": "2001 MVP, 4× Scoring-Champion. 2001 führte er die 76ers ins Finale. Mit 1,83 m einer der kleinsten Superstars der Liga – 'The Answer'.",
+    "Wayne Gretzky": "4× Stanley-Cup-Champion mit Edmonton (1984, 1985, 1987, 1988). 9× MVP, 2.857 Punkte – NHL-Rekord, unerreicht. 'The Great One' – die 99 ist in der ganzen Liga gesperrt.",
+    "Mario Lemieux": "2× Stanley-Cup-Champion mit Pittsburgh (1991, 1992). 3× MVP, 1.723 Punkte in 915 Spielen. Rettete die Penguins vor der Pleite – als Spieler UND später als Besitzer.",
+    "Gordie Howe": "4× Stanley-Cup-Champion mit Detroit (1950, 1952, 1954, 1955). 6× MVP. 'Mr. Hockey' – 1.767 Spiele über 5 Jahrzehnte (40er bis 80er)!",
+    "Bobby Orr": "2× Stanley-Cup-Champion mit Boston (1970, 1972). 8× bester Verteidiger (Norris Trophy). Revolutionierte die Verteidiger-Position – das Flug-Tor 1970 ist das berühmteste Foto der NHL.",
+    "Mark Messier": "6× Stanley-Cup-Champion (Oilers 1984, 1985, 1987, 1988, 1990, Rangers 1994). 1994 beendete er mit den Rangers die 54-jährige Durststrecke – 'The Captain'.",
+    "Steve Yzerman": "3× Stanley-Cup-Champion mit Detroit (1997, 1998, 2002). 22 Saisons nur für die Red Wings – 'The Captain'. Danach baute er als GM Tampa Bay und Detroit um.",
+    "Patrick Roy": "4× Stanley-Cup-Champion (Canadiens 1986, 1993, Avalanche 1996, 2001). 3× Playoff-MVP. 'Saint Patrick' – erfand den Butterfly-Stil neu und war im Playoff-Modus kaum zu schlagen.",
+    "Martin Brodeur": "3× Stanley-Cup-Champion mit New Jersey (1995, 2000, 2003). 691 Siege – NHL-Rekord für Torhüter. Berühmt für sein Puck-Handling – die 'Brodeur-Regel' (Trapez) wurde wegen ihm eingeführt.",
+    "Jaromír Jágr": "2× Stanley-Cup-Champion mit Pittsburgh (1991, 1992). 5× Scoring-Champion. 1.921 Punkte – Platz 2 aller Zeiten hinter Gretzky. Spielte bis 45 in der NHL, danach noch in Tschechien.",
+    "Ray Bourque": "1× Stanley-Cup-Champion mit Colorado (2001) – im letzten Spiel seiner Karriere! 5× Norris Trophy. 22 Saisons, davon 21 in Boston – der Verteidiger mit den meisten Punkten aller Zeiten (1.579).",
+    "Maurice Richard": "8× Stanley-Cup-Champion mit Montreal (1944–60). Erster Spieler mit 50 Toren in einer Saison (1944/45). 'The Rocket' – 1955 löste seine Sperre den 'Richard Riot' in Montreal aus.",
+    "Jean Béliveau": "10× Stanley-Cup-Champion mit Montreal (1956–60, 1965, 1966, 1968, 1969, 1971). 2× MVP. 'Le Gros Bill' – Kapitän der Canadiens-Dynastie der 50er.",
+}
+
 NFL_RULES_TEXT = """📖 NFL – Die Regeln (kurz & knackig)
 
 ⏱️ Spielzeit: 4 Viertel à 15 Minuten = 60 Minuten. Bei Gleichstand: Overtime!
@@ -8024,9 +8231,11 @@ async def nerd_cmd(update, ctx):
         _kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("📖 NFL Regeln", callback_data="nerd_rules")],
             [InlineKeyboardButton("🏈 NFL Teams", callback_data="nerd_teams")],
+            [InlineKeyboardButton("🏀 NBA", callback_data="nerd_league:NBA")],
+            [InlineKeyboardButton("🏒 NHL", callback_data="nerd_league:NHL")],
             [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
         ])
-        await _nerd_show(update, ctx, "🧠 Nerd-Modus\nDein Lexikon für US-Sport – Regeln, Teams & Legenden!\n\n📖 NFL Regeln – so funktioniert Football\n🏈 NFL Teams – alle 32 Teams + Hall of Famers\n\nNBA, NHL, MLB & NCAAF kommen in Phase 2!", _kb)
+        await _nerd_show(update, ctx, "🧠 Nerd-Modus\nDein Lexikon für US-Sport – Regeln, Teams & Legenden!\n\n📖 NFL Regeln – so funktioniert Football\n🏈 NFL Teams – alle 32 Teams + Hall of Famers\n🏀 NBA – Regeln, alle 30 Teams + Hall of Fame\n🏒 NHL – Regeln, alle 32 Teams + Hockey Hall of Fame\n\nMLB & NCAAF kommen in der nächsten Version!", _kb)
     except Exception:
         try:
             target = update.message or update.callback_query.message
@@ -8125,10 +8334,158 @@ async def nerd_hof_detail_cmd(update, ctx, key, idx):
         if _det:
             _txt = f"⭐ {_nm} – Hall of Fame\n{_det}"
         else:
-            _txt = f"⭐ {_nm} – Hall of Fame\nPosition: {_pos} | {_t['name'] if _t else ''}\n\nAusführliche Story folgt in Phase 2!"
+            _txt = f"⭐ {_nm} – Hall of Fame\nPosition: {_pos} | {_t['name'] if _t else ''}\n\nNoch keine ausführliche Story im Lexikon – folgt mit einem späteren Update!"
         _kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("⭐ Alle Hall of Famers", callback_data=f"nerd_hof:{key}")],
             [InlineKeyboardButton("🏈 Team-Seite", callback_data=f"nerd_team:{key}")],
+            [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+        ])
+        await _nerd_show(update, ctx, _txt, _kb)
+    except Exception:
+        try:
+            target = update.message or update.callback_query.message
+            await target.reply_text("😅 Legenden-Story konnte grad nicht geladen werden!", reply_markup=small_kb())
+        except: pass
+
+
+
+async def nerd_league_cmd(update, ctx, league):
+    # V259: Liga-Hub! Regeln + Teams + zurück zum Nerd-Modus!
+    try:
+        _m = NERD_LEAGUES.get(league)
+        if not _m:
+            target = update.message or update.callback_query.message
+            await target.reply_text("😅 Liga nicht gefunden!", reply_markup=small_kb()); return
+        _kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton(f"📖 {_m['label']} Regeln", callback_data=f"nerd_rules:{league}")],
+            [InlineKeyboardButton(f"{_m['emoji']} {_m['teams']}", callback_data=f"nerd_teams:{league}")],
+            [InlineKeyboardButton("🧠 Nerd-Modus", callback_data="nerd")],
+            [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+        ])
+        await _nerd_show(update, ctx, f"{_m['emoji']} {_m['label']}\nDein Lexikon für {_m['label']} – Regeln, Teams & Legenden!\n\n📖 {_m['label']} Regeln – so funktioniert {_m['label']}\n{_m['emoji']} {_m['teams']} – alle Teams + {_m['hof']}\n\nTippe auf einen Knopf – los geht's!", _kb)
+    except Exception:
+        try:
+            target = update.message or update.callback_query.message
+            await target.reply_text("😅 Liga-Seite konnte grad nicht geladen werden!", reply_markup=small_kb())
+        except: pass
+
+async def nerd_league_rules_cmd(update, ctx, league):
+    # V259: Regeln pro Liga!
+    try:
+        _m = NERD_LEAGUES.get(league)
+        if not _m:
+            target = update.message or update.callback_query.message
+            await target.reply_text("😅 Liga nicht gefunden!", reply_markup=small_kb()); return
+        _kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton(f"{_m['emoji']} {_m['teams']}", callback_data=f"nerd_teams:{league}")],
+            [InlineKeyboardButton("🧠 Nerd-Modus", callback_data="nerd")],
+            [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+        ])
+        await _nerd_show(update, ctx, NERD_RULES.get(league, "😅 Regeln noch nicht da!"), _kb)
+    except Exception:
+        try:
+            target = update.message or update.callback_query.message
+            await target.reply_text("😅 Regeln konnten grad nicht geladen werden!", reply_markup=small_kb())
+        except: pass
+
+async def nerd_league_teams_cmd(update, ctx, league):
+    # V259: Team-Liste pro Liga, gruppiert nach Division/Conference!
+    try:
+        _nerd_clear_lists(ctx)
+        _m = NERD_LEAGUES.get(league)
+        _teams = NERD_TEAMS.get(league) or {}
+        if not _m or not _teams:
+            target = update.message or update.callback_query.message
+            await target.reply_text("😅 Team-Liste nicht gefunden!", reply_markup=small_kb()); return
+        _keys = list(_teams.keys())
+        ctx.user_data["nerd_teams_list"] = {"league": league, "keys": _keys}  # V259: Dict-Format (NFL = alte Liste)!
+        lines = [f"{_m['emoji']} {_m['teams']} – alle {len(_keys)}!", "Tippe die Zahl für dein Team!", ""]
+        _last_div = ""
+        for _i, _k in enumerate(_keys, 1):
+            _t = _teams[_k]
+            if _t["div"] != _last_div:
+                _last_div = _t["div"]
+                lines.append(f"{_last_div}:")
+            lines.append(f"{_i}. {_t['name']}")
+        _kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🧠 Nerd-Modus", callback_data="nerd")],
+            [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+        ])
+        await _nerd_show(update, ctx, "\n".join(lines), _kb)
+    except Exception:
+        try:
+            target = update.message or update.callback_query.message
+            await target.reply_text("😅 Team-Liste konnte grad nicht geladen werden!", reply_markup=small_kb())
+        except: pass
+
+async def nerd_league_team_cmd(update, ctx, league, key):
+    # V259: Team-Seite pro Liga!
+    try:
+        _m = NERD_LEAGUES.get(league)
+        _t = (NERD_TEAMS.get(league) or {}).get(key)
+        if not _m or not _t:
+            target = update.message or update.callback_query.message
+            await target.reply_text("😅 Team nicht gefunden!", reply_markup=small_kb()); return
+        lines = [f"{_m['emoji']} {_t['name']}", f"📍 {_t['city']} | 🏟️ {_t['stadion']}", f"📅 Gegründet: {_t['gegr']}", f"🏆 {_t['titel']}", f"🎨 Farben: {_t['farben']}", f"📂 Division: {_t['div']}", "", "📖 Geschichte:", _t["geschichte"]]
+        _kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton(f"⭐ {_m['hof']}", callback_data=f"nerd_hof:{league}:{key}")],
+            [InlineKeyboardButton(f"{_m['emoji']} Alle Teams", callback_data=f"nerd_teams:{league}")],
+            [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+        ])
+        await _nerd_show(update, ctx, "\n".join(lines), _kb)
+    except Exception:
+        try:
+            target = update.message or update.callback_query.message
+            await target.reply_text("😅 Team-Seite konnte grad nicht geladen werden!", reply_markup=small_kb())
+        except: pass
+
+async def nerd_league_hof_cmd(update, ctx, league, key):
+    # V259: Hall-of-Fame-Liste pro Liga + Team! Leere Liste = ehrlicher Text (z.B. Blue Jackets, Wild – noch kein HOFer)!
+    try:
+        _nerd_clear_lists(ctx)
+        _m = NERD_LEAGUES.get(league)
+        _t = (NERD_TEAMS.get(league) or {}).get(key)
+        _names = (NERD_HOF.get(league) or {}).get(key) or []
+        if not _m or not _t:
+            target = update.message or update.callback_query.message
+            await target.reply_text("😅 Team nicht gefunden!", reply_markup=small_kb()); return
+        _kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton(f"{_m['emoji']} Team-Seite", callback_data=f"nerd_team:{league}:{key}")],
+            [InlineKeyboardButton(f"{_m['emoji']} Alle Teams", callback_data=f"nerd_teams:{league}")],
+            [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+        ])
+        if not _names:
+            await _nerd_show(update, ctx, f"⭐ {_m['hof']} – {_t['name']}\n\nNoch kein Hall of Famer für dieses Team – die Franchise ist noch jung oder wartet noch auf ihren ersten!\n\nSobald ein Ex-Spieler aufgenommen wird, steht er hier!", _kb)
+            return
+        ctx.user_data["nerd_hof_list"] = {"league": league, "team": key, "names": [n for n, p in _names]}
+        lines = [f"⭐ {_m['hof']} – {_t['name']}", "Tippe die Zahl für die Story!", ""]
+        for _i, (_nm, _pos) in enumerate(_names, 1):
+            lines.append(f"{_i}. {_nm} – {_pos}")
+        await _nerd_show(update, ctx, "\n".join(lines), _kb)
+    except Exception:
+        try:
+            target = update.message or update.callback_query.message
+            await target.reply_text("😅 HOF-Liste konnte grad nicht geladen werden!", reply_markup=small_kb())
+        except: pass
+
+async def nerd_league_hof_detail_cmd(update, ctx, league, key, idx):
+    # V259: Detail-Seite pro Legende!
+    try:
+        _m = NERD_LEAGUES.get(league)
+        _t = (NERD_TEAMS.get(league) or {}).get(key)
+        _names = (NERD_HOF.get(league) or {}).get(key) or []
+        if idx < 0 or idx >= len(_names):
+            target = update.message or update.callback_query.message
+            await target.reply_text("😅 Legende nicht gefunden!", reply_markup=small_kb()); return
+        _nm, _pos = _names[idx]
+        _det = NERD_HOF_DETAILS.get(_nm)
+        if _det:
+            _txt = f"⭐ {_nm} – {_m['hof'] if _m else 'Hall of Fame'}\n{_det}"
+        else:
+            _txt = f"⭐ {_nm} – {_m['hof'] if _m else 'Hall of Fame'}\nPosition: {_pos} | {_t['name'] if _t else ''}\n\nNoch keine ausführliche Story im Lexikon – folgt mit einem späteren Update!"
+        _kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton(f"⭐ Alle {_m['hof'] if _m else 'Hall of Famers'}", callback_data=f"nerd_hof:{league}:{key}")],
+            [InlineKeyboardButton(f"{_m['emoji'] if _m else '🏆'} Team-Seite", callback_data=f"nerd_team:{league}:{key}")],
             [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
         ])
         await _nerd_show(update, ctx, _txt, _kb)
@@ -8412,8 +8769,17 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif data == "nerd": await nerd_cmd(update, ctx)
     elif data == "nerd_rules": await nerd_rules_cmd(update, ctx)
     elif data == "nerd_teams": await nerd_teams_cmd(update, ctx)
-    elif data.startswith("nerd_team:"): await nerd_team_cmd(update, ctx, data.split(":", 1)[1])
-    elif data.startswith("nerd_hof:"): await nerd_hof_cmd(update, ctx, data.split(":", 1)[1])
+    elif data.startswith("nerd_league:"): await nerd_league_cmd(update, ctx, data.split(":", 1)[1])
+    elif data.startswith("nerd_rules:"): await nerd_league_rules_cmd(update, ctx, data.split(":", 1)[1])
+    elif data.startswith("nerd_teams:"): await nerd_league_teams_cmd(update, ctx, data.split(":", 1)[1])
+    elif data.startswith("nerd_team:"):
+        _parts259 = data.split(":")
+        if len(_parts259) == 3: await nerd_league_team_cmd(update, ctx, _parts259[1], _parts259[2])
+        else: await nerd_team_cmd(update, ctx, _parts259[1])
+    elif data.startswith("nerd_hof:"):
+        _parts259 = data.split(":")
+        if len(_parts259) == 3: await nerd_league_hof_cmd(update, ctx, _parts259[1], _parts259[2])
+        else: await nerd_hof_cmd(update, ctx, _parts259[1])
     elif data.startswith("teamnext:"):
         _pp214 = data.split(":", 2); await team_next_cmd(update, ctx, _pp214[1], _pp214[2])
     elif data.startswith("teamnews:"):
