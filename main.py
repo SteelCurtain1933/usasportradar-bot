@@ -1,4 +1,5 @@
-# USA Sport Radar - V261 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# USA Sport Radar - V262 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# V262: Start-Nachricht NUR an den Owner! /myid zeigt die Chat-ID (kommt auf Render als OWNER_CHAT_ID rein). Beim Start schickt der Bot dem Owner "Bot ist wieder online!" - ohne ID passiert einfach nix, kein Fehler!
 # V261: Nerd-Modus CLEANUP! "Nerd-Modus"-Knopf auf allen Nerd-Unter-Seiten entfernt (Zurueck reicht)! Nur Hauptmenue behaelt den Nerd-Modus-Einstieg!
 # V260: Nerd-Modus FIX! Hub = nur Liga-Knoepfe (NFL/NBA/NHL, jede Liga eigener Hub)! Zurueck = ECHT eine Ebene hoch im Nerd-Fenster (statt Fenster zu)! Globaler back-Handler (Fenster loeschen) wird im Nerd-Modus nicht mehr getroffen!
 # V259: Nerd-Modus Phase 2, Teil 1! NBA + NHL: Regeln, alle Teams, Hall of Famers + Detail-Seiten! Generische Liga-Funktionen (nerd_league:*), NFL bleibt unveraendert! MLB + NCAAF kommen in V260!
@@ -37,6 +38,8 @@ for _n in ["apscheduler", "apscheduler.executors.default", "apscheduler.schedule
 # TOKEN: Auf Render kommt der Token aus der geheimen Variable BOT_TOKEN (auf der Render-Website eintragen).
 # In dieser Datei steht KEIN echter Token - so ist sie sicher fuer GitHub.
 TOKEN = os.getenv("BOT_TOKEN") or "DEIN_TOKEN_HIER_EINTRAGEN"
+BOT_VERSION = "V262"
+OWNER_CHAT_ID = os.getenv("OWNER_CHAT_ID", "").strip()  # V262: NUR diese ID kriegt die Start-Nachricht - sonst niemand!
 BERLIN = ZoneInfo("Europe/Berlin")
 FAV_FILE = "favorites.json"
 
@@ -1261,6 +1264,15 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def help_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     _hkb = _help_cats_kb()
     await update.message.reply_text("❓ Hilfe - Was willst du wissen?\n\nTippe eine Kategorie an - nur das Thema, kein Batzen Text!", reply_markup=_hkb)
+
+async def myid_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    # V262: Zeigt die eigene Chat-ID - die kommt auf Render als OWNER_CHAT_ID rein! Nur fuer den Owner gedacht!
+    try:
+        _cid = update.effective_chat.id if update.effective_chat else (update.effective_user.id if update.effective_user else None)
+        await update.message.reply_text(f"🆔 Deine Chat-ID:\n\n{_cid}\n\nDie traegst du auf Render als Environment Variable ein:\nName: OWNER_CHAT_ID\nWert: {_cid}\n\nDann schickt dir der Bot bei jedem Start eine \"Bin wieder online\"-Nachricht! 🟢")
+    except Exception:
+        try: await update.message.reply_text("😅 Chat-ID konnte grad nicht gelesen werden!")
+        except: pass
 
 async def fav_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     favs = favs_for(update.effective_user.id)
@@ -8962,6 +8974,16 @@ def _run_health_server():
     except Exception as e:
         print("Health server:", e)
 
+async def _startup_notify(app):
+    # V262: Start-Nachricht NUR an den Owner (OWNER_CHAT_ID)! Kein anderer kriegt sie - garantiert!
+    try:
+        _oid = (OWNER_CHAT_ID or "").strip()
+        if not _oid: return  # Keine ID eingetragen -> einfach normal starten, kein Fehler, kein Spam!
+        _now = datetime.now().strftime("%d.%m. %H:%M")
+        await app.bot.send_message(chat_id=int(_oid), text=f"🟢 Bot ist wieder online!\nVersion {BOT_VERSION} • {_now}\n\nBereit! Tippe /start fürs Hauptmenü.")
+    except Exception as e:
+        print("Startup-Notify:", e)
+
 def main():
     if not TOKEN:
         print("FEHLER: BOT_TOKEN fehlt! In Render als Environment Variable setzen.")
@@ -8974,8 +8996,9 @@ def main():
         asyncio.set_event_loop(asyncio.new_event_loop())
     except Exception as e:
         print("Loop-Fix:", e)
-    app = Application.builder().token(TOKEN).build()
+    app = Application.builder().token(TOKEN).post_init(_startup_notify).build()
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("myid", myid_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("fav", fav_cmd))
     app.add_handler(CommandHandler("next", next_hub_cmd))
@@ -8998,8 +9021,8 @@ def main():
         print("JobQueue:", e)
     app.add_handler(CallbackQueryHandler(on_cb))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
-    print("✅ USA Sport Radar Bot online - V214 - is live")
-    logger.info("✅ USA Sport Radar Bot online - V214 - is live")
+    print(f"✅ USA Sport Radar Bot online - {BOT_VERSION} - is live")
+    logger.info(f"✅ USA Sport Radar Bot online - {BOT_VERSION} - is live")
     app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
 
 if __name__=="__main__": main()
