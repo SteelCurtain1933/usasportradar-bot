@@ -1,4 +1,5 @@
-# USA Sport Radar - V253 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# USA Sport Radar - V254 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# V254: Meine Woche anpassbar! Einstellungen -> Meine Woche anpassen: News / Naechstes Spiel / Letztes Ergebnis (neu, Standard AUS) / CFP-Fusszeile an-aus!
 # V253: Meine Woche + naechstes Spiel pro Favorit (Gegner, US-Zeit zuerst, DE-Zeit in Klammern)! Nur wenn es eins in den naechsten 14 Tagen gibt!
 # V252: Ergebnisse im Scoreboard-Stil - Kuerzel statt Kurznamen, Gast @ Heim, wie in Alle Spiele! (Alle Ergebnisse + Nur meine Favoriten)!
 # V251: Hilfe-Split - Riesen-Fenster weg! Ueberall nur noch Kategorien (8 Themen, neu geschrieben fuer alle neuen Features)! "Ganze Hilfe" = Kategorien-Menue!
@@ -177,6 +178,15 @@ def get_autoclose(uid):
     except: return True
 def set_autoclose(uid, val):
     s = load_settings(); s.setdefault(str(uid), {})["autoclose"] = bool(val); save_settings(s)
+def get_myweek_cfg(uid):
+    # V254: Meine-Woche-Anzeige: welche Zeilen zeigt Meine Woche? Defaults = wie bisher (News an, Naechstes an, Letztes aus, CFP an)!
+    _defs254 = {"news": True, "next": True, "last": False, "cfp": True}
+    try:
+        d = load_settings().get(str(uid), {}).get("myweek_cfg", {}) or {}
+        return {k: bool(d.get(k, v)) for k, v in _defs254.items()}
+    except: return dict(_defs254)
+def set_myweek_cfg(uid, key, val):
+    s = load_settings(); s.setdefault(str(uid), {}).setdefault("myweek_cfg", {})[key] = bool(val); save_settings(s)
 def fmt_reminder(minutes):
     if minutes is None: return "Aus"
     if minutes>=60: return f"{minutes//60}h vorher" if minutes%60==0 else f"{minutes} Min vorher"
@@ -3766,10 +3776,23 @@ async def settings_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔔 Benachrichtigungen", callback_data="notif")],
         [InlineKeyboardButton("🔕 Nicht stören", callback_data="dnd")],
         [InlineKeyboardButton(f"🧹 Alte Fenster auto-schließen: {'✅ AN' if get_autoclose(uid) else '❌ AUS'}", callback_data="autoclose_toggle")],
+        [InlineKeyboardButton("📅 Meine Woche anpassen", callback_data="myweek_cfg")],
         [InlineKeyboardButton("❓ Allgemeine Hilfe", callback_data="help")],
         [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
     ])
     await _cb_edit(update, "⚙️ Einstellungen\n\nWas willst du einstellen?", kb)
+async def myweek_cfg_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    # V254: Meine Woche anpassen - 4 Schalter! Alles sofort gespeichert, Meine Woche baut danach neu!
+    uid = update.effective_user.id if update.effective_user else 0
+    cfg = get_myweek_cfg(uid)
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"📰 News-Zeile: {'✅ AN' if cfg['news'] else '❌ AUS'}", callback_data="myweek_toggle:news")],
+        [InlineKeyboardButton(f"➡️ Nächstes Spiel: {'✅ AN' if cfg['next'] else '❌ AUS'}", callback_data="myweek_toggle:next")],
+        [InlineKeyboardButton(f"📊 Letztes Ergebnis: {'✅ AN' if cfg['last'] else '❌ AUS'}", callback_data="myweek_toggle:last")],
+        [InlineKeyboardButton(f"🏆 CFP-Fußzeile: {'✅ AN' if cfg['cfp'] else '❌ AUS'}", callback_data="myweek_toggle:cfp")],
+        [InlineKeyboardButton("⬅️ Zurück zu Einstellungen", callback_data="settings")],
+    ])
+    await _cb_edit(update, "📅 Meine Woche anpassen\n\nWelche Zeilen soll Meine Woche pro Favorit zeigen?\n(News aus + Letztes Ergebnis an = für alle, die News nicht jucken!)", kb)
 async def dnd_cmd(update, ctx):
     uid = update.effective_user.id if update.effective_user else 0
     d = get_dnd(uid); pend = get_pending(uid)
@@ -5931,7 +5954,7 @@ HELP_CATS = {
  "tabellen": "❓ Hilfe - Tabellen / Top 10\n\n**📊 Tabellen**\nW-L-OTL = Siege - Niederlagen - Overtime-Niederlagen.\nNHL: Sieg = 2 Punkte, Overtime-Niederlage = 1 Punkt!\n\n**👉 Zahl tippen = Team-Fenster!**\nIn der Tabelle die Zahl vom Team tippen (z.B. 1) → Platz, Bilanz, Punkte/GB, Heim/Auswärts, Streak, Letzte 10, nächste 3, letzte 3, News + Key Spieler!\n\n**🏆 Top 10**\nTippe Zahl 1-10 für Rating + Warum so bewertet!\nRating (z.B. ⭐ 9,9/10) steht nur im Detail!\n\n**🎓 CFP Top 25**\nNur NCAAF: Die besten 25 College-Teams + nächstes Ranking!",
  "benach": "❓ Hilfe - Benachrichtigungen\n\nIn ⚙️ Einstellungen → 🔔 Benachrichtigungen:\n**⏰ Reminder** - 3h / 2h / 1h / 30 Min / Aus. 2 Favoriten gleichzeitig = 1 Nachricht für beide, mit Sender!\n**🔴 Live-Scores** - Nur für Favoriten, pro Team: Jeder Score / Spielstart + Quarter-Wechsel / Endstand / Crunch-Time / Spiel-Breaking!\n**🌙 DND / Nicht stören** - Nachts keine Nachrichten! Danach kommt eine Zusammenfassung!\nAlles aus = kein Spam!",
  "news": "❓ Hilfe - News / Verletzungen / Breaking\n\n**📰 News** - Nur deine Favoriten! Nur Headline + Link!\nQuelle: ESPN! Artikel sind auf Englisch!\nKein Push-Spam - du holst dir News, wenn du willst!\n\n**🌍 Liga-Breaking** - In News ganz oben als Toggle! Nur große Sachen: International Series, Schedule, Super Bowl, Playoffs, Trade Deadline! Push, aber nur 1x!\n\n**🚨 Spiel-Breaking** - Bei Favorit / Live-Spiel: Nur OUT / RULED OUT / Ejection! Nur 1x pro Spieler!\n\n**🏥 Verletzungen** - Daten von Sleeper (NFL) / ESPN (NBA, NHL, MLB). Offizielle Team-Apps können bis zu 15 Min schneller sein - Bot holt alle 15 Min neu!",
- "myweek": "❓ Hilfe - Meine Woche\n\n**📅 Meine Woche**\nAlle deine Favoriten auf einen Blick: Platz + Bilanz + neue News (24 Std.) + nächstes Spiel! Bei NCAAF auch CFP-Ranking!\n\n**Knöpfe**\nNext Games / News / Tabellen / CFP Top 25 öffnen sich als Unter-Fenster - Meine Woche bleibt stehen!\n\n**🔄 Aktualisieren**\nHolt alles neu! Innerhalb von 5 Min kommt der Cache (Stand-Zeit steht oben)!",
+ "myweek": "❓ Hilfe - Meine Woche\n\n**📅 Meine Woche**\nAlle deine Favoriten auf einen Blick: Platz + Bilanz + neue News (24 Std.) + nächstes Spiel! Bei NCAAF auch CFP-Ranking!\n\nIn ⚙️ Einstellungen → 📅 Meine Woche anpassen stellst du ein, welche Zeilen du siehst (News / Nächstes Spiel / Letztes Ergebnis / CFP-Zeile)!\n\n**Knöpfe**\nNext Games / News / Tabellen / CFP Top 25 öffnen sich als Unter-Fenster - Meine Woche bleibt stehen!\n\n**🔄 Aktualisieren**\nHolt alles neu! Innerhalb von 5 Min kommt der Cache (Stand-Zeit steht oben)!",
  "nerd": "❓ Hilfe - Nerd-Modus / Draft\n\n**🧠 Nerd-Modus**\nNFL + Hall of Famers: Pro Spieler Detail-Seite mit echten Werten (nix erfunden)! Ein Fenster, kein Stapel!\n\n**🏆 NFL Draft-Vorschau**\nDraft 29.04.-01.05.2027, Washington D.C.! Reihenfolge nach aktuellem Tabellenstand (schlechtestes Team zuerst) + Top-10-Prospects!",
  "fenster": "❓ Hilfe - Fenster\n\n**🪟 Fenster**\nAuswahl = Fenster ändert sich! Detail = neues Fenster! ✖️ = Fenster weg!\n\n**🧹 Auto-Schließen**\nIn ⚙️ Einstellungen → 🪟 Fenster: AN = altes Fenster schließt sich, wenn du aus dem Hauptmenü was Neues öffnest! Hauptmenü + Meine Woche bleiben immer! AUS = alles bleibt offen!\n\n**Einfach auf Knöpfe drücken** - kein @, kein Befehl nötig!",
 }
@@ -6968,9 +6991,11 @@ async def myweek_cmd(update, ctx, force=False):
     try:
         _uid_c = update.effective_user.id if update.effective_user else 0
         if not force and _uid_c in _MYWEEK_CACHE:
-            _ts_c, _lines_c, _ncaaf_c = _MYWEEK_CACHE[_uid_c]
+            _cached254 = _MYWEEK_CACHE[_uid_c]
+            _ts_c, _lines_c, _ncaaf_c = _cached254[0], _cached254[1], _cached254[2]
+            _cfg_sig_c = _cached254[3] if len(_cached254) > 3 else None
             import time as _time_c
-            if _time_c.time() - _ts_c < 300:
+            if _time_c.time() - _ts_c < 300 and _cfg_sig_c == tuple(sorted(get_myweek_cfg(_uid_c).items())):
                 _mw250 = await _cb_edit(update, "\n".join(_lines_c), _myweek_kb(_ncaaf_c))
                 try:
                     if _mw250 is not None and getattr(_mw250, "message_id", None): _MYWEEK_MSG[int(_uid_c)] = int(_mw250.message_id)
@@ -6982,6 +7007,7 @@ async def myweek_cmd(update, ctx, force=False):
     except: _load=None
     user=update.effective_user or (update.callback_query.from_user if update.callback_query else None)
     favs=favs_for(user.id) if user else []
+    _cfg254 = get_myweek_cfg(user.id if user else 0)
     if not favs:
         _mw250 = await _cb_edit(update, "📅 Meine Woche\n\nNoch keine Favoriten!\nFüg erst Teams hinzu, dann siehst du hier alles auf einen Blick!", InlineKeyboardMarkup([[InlineKeyboardButton("➕ Favorit hinzufügen", callback_data="fav_add")],[InlineKeyboardButton("⬅️ Zurück", callback_data="back")]]))
         try:
@@ -7055,59 +7081,81 @@ async def myweek_cmd(update, ctx, force=False):
                     lines.append(f"{_em} {_name}{_rec} - {_div} #{_rk}{_extra}{_kurs}")
             else:
                 lines.append(f"{_em} {_name} ({_flg})")
-        # V201: KEINE Schlagzeile mehr im Teaser! Nur Zaehler + 24h-Verweis! Grund: Google-Blog-Schlagzeilen haben Meine Woche zugemuellt! Details gibt es erst bei News!
-        # Neu = wirklich letzte 24 Std.! _news_is_fresh(pub, 1)! Ohne Datum = als neu zaehlen (ESPN liefert oft kein Datum)!
-        try:
-            _news_all,_src2=_team_news_all(_flg, _name, limit=8) or ([], "")
-            _fresh=[]
-            for _a in (_news_all or []):
-                try:
-                    if _news_is_fresh(_a.get("published",""), 1): _fresh.append(_a)
-                except: _fresh.append(_a)
-            if _fresh:
-                lines.append(f"   📰 {len(_fresh)} neue News (24 Std.)")
-            else:
+        # V254: News-Zeile nur wenn in Einstellungen an!
+        if _cfg254.get("news", True):
+            # V201: KEINE Schlagzeile mehr im Teaser! Nur Zaehler + 24h-Verweis! Grund: Google-Blog-Schlagzeilen haben Meine Woche zugemuellt! Details gibt es erst bei News!
+            # Neu = wirklich letzte 24 Std.! _news_is_fresh(pub, 1)! Ohne Datum = als neu zaehlen (ESPN liefert oft kein Datum)!
+            try:
+                _news_all,_src2=_team_news_all(_flg, _name, limit=8) or ([], "")
+                _fresh=[]
+                for _a in (_news_all or []):
+                    try:
+                        if _news_is_fresh(_a.get("published",""), 1): _fresh.append(_a)
+                    except: _fresh.append(_a)
+                if _fresh:
+                    lines.append(f"   📰 {len(_fresh)} neue News (24 Std.)")
+                else:
+                    lines.append("   📰 Keine neuen News (24 Std.)")
+            except:
                 lines.append("   📰 Keine neuen News (24 Std.)")
-        except:
-            lines.append("   📰 Keine neuen News (24 Std.)")
-        # V253: Naechstes Spiel des Favoriten dazu! Nur wenn es eins in den naechsten 14 Tagen gibt - sonst keine Zeile, kein Zuemllen!
-        try:
-            _nx253 = _v214_team_next_games(_flg, _name, n=1)
-            if _nx253:
-                _ev253 = _nx253[0]
-                _comp253 = (_ev253.get("competitions", [{}])[0] or {})
-                _comps253 = _comp253.get("competitors", []) or []
-                _opp253 = ""; _vs253 = "vs"
-                for _c253 in _comps253:
-                    _tm253 = (_c253.get("team", {}) or {})
-                    _dn253 = (_tm253.get("displayName", "") or "")
-                    _is_fav253 = _name.lower() in _dn253.lower() or _dn253.lower() in _name.lower()
-                    if _is_fav253:
-                        if (_c253.get("homeAway", "") or "").lower() == "away": _vs253 = "@"
-                        else: _vs253 = "vs"
-                    else:
-                        _opp253 = _tm253.get("shortDisplayName", "") or _dn253
-                if _opp253:
-                    _, _dt253 = fmt_dt(_ev253.get("date", ""))
-                    if _dt253:
-                        from zoneinfo import ZoneInfo as _ZI253
-                        try: _tz253 = _ZI253("America/New_York")
-                        except: _tz253 = None
-                        if _tz253 is None:
-                            from datetime import timezone as _tzmod253
-                            _tz253 = _tzmod253(timedelta(hours=-5))
-                        _ko253 = _dt253.astimezone(_tz253)
-                        _abbr253 = _ko253.strftime("%Z") or "ET"
-                        _wd253 = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
-                        _day_us253 = f"{_wd253[_ko253.weekday()]} {_ko253.strftime('%d.%m.')}"
-                        _day_de253 = f"{_wd253[_dt253.weekday()]} " if _dt253.weekday() != _ko253.weekday() else ""
-                        lines.append(f"   ➡️ Nächstes: {_vs253} {_opp253}, {_day_us253} {_ko253.strftime('%H:%M')} {_abbr253} ({_day_de253}{_dt253.strftime('%H:%M')} bei uns)")
-        except: pass
+        # V254: Letztes Ergebnis (opt-in, Standard AUS)! Scoreboard-Stil: Gast Score @ Heim Score!
+        if _cfg254.get("last", False):
+            try:
+                _last254 = _v214_team_last_results(_flg, _name, n=1)
+                if _last254:
+                    _ev254 = _last254[0]
+                    _comp254 = (_ev254.get("competitions", [{}])[0] or {})
+                    _comps254 = _comp254.get("competitors", []) or []
+                    _a_ab254 = ""; _h_ab254 = ""; _a_sc254 = ""; _h_sc254 = ""
+                    for _c254 in _comps254:
+                        _tm254 = (_c254.get("team", {}) or {})
+                        _ab254 = (_tm254.get("abbreviation", "") or "").upper() or _tm254.get("shortDisplayName", "") or _tm254.get("displayName", "")
+                        if (_c254.get("homeAway", "") or "").lower() == "away": _a_ab254, _a_sc254 = _ab254, _c254.get("score", "")
+                        else: _h_ab254, _h_sc254 = _ab254, _c254.get("score", "")
+                    if _a_ab254 and _h_ab254:
+                        lines.append(f"   📊 Letztes: {_a_ab254} {_a_sc254} @ {_h_ab254} {_h_sc254}")
+            except: pass
+        # V254: Naechstes-Spiel-Zeile nur wenn in Einstellungen an!
+        if _cfg254.get("next", True):
+            # V253: Naechstes Spiel des Favoriten dazu! Nur wenn es eins in den naechsten 14 Tagen gibt - sonst keine Zeile, kein Zuemllen!
+            try:
+                _nx253 = _v214_team_next_games(_flg, _name, n=1)
+                if _nx253:
+                    _ev253 = _nx253[0]
+                    _comp253 = (_ev253.get("competitions", [{}])[0] or {})
+                    _comps253 = _comp253.get("competitors", []) or []
+                    _opp253 = ""; _vs253 = "vs"
+                    for _c253 in _comps253:
+                        _tm253 = (_c253.get("team", {}) or {})
+                        _dn253 = (_tm253.get("displayName", "") or "")
+                        _is_fav253 = _name.lower() in _dn253.lower() or _dn253.lower() in _name.lower()
+                        if _is_fav253:
+                            if (_c253.get("homeAway", "") or "").lower() == "away": _vs253 = "@"
+                            else: _vs253 = "vs"
+                        else:
+                            _opp253 = _tm253.get("shortDisplayName", "") or _dn253
+                    if _opp253:
+                        _, _dt253 = fmt_dt(_ev253.get("date", ""))
+                        if _dt253:
+                            from zoneinfo import ZoneInfo as _ZI253
+                            try: _tz253 = _ZI253("America/New_York")
+                            except: _tz253 = None
+                            if _tz253 is None:
+                                from datetime import timezone as _tzmod253
+                                _tz253 = _tzmod253(timedelta(hours=-5))
+                            _ko253 = _dt253.astimezone(_tz253)
+                            _abbr253 = _ko253.strftime("%Z") or "ET"
+                            _wd253 = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
+                            _day_us253 = f"{_wd253[_ko253.weekday()]} {_ko253.strftime('%d.%m.')}"
+                            _day_de253 = f"{_wd253[_dt253.weekday()]} " if _dt253.weekday() != _ko253.weekday() else ""
+                            lines.append(f"   ➡️ Nächstes: {_vs253} {_opp253}, {_day_us253} {_ko253.strftime('%H:%M')} {_abbr253} ({_day_de253}{_dt253.strftime('%H:%M')} bei uns)")
+            except: pass
         lines.append("")
     # V201: Verweis, was 'neu' heisst! Nur 1 Zeile, kein Knopf-Wahnsinn!
-    lines.append("📰 Neu = letzte 24 Std. Details bei 📰 News!")
+    if _cfg254.get("news", True):
+        lines.append("📰 Neu = letzte 24 Std. Details bei 📰 News!")
     # CFP-Zeile NUR wenn NCAAF-Favorit da ist!
-    if _has_ncaaf:
+    if _has_ncaaf and _cfg254.get("cfp", True):
         lines.append("📅 Nächstes CFP-Ranking: Di 24.11. 19:30 ET (01:30 bei uns)\n")
     try:
         if _load: await _loading_done(ctx, user.id if user else 0, _load)
@@ -7118,7 +7166,7 @@ async def myweek_cmd(update, ctx, force=False):
     try:
         import time as _time_s
         _uid_s = update.effective_user.id if update.effective_user else 0
-        if _uid_s: _MYWEEK_CACHE[_uid_s]=(_time_s.time(), list(lines), _has_ncaaf)
+        if _uid_s: _MYWEEK_CACHE[_uid_s]=(_time_s.time(), list(lines), _has_ncaaf, tuple(sorted(_cfg254.items())))
     except: pass
     _mw250 = await _cb_edit(update, "\n".join(lines), kb)
     try:
@@ -8327,6 +8375,14 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif data=="autoclose_toggle":
         _du = update.effective_user.id if update.effective_user else 0
         set_autoclose(_du, not get_autoclose(_du)); await settings_cmd(update, ctx)
+    elif data=="myweek_cfg": await myweek_cfg_cmd(update, ctx)
+    elif data.startswith("myweek_toggle:"):
+        _du = update.effective_user.id if update.effective_user else 0
+        _key254 = data.split(":", 1)[1] if ":" in data else ""
+        if _key254 in ("news", "next", "last", "cfp"):
+            _cfg254 = get_myweek_cfg(_du)
+            set_myweek_cfg(_du, _key254, not _cfg254.get(_key254, True))
+        await myweek_cfg_cmd(update, ctx)
     elif data=="dnd_pick_start": await dnd_pick_cmd(update, ctx, "start")
     elif data=="dnd_pick_end": await dnd_pick_cmd(update, ctx, "end")
     elif data.startswith("dnd_set_start:"):
