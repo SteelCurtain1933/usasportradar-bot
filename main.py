@@ -1,4 +1,5 @@
-# USA Sport Radar - V251 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# USA Sport Radar - V252 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# V252: Ergebnisse im Scoreboard-Stil - Kuerzel statt Kurznamen, Gast @ Heim, wie in Alle Spiele! (Alle Ergebnisse + Nur meine Favoriten)!
 # V251: Hilfe-Split - Riesen-Fenster weg! Ueberall nur noch Kategorien (8 Themen, neu geschrieben fuer alle neuen Features)! "Ganze Hilfe" = Kategorien-Menue!
 # V250: Meine Woche geht nie mehr per Auto-Schliessen weg - sie kriegt den gleichen Schutz wie das Hauptmenue (nur Zurueck / Fenster schliessen / Alle schliessen macht sie zu)!
 # V249: Auto-Schliessen FIX - V248 hing nur an _cb_edit, aber die meisten Listen schicken per reply_text direkt -> nie gegriffen! Jetzt zentral im Dispatcher on_cb: Klick aus Hauptmenue -> alte Fenster zu!
@@ -3176,18 +3177,19 @@ async def results_mine_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 teams, _ = event_teams(ev)
                 try:
                     _comp2 = ev.get("competitions", [{}])[0]
-                    def _sn(idx):
+                    def _ab252(idx):
                         try:
                             _tm2 = _comp2.get("competitors", [])[idx].get("team", {}) or {}
-                            return _tm2.get("shortDisplayName","") or _tm2.get("displayName","") or teams[idx][0]
+                            return (_tm2.get("abbreviation") or "").upper() or _tm2.get("shortDisplayName","") or _tm2.get("displayName","") or teams[idx][0]
                         except: return teams[idx][0] if idx < len(teams) else ""
-                    _h = _sn(0); _a = _sn(1)
+                    _h = _ab252(0); _a = _ab252(1)
                 except:
                     _h = teams[0][0] if len(teams)>0 else ""; _a = teams[1][0] if len(teams)>1 else ""
                 _hs = teams[0][2] if len(teams)>0 else ""
                 _as = teams[1][2] if len(teams)>1 else ""
                 _emoji = LEAGUES[lg].get("emoji","")
-                lines.append(f"{_num}. {_emoji} {_h} {_hs} - {_as} {_a}")
+                # V252: Scoreboard-Anzeige wie in Alle Spiele: Gast Kuerzel Score @ Heim Kuerzel Score!
+                lines.append(f"{_num}. {_emoji} {_a} {_as} @ {_h} {_hs}")
     try: ctx.user_data["results_list"] = [(lg, str(_ev.get("id",""))) for _dt, lg, _ev in finals_all]
     except: pass
     try: ctx.user_data["next_live_list"] = None
@@ -3252,9 +3254,9 @@ async def results_league_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, lea
     if not finals:
         lines.append("Keine Endergebnisse in den letzten 7 Tagen gefunden.")
     else:
-        # Übersichtlicher: Nach Datum gruppieren, kurze Teamnamen, 1 Zeile pro Spiel, kein Sender!
-        # Vorher: "Ball State Cardinals 7 @ Buffalo Bulls 28 • ✅ Final • 12.11. 01:30 • 📺 ESPN2" (2 Zeilen, ewig lang)
-        # Jetzt: "📅 12.11.\nBuffalo 28 - 7 Ball State ✅" (1 Zeile, kurz!)
+        # V252: Scoreboard-Anzeige wie in Alle Spiele: Kuerzel statt Kurznamen, Gast @ Heim! Nach Datum gruppiert, 1 Zeile pro Spiel, kein Sender!
+        # Vorher: "1. Buffalo 28 - 7 Ball State" (Kurznamen, Heim zuerst)
+        # Jetzt: "1. BALL 7 @ BUF 28" (Kuerzel, Gast @ Heim, wie im Ticker!)
         from collections import OrderedDict
         by_date = OrderedDict()
         for dt, ev in finals:
@@ -3272,8 +3274,17 @@ async def results_league_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, lea
                         tm = c.get("team", {}) or {}
                         return tm.get("shortDisplayName","") or tm.get("displayName","") or teams[idx][0]
                     except: return teams[idx][0] if idx < len(teams) else ""
-                # teams[0] = Heim, teams[1] = Gast (ESPN-Reihenfolge) - wir zeigen Heim zuerst!
+                # teams[0] = Heim, teams[1] = Gast (ESPN-Reihenfolge) - Anzeige wie im Ticker: Gast @ Heim!
                 h_name = short_name(0); a_name = short_name(1)
+                # V252: Kuerzel aus ESPN (SF, MIN, DAL) - Fallback = Kurzname!
+                def abbr_name(idx):
+                    try:
+                        comp = ev.get("competitions", [{}])[0]
+                        c = comp.get("competitors", [])[idx]
+                        tm = c.get("team", {}) or {}
+                        return (tm.get("abbreviation") or "").upper() or short_name(idx)
+                    except: return short_name(idx)
+                h_abbr = abbr_name(0); a_abbr = abbr_name(1)
                 h_score = teams[0][2] if len(teams)>0 else ""
                 a_score = teams[1][2] if len(teams)>1 else ""
                 # Suffix: Kein Haken mehr pro Spiel! Nur (OT)/(2OT)/(SO)/(10 Inn.) in Klammern
@@ -3320,7 +3331,8 @@ async def results_league_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, lea
                     except: return False
                 _star_h = " ⭐" if _is_fav_r(h_name) else ""
                 _star_a = " ⭐" if _is_fav_r(a_name) else ""
-                lines.append(f"{_num}. {h_name}{_star_h} {h_score} - {a_score} {a_name}{_star_a}{suffix}")
+                _star252 = "⭐ " if (_star_h or _star_a) else ""
+                lines.append(f"{_num}. {_star252}{a_abbr} {a_score} @ {h_abbr} {h_score}{suffix}")
                 # V201 FIX 2: Live-Bedeutung DIREKT in der Liste, unter Favoriten-Spielen! Vorher nur in Detail-Ansicht!
                 if league=="NCAAF" and (_star_h or _star_a) and _cfp_rank_map:
                     try:
