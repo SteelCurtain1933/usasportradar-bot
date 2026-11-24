@@ -1,4 +1,5 @@
-# USA Sport Radar - V262 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# USA Sport Radar - V263 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# V263: Nerd-Modus Phase 2 KOMPLETT! MLB (30 Teams + Baseball Hall of Fame) + NCAAF (28 Top-Teams + Legenden) dazu! Nerd-Modus hat jetzt alle 5 Ligen: NFL, NBA, NHL, MLB, NCAAF!
 # V262: Start-Nachricht NUR an den Owner! /myid zeigt die Chat-ID (kommt auf Render als OWNER_CHAT_ID rein). Beim Start schickt der Bot dem Owner "Bot ist wieder online!" - ohne ID passiert einfach nix, kein Fehler!
 # V261: Nerd-Modus CLEANUP! "Nerd-Modus"-Knopf auf allen Nerd-Unter-Seiten entfernt (Zurueck reicht)! Nur Hauptmenue behaelt den Nerd-Modus-Einstieg!
 # V260: Nerd-Modus FIX! Hub = nur Liga-Knoepfe (NFL/NBA/NHL, jede Liga eigener Hub)! Zurueck = ECHT eine Ebene hoch im Nerd-Fenster (statt Fenster zu)! Globaler back-Handler (Fenster loeschen) wird im Nerd-Modus nicht mehr getroffen!
@@ -1269,7 +1270,7 @@ async def myid_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # V262: Zeigt die eigene Chat-ID - die kommt auf Render als OWNER_CHAT_ID rein! Nur fuer den Owner gedacht!
     try:
         _cid = update.effective_chat.id if update.effective_chat else (update.effective_user.id if update.effective_user else None)
-        await update.message.reply_text(f"🆔 Deine Chat-ID:\n\n{_cid}\n\nDie traegst du auf Render als Environment Variable ein:\nName: OWNER_CHAT_ID\nWert: {_cid}\n\nDann schickt dir der Bot bei jedem Start eine \"Bin wieder online\"-Nachricht! 🟢")
+        await update.message.reply_text(f"🆔 Deine Chat-ID:\n\n{_cid}\n\nDie trägst du auf Render als Environment Variable ein:\nName: OWNER_CHAT_ID\nWert: {_cid}\n\nDann schickt dir der Bot bei jedem Start eine \"Bin wieder online\"-Nachricht! 🟢")
     except Exception:
         try: await update.message.reply_text("😅 Chat-ID konnte grad nicht gelesen werden!")
         except: pass
@@ -7756,6 +7757,8 @@ def _v215_nfl_overall_records():
 NERD_LEAGUES = {
     "NBA": {"emoji": "🏀", "label": "NBA", "teams": "NBA Teams", "hof": "Hall of Fame"},
     "NHL": {"emoji": "🏒", "label": "NHL", "teams": "NHL Teams", "hof": "Hockey Hall of Fame"},
+    "MLB": {"emoji": "⚾", "label": "MLB", "teams": "MLB Teams", "hof": "Baseball Hall of Fame"},
+    "NCAAF": {"emoji": "🎓", "label": "NCAAF", "teams": "NCAAF Teams", "hof": "Legenden"},
 }
 NERD_RULES = {
     "NBA": """🏀 NBA – Die Regeln (kurz & knackig)
@@ -7783,6 +7786,34 @@ NERD_RULES = {
 🏆 Playoffs: 16 Teams, 4 Runden – wer 16 Spiele gewinnt, holt den Stanley Cup!
 📋 Draft: 7 Runden – die schlechtesten Teams haben die besten Chancen (Lotterie)!
 ⭐ Die NHL ist die stärkste Eishockey-Liga der Welt – seit 1917!""",
+    "MLB": """⚾ MLB – Die Regeln (kurz & knackig)
+
+⚾ Baseball – 9 Innings, kein Unentschieden, keine Uhr!
+🎯 3 Strikes = Aus! 4 Balls = Walk (kostenlos auf die 1. Base)!
+👥 3 Outs pro Halb-Inning – dann wechseln Angriff und Verteidigung!
+🏃 Run: Wer alle 4 Bases umrundet, punktet! Home Run = Ball über den Zaun!
+⏱️ Extra Innings: Ab dem 10. Inning startet ein Läufer auf der 2. Base ('Ghost Runner')!
+⏱️ Pitch Clock: Der Pitcher hat 15 Sekunden (20 bei Läufern auf Base) – sonst Ball!
+🚫 Shift-Verbot: Seit 2023 müssen 2 Infielder auf jeder Seite der 2. Base stehen!
+🔄 Designated Hitter (DH): In beiden Ligen schlägt ein DH statt des Pitchers!
+🔄 162 Spiele Regular Season – die längste Saison im US-Sport!
+🏆 Playoffs: Wild Card → Division Series → Championship Series → World Series (alle Best-of)!
+📋 Draft: 20 Runden – die schlechtesten Teams picken zuerst!
+⭐ Die MLB ist die älteste Profi-Liga der Welt – seit 1876!""",
+    "NCAAF": """🎓 NCAAF – Die Regeln (kurz & knackig)
+
+🏈 College Football – fast wie NFL, aber mit eigenen Regeln!
+👣 Catch: Nur EIN Fuß muss inbounds sein (NFL: zwei)!
+⏱️ Keine 2-Minute-Warning – die Uhr läuft einfach weiter!
+⏱️ Overtime: Beide Teams bekommen den Ball an der 25-Yard-Linie – ab der 3. Overtime nur noch 2-Point-Conversions!
+🎯 Targeting: Treffer mit dem Helm gegen den Kopf = Platzverweis + Sperre!
+⏱️ Die Uhr stoppt nach jedem First Down (bis der Schiri den Ball setzt)!
+📏 Hash Marks weiter auseinander – das Feld fühlt sich enger an!
+🏆 Regular Season: 12 Spiele, dann Conference Championship + Bowl Games!
+🏆 College Football Playoff: 12 Teams – 4 Runden bis zum Titel!
+⭐ Heisman Trophy: Die wichtigste Einzelauszeichnung – der 'MVP' des College Football!
+📋 Kein Draft wie in der NFL – wer gut ist, meldet sich für den NFL Draft an!
+🎓 NCAAF ist die Talentschmiede der NFL – fast jeder NFL-Star war hier!""",
 }
 NERD_TEAMS = {
     "NBA": {
@@ -7850,6 +7881,68 @@ NERD_TEAMS = {
         "kraken": {"name": "Seattle Kraken", "city": "Seattle", "stadion": "Climate Pledge Arena", "gegr": "2021", "div": "Pacific", "farben": "Tiefsee-Blau", "titel": "0× Stanley-Cup-Champion", "geschichte": "2021 als 32. Team der NHL gegründet – 2023 gleich in Runde 2 der Playoffs."},
         "canucks": {"name": "Vancouver Canucks", "city": "Vancouver", "stadion": "Rogers Arena", "gegr": "1945 (NHL seit 1970)", "div": "Pacific", "farben": "Blau-Grün", "titel": "0× Stanley-Cup-Champion", "geschichte": "1970 in die NHL gekommen – 1982, 1994 und 2011 im Finale, aber noch nie Meister."},
         "knights": {"name": "Vegas Golden Knights", "city": "Las Vegas", "stadion": "T-Mobile Arena", "gegr": "2017", "div": "Pacific", "farben": "Stahlgrau-Gold", "titel": "1× Stanley-Cup-Champion (2023)", "geschichte": "2017 gegründet, sofort im Finale – 2023, nur sechs Jahre später, der erste Cup."},
+    },
+    "MLB": {
+        "yankees": {"name": "New York Yankees", "city": "Bronx (New York)", "stadion": "Yankee Stadium", "gegr": "1901 (als Baltimore Orioles)", "div": "AL East", "farben": "Marineblau-Weiß", "titel": "27× World-Series-Champion (zuletzt 2009)", "geschichte": "Das erfolgreichste Team der MLB – 27 World-Series-Titel! Babe Ruth, Lou Gehrig, Joe DiMaggio, Mickey Mantle, Derek Jeter – die Yankees sind Baseball-Geschichte."},
+        "redsox": {"name": "Boston Red Sox", "city": "Boston", "stadion": "Fenway Park", "gegr": "1901", "div": "AL East", "farben": "Rot-Marineblau", "titel": "9× World-Series-Champion (zuletzt 2018)", "geschichte": "Ältestes aktives Stadion der MLB: Fenway Park (1912)! Nach dem 'Fluch des Bambino' (1918–2004) holten sie 2004 endlich wieder den Titel."},
+        "orioles": {"name": "Baltimore Orioles", "city": "Baltimore", "stadion": "Oriole Park at Camden Yards", "gegr": "1901 (als Milwaukee Brewers)", "div": "AL East", "farben": "Orange-Schwarz", "titel": "3× World-Series-Champion (1966, 1970, 1983)", "geschichte": "1966–83 eine der stärksten Franchises der Liga – mit Cal Ripken Jr. und 2.632 Spielen in Folge."},
+        "rays": {"name": "Tampa Bay Rays", "city": "St. Petersburg", "stadion": "Tropicana Field", "gegr": "1998", "div": "AL East", "farben": "Marineblau-Hellblau", "titel": "0× World-Series-Champion", "geschichte": "1998 gegründet, mit kleinstem Budget zweimal in der World Series (2008, 2020) – die Überraschungs-Franchise der MLB."},
+        "bluejays": {"name": "Toronto Blue Jays", "city": "Toronto", "stadion": "Rogers Centre", "gegr": "1977", "div": "AL East", "farben": "Blau-Weiß", "titel": "2× World-Series-Champion (1992, 1993)", "geschichte": "Einziges MLB-Team aus Kanada – 1992/93 zweimal in Folge World-Series-Champion!"},
+        "guardians": {"name": "Cleveland Guardians", "city": "Cleveland", "stadion": "Progressive Field", "gegr": "1901 (als Cleveland Blues)", "div": "AL Central", "farben": "Marineblau-Rot", "titel": "2× World-Series-Champion (1920, 1948)", "geschichte": "Früher Indians (bis 2021), seit 2022 Guardians. Längste Titeldurststrecke: Seit 1948 kein Titel mehr."},
+        "tigers": {"name": "Detroit Tigers", "city": "Detroit", "stadion": "Comerica Park", "gegr": "1901", "div": "AL Central", "farben": "Marineblau-Orange", "titel": "4× World-Series-Champion (zuletzt 1984)", "geschichte": "Eines der ältesten Teams – mit Ty Cobb, einem der besten Schlagmänner aller Zeiten."},
+        "twins": {"name": "Minnesota Twins", "city": "Minneapolis", "stadion": "Target Field", "gegr": "1901 (als Washington Senators)", "div": "AL Central", "farben": "Marineblau-Rot", "titel": "3× World-Series-Champion (1924, 1987, 1991)", "geschichte": "1961 nach Minnesota gezogen. 1991: Eine der besten World Series aller Zeiten gegen Atlanta (7 Spiele)."},
+        "royals": {"name": "Kansas City Royals", "city": "Kansas City", "stadion": "Kauffman Stadium", "gegr": "1969", "div": "AL Central", "farben": "Blau-Gold", "titel": "2× World-Series-Champion (1985, 2015)", "geschichte": "1985 und 2015 Champion – dazwischen 29 Jahre ohne Playoffs (1986–2013), eine der längsten Durststrecken."},
+        "whitesox": {"name": "Chicago White Sox", "city": "Chicago", "stadion": "Rate Field", "gegr": "1901", "div": "AL Central", "farben": "Schwarz-Weiß", "titel": "3× World-Series-Champion (1906, 1917, 2005)", "geschichte": "1919: Der 'Black Sox'-Skandal – 8 Spieler manipulierten die World Series. 2005 endlich wieder Champion."},
+        "astros": {"name": "Houston Astros", "city": "Houston", "stadion": "Daikin Park", "gegr": "1962 (als Houston Colt .45s)", "div": "AL West", "farben": "Orange-Marineblau", "titel": "2× World-Series-Champion (2017, 2022)", "geschichte": "1962 gegründet, seit 2017 Dauergast in den Playoffs – aber der Titel 2017 ist wegen des Sign-Stealing-Skandals umstritten."},
+        "angels": {"name": "Los Angeles Angels", "city": "Anaheim", "stadion": "Angel Stadium", "gegr": "1961", "div": "AL West", "farben": "Rot-Weiß", "titel": "1× World-Series-Champion (2002)", "geschichte": "1961 gegründet. 2002 Champion – und Heimat von Mike Trout und Shohei Ohtani (2018–2023)."},
+        "athletics": {"name": "Athletics", "city": "Sacramento", "stadion": "Sutter Health Park", "gegr": "1901 (als Philadelphia Athletics)", "div": "AL West", "farben": "Grün-Gold", "titel": "9× World-Series-Champion (zuletzt 1989)", "geschichte": "Neun Titel in drei Städten (Philadelphia, Kansas City, Oakland). Seit 2025 in Sacramento, ab 2028 in Las Vegas."},
+        "mariners": {"name": "Seattle Mariners", "city": "Seattle", "stadion": "T-Mobile Park", "gegr": "1977", "div": "AL West", "farben": "Marineblau-Grün", "titel": "0× World-Series-Champion", "geschichte": "Einziges MLB-Team, das noch nie in der World Series stand. 2001: 116 Siege – MLB-Rekord (geteilt)!"},
+        "rangers": {"name": "Texas Rangers", "city": "Arlington", "stadion": "Globe Life Field", "gegr": "1961 (als Washington Senators)", "div": "AL West", "farben": "Blau-Rot", "titel": "1× World-Series-Champion (2023)", "geschichte": "1961 gegründet, 1972 nach Texas gezogen. 2023 endlich der erste Titel – nach zwei verlorenen World Series (2010, 2011)."},
+        "braves": {"name": "Atlanta Braves", "city": "Atlanta", "stadion": "Truist Park", "gegr": "1871 (als Boston Red Stockings)", "div": "NL East", "farben": "Marineblau-Rot", "titel": "4× World-Series-Champion (1914, 1957, 1995, 2021)", "geschichte": "Älteste durchgehend bestehende Franchise im US-Profisport – seit 1871! Hank Aaron brach 1974 Babe Ruths Home-Run-Rekord."},
+        "marlins": {"name": "Miami Marlins", "city": "Miami", "stadion": "loanDepot park", "gegr": "1993", "div": "NL East", "farben": "Schwarz-Türkis", "titel": "2× World-Series-Champion (1997, 2003)", "geschichte": "1993 gegründet – und beide Titel als Wildcard-Team! 1997 und 2003: Außenseiter schlägt die Favoriten."},
+        "mets": {"name": "New York Mets", "city": "Queens (New York)", "stadion": "Citi Field", "gegr": "1962", "div": "NL East", "farben": "Blau-Orange", "titel": "2× World-Series-Champion (1969, 1986)", "geschichte": "1969: Die 'Miracle Mets' – vom Tabellenletzten zum Champion in 7 Jahren!"},
+        "phillies": {"name": "Philadelphia Phillies", "city": "Philadelphia", "stadion": "Citizens Bank Park", "gegr": "1883", "div": "NL East", "farben": "Rot-Weiß", "titel": "2× World-Series-Champion (1980, 2008)", "geschichte": "Älteste Franchise mit durchgehend gleichem Namen und gleicher Stadt – seit 1883! 2008 Champion nach 28 Jahren Durststrecke."},
+        "nationals": {"name": "Washington Nationals", "city": "Washington", "stadion": "Nationals Park", "gegr": "1969 (als Montreal Expos)", "div": "NL East", "farben": "Rot-Marineblau", "titel": "1× World-Series-Champion (2019)", "geschichte": "1969 als Montreal Expos gegründet, 2005 nach Washington gezogen. 2019: Sensationstitel als Wildcard-Team!"},
+        "cubs": {"name": "Chicago Cubs", "city": "Chicago", "stadion": "Wrigley Field", "gegr": "1876", "div": "NL Central", "farben": "Blau-Rot", "titel": "3× World-Series-Champion (1907, 1908, 2016)", "geschichte": "108 Jahre ohne Titel (1908–2016) – der längste Fluch im US-Sport! 2016 endlich gebrochen. Wrigley Field (1914) ist das zweitälteste Stadion."},
+        "reds": {"name": "Cincinnati Reds", "city": "Cincinnati", "stadion": "Great American Ball Park", "gegr": "1869 (als Cincinnati Red Stockings)", "div": "NL Central", "farben": "Rot-Weiß", "titel": "5× World-Series-Champion (zuletzt 1990)", "geschichte": "Die erste Profi-Baseball-Mannschaft der Welt (1869)! 1975/76: Die 'Big Red Machine' – eine der besten Teams aller Zeiten."},
+        "brewers": {"name": "Milwaukee Brewers", "city": "Milwaukee", "stadion": "American Family Field", "gegr": "1969 (als Seattle Pilots)", "div": "NL Central", "farben": "Marineblau-Gold", "titel": "0× World-Series-Champion", "geschichte": "1969 als Seattle Pilots gegründet, 1970 nach Milwaukee. 1982 in der World Series – sonst oft knapp dran."},
+        "pirates": {"name": "Pittsburgh Pirates", "city": "Pittsburgh", "stadion": "PNC Park", "gegr": "1882", "div": "NL Central", "farben": "Schwarz-Gold", "titel": "5× World-Series-Champion (zuletzt 1979)", "geschichte": "Roberto Clemente – Legende auf und neben dem Feld. 1979: Letzter Titel, danach 20 Jahre ohne Playoffs (1993–2012)."},
+        "cardinals": {"name": "St. Louis Cardinals", "city": "St. Louis", "stadion": "Busch Stadium", "gegr": "1882", "div": "NL Central", "farben": "Rot-Weiß", "titel": "11× World-Series-Champion (zuletzt 2011)", "geschichte": "Nach den Yankees die erfolgreichste Franchise – 11 Titel! Und 19 National-League-Titel."},
+        "dbacks": {"name": "Arizona Diamondbacks", "city": "Phoenix", "stadion": "Chase Field", "gegr": "1998", "div": "NL West", "farben": "Rot-Schwarz", "titel": "1× World-Series-Champion (2001)", "geschichte": "1998 gegründet – und schon 2001 Champion! In nur 4 Jahren zum Titel – der schnellste Titel aller Expansion-Teams."},
+        "rockies": {"name": "Colorado Rockies", "city": "Denver", "stadion": "Coors Field", "gegr": "1993", "div": "NL West", "farben": "Lila-Schwarz", "titel": "0× World-Series-Champion", "geschichte": "1993 gegründet. Coors Field liegt 1.600 m hoch – die dünne Luft lässt Bälle weiter fliegen!"},
+        "dodgers": {"name": "Los Angeles Dodgers", "city": "Los Angeles", "stadion": "Dodger Stadium", "gegr": "1883 (als Brooklyn Atlantics)", "div": "NL West", "farben": "Blau-Weiß", "titel": "8× World-Series-Champion (zuletzt 2024)", "geschichte": "1883 in Brooklyn gegründet, 1958 nach LA. Jackie Robinson brach 1947 die Farbgrenze – die 42 ist in der ganzen MLB gesperrt."},
+        "padres": {"name": "San Diego Padres", "city": "San Diego", "stadion": "Petco Park", "gegr": "1969", "div": "NL West", "farben": "Braun-Gold", "titel": "0× World-Series-Champion", "geschichte": "1969 gegründet, zweimal in der World Series (1984, 1998) – beide Male verloren. Tony Gwynn: 8× Batting-Champion!"},
+        "giants": {"name": "San Francisco Giants", "city": "San Francisco", "stadion": "Oracle Park", "gegr": "1883 (als New York Gothams)", "div": "NL West", "farben": "Orange-Schwarz", "titel": "8× World-Series-Champion (zuletzt 2014)", "geschichte": "1883 in New York gegründet, 1958 nach San Francisco. 2010, 2012, 2014: Drei Titel in fünf Jahren!"},
+    },
+    "NCAAF": {
+        "alabama": {"name": "Alabama Crimson Tide", "city": "Tuscaloosa", "stadion": "Bryant-Denny Stadium", "gegr": "1892", "div": "SEC", "farben": "Purpur-Weiß", "titel": "18× National Champion (zuletzt 2020)", "geschichte": "Die erfolgreichste College-Football-Dynastie – unter Nick Saban (2007–2023) 6 Titel! 'Roll Tide!'"},
+        "georgia": {"name": "Georgia Bulldogs", "city": "Athens", "stadion": "Sanford Stadium", "gegr": "1892", "div": "SEC", "farben": "Rot-Schwarz", "titel": "4× National Champion (1942, 1980, 2021, 2022)", "geschichte": "2021/22: Zwei Titel in Folge unter Kirby Smart – das moderne Powerhouse der SEC."},
+        "lsu": {"name": "LSU Tigers", "city": "Baton Rouge", "stadion": "Tiger Stadium", "gegr": "1893", "div": "SEC", "farben": "Lila-Gold", "titel": "4× National Champion (1958, 2003, 2007, 2019)", "geschichte": "Tiger Stadium ('Death Valley') – mit 102.000 Plätzen eines der lautesten Stadien der Welt. 2019: Joe Burrow und die beste Offense aller Zeiten."},
+        "florida": {"name": "Florida Gators", "city": "Gainesville", "stadion": "Ben Hill Griffin Stadium", "gegr": "1906", "div": "SEC", "farben": "Blau-Orange", "titel": "3× National Champion (1996, 2006, 2008)", "geschichte": "'The Swamp' – eines der gefürchtetsten Stadien. Unter Urban Meyer (2006, 2008) zwei Titel mit Tim Tebow."},
+        "tennessee": {"name": "Tennessee Volunteers", "city": "Knoxville", "stadion": "Neyland Stadium", "gegr": "1891", "div": "SEC", "farben": "Orange-Weiß", "titel": "6× National Champion (zuletzt 1998)", "geschichte": "Neyland Stadium (101.000) – eines der größten Stadien der Welt. 1998: Letzter Titel mit Tee Martin."},
+        "auburn": {"name": "Auburn Tigers", "city": "Auburn", "stadion": "Jordan-Hare Stadium", "gegr": "1892", "div": "SEC", "farben": "Marineblau-Orange", "titel": "2× National Champion (1957, 2010)", "geschichte": "2010: Cam Newton und der Titel. Die Iron Bowl gegen Alabama ist eine der größten Rivalitäten im Sport."},
+        "texas": {"name": "Texas Longhorns", "city": "Austin", "stadion": "Darrell K Royal–Texas Memorial Stadium", "gegr": "1893", "div": "SEC", "farben": "Orange-Weiß", "titel": "4× National Champion (1963, 1969, 1970, 2005)", "geschichte": "2005: Vince Young und der legendäre Rose-Bowl-Sieg gegen USC. 'Hook 'em Horns!' – 2024 in die SEC gewechselt."},
+        "oklahoma": {"name": "Oklahoma Sooners", "city": "Norman", "stadion": "Gaylord Family–Oklahoma Memorial Stadium", "gegr": "1895", "div": "SEC", "farben": "Purpur-Creme", "titel": "7× National Champion (zuletzt 2000)", "geschichte": "7 Titel, 7 Heisman-Gewinner – eines der erfolgreichsten Programme aller Zeiten. 2024 in die SEC gewechselt."},
+        "texasam": {"name": "Texas A&M Aggies", "city": "College Station", "stadion": "Kyle Field", "gegr": "1894", "div": "SEC", "farben": "Kastanienbraun-Weiß", "titel": "3× National Champion (1919, 1927, 1939)", "geschichte": "Kyle Field (102.000) – 'The 12th Man'! Die Fans stehen das ganze Spiel – eine der besten Atmosphären im College Football."},
+        "olemiss": {"name": "Ole Miss Rebels", "city": "Oxford", "stadion": "Vaught-Hemingway Stadium", "gegr": "1893", "div": "SEC", "farben": "Marineblau-Rot", "titel": "6× National Champion (zuletzt 1962)", "geschichte": "Ole Miss – 'The Grove' ist die berühmteste Tailgate-Party Amerikas. Archie und Eli Manning: Vater und Sohn als Rebels-Stars."},
+        "ohiostate": {"name": "Ohio State Buckeyes", "city": "Columbus", "stadion": "Ohio Stadium", "gegr": "1890", "div": "Big Ten", "farben": "Scharlachrot-Grau", "titel": "9× National Champion (zuletzt 2024)", "geschichte": "2024: Titel im neuen 12er-Playoff! 'The Horseshoe' (102.000). Größte Rivalität: Michigan ('The Game')."},
+        "michigan": {"name": "Michigan Wolverines", "city": "Ann Arbor", "stadion": "Michigan Stadium", "gegr": "1879", "div": "Big Ten", "farben": "Mais-Gelb-Blau", "titel": "12× National Champion (zuletzt 2023)", "geschichte": "Michigan Stadium ('The Big House') – mit 107.000 Plätzen das größte Stadion der USA! 2023: Titel unter Jim Harbaugh."},
+        "pennstate": {"name": "Penn State Nittany Lions", "city": "State College", "stadion": "Beaver Stadium", "gegr": "1887", "div": "Big Ten", "farben": "Marineblau-Weiß", "titel": "2× National Champion (1982, 1986)", "geschichte": "Beaver Stadium (106.000) – der 'White Out' ist legendär: 100.000 Fans alle in Weiß!"},
+        "usc": {"name": "USC Trojans", "city": "Los Angeles", "stadion": "Los Angeles Memorial Coliseum", "gegr": "1888", "div": "Big Ten", "farben": "Kardinalrot-Gold", "titel": "11× National Champion (zuletzt 2004)", "geschichte": "11 Titel, 8 Heisman-Gewinner – das glamouröseste Programm der Westküste. Seit 2024 in der Big Ten."},
+        "oregon": {"name": "Oregon Ducks", "city": "Eugene", "stadion": "Autzen Stadium", "gegr": "1894", "div": "Big Ten", "farben": "Grün-Gelb", "titel": "0× National Champion", "geschichte": "Die Uniform-Könige – über 500 verschiedene Trikot-Kombinationen! Autzen Stadium ist trotz 'nur' 54.000 Plätzen eines der lautesten."},
+        "nebraska": {"name": "Nebraska Cornhuskers", "city": "Lincoln", "stadion": "Memorial Stadium", "gegr": "1890", "div": "Big Ten", "farben": "Scharlachrot-Creme", "titel": "5× National Champion (1970, 1971, 1994, 1995, 1997)", "geschichte": "In den 90ern die Dynastie schlechthin: 60 Siege in 5 Jahren! Memorial Stadium ist seit 1962 bei jedem Heimspiel ausverkauft."},
+        "wisconsin": {"name": "Wisconsin Badgers", "city": "Madison", "stadion": "Camp Randall Stadium", "gegr": "1889", "div": "Big Ten", "farben": "Kardinalrot-Weiß", "titel": "0× National Champion", "geschichte": "Camp Randall – 'Jump Around' zwischen 3. und 4. Viertel ist die berühmteste Stadion-Tradition Amerikas."},
+        "notredame": {"name": "Notre Dame Fighting Irish", "city": "South Bend", "stadion": "Notre Dame Stadium", "gegr": "1887", "div": "Independent", "farben": "Marineblau-Gold", "titel": "11× National Champion (zuletzt 1988)", "geschichte": "Das berühmteste College-Team Amerikas – unabhängig, eigenes TV-Abkommen, Fans in aller Welt. 'Touchdown Jesus' wacht über dem Stadion."},
+        "clemson": {"name": "Clemson Tigers", "city": "Clemson", "stadion": "Memorial Stadium", "gegr": "1896", "div": "ACC", "farben": "Orange-Lila", "titel": "3× National Champion (1981, 2016, 2018)", "geschichte": "Memorial Stadium ('Death Valley') – die Spieler berühren vor dem Spiel 'Howard's Rock'. 2016/18: Zwei Titel unter Dabo Swinney."},
+        "floridastate": {"name": "Florida State Seminoles", "city": "Tallahassee", "stadion": "Doak Campbell Stadium", "gegr": "1947", "div": "ACC", "farben": "Kastanienbraun-Gold", "titel": "3× National Champion (1993, 1999, 2013)", "geschichte": "Unter Bobby Bowden (1976–2009) 14 Jahre in Folge Top 5! 2013: Jameis Winston und der Titel."},
+        "miami": {"name": "Miami Hurricanes", "city": "Miami Gardens", "stadion": "Hard Rock Stadium", "gegr": "1926", "div": "ACC", "farben": "Orange-Grün", "titel": "5× National Champion (1983, 1987, 1989, 1991, 2001)", "geschichte": "In den 80ern/90ern das gefürchtetste Team – 'The U'! 2001: Eines der besten College-Teams aller Zeiten."},
+        "northcarolina": {"name": "North Carolina Tar Heels", "city": "Chapel Hill", "stadion": "Kenan Stadium", "gegr": "1888", "div": "ACC", "farben": "Hellblau-Weiß", "titel": "0× National Champion", "geschichte": "Eher für Basketball berühmt (Michael Jordan!) – aber Lawrence Taylor und Drake Maye spielten hier Football."},
+        "virginiatech": {"name": "Virginia Tech Hokies", "city": "Blacksburg", "stadion": "Lane Stadium", "gegr": "1892", "div": "ACC", "farben": "Kastanienbraun-Orange", "titel": "0× National Champion", "geschichte": "Lane Stadium – 'Enter Sandman' beim Einlauf ist Gänsehaut pur! Michael Vick machte die Hokies 1999 zum Titelkandidaten."},
+        "tcu": {"name": "TCU Horned Frogs", "city": "Fort Worth", "stadion": "Amon G. Carter Stadium", "gegr": "1896", "div": "Big 12", "farben": "Lila-Weiß", "titel": "2× National Champion (1935, 1938)", "geschichte": "2022: Sensationell bis ins Finale! LaDainian Tomlinson – einer der besten Running Backs aller Zeiten."},
+        "oklahomastate": {"name": "Oklahoma State Cowboys", "city": "Stillwater", "stadion": "Boone Pickens Stadium", "gegr": "1901", "div": "Big 12", "farben": "Orange-Schwarz", "titel": "1× National Champion (1945)", "geschichte": "Barry Sanders 1988: 2.628 Rushing Yards in einer Saison – bis heute Rekord! Und das in nur 11 Spielen."},
+        "kansas": {"name": "Kansas Jayhawks", "city": "Lawrence", "stadion": "David Booth Kansas Memorial Stadium", "gegr": "1890", "div": "Big 12", "farben": "Blau-Purpur", "titel": "0× National Champion", "geschichte": "Basketball-Schule (James Naismith!) – aber Gale Sayers, einer der besten Running Backs aller Zeiten, spielte hier."},
+        "byu": {"name": "BYU Cougars", "city": "Provo", "stadion": "LaVell Edwards Stadium", "gegr": "1922", "div": "Big 12", "farben": "Marineblau-Weiß", "titel": "1× National Champion (1984)", "geschichte": "1984: Als einziges Team ungeschlagen – National Champion! Die Quarterback-Schule: Steve Young, Ty Detmer, Jim McMahon."},
+        "boisestate": {"name": "Boise State Broncos", "city": "Boise", "stadion": "Albertsons Stadium", "gegr": "1933", "div": "Mountain West", "farben": "Blau-Orange", "titel": "0× National Champion", "geschichte": "Der blaue Rasen! 'The Blue Turf' – das Markenzeichen. 2007: Der legendäre Fiesta-Bowl-Sieg gegen Oklahoma mit Trickspielzügen."},
     },
 }
 NERD_HOF = {
@@ -7919,6 +8012,68 @@ NERD_HOF = {
         "canucks": [("Pavel Bure", "RW"), ("Roberto Luongo", "G"), ("Daniel Sedin", "LW"), ("Henrik Sedin", "C")],
         "knights": [("Marc-André Fleury", "G")],
     },
+    "MLB": {
+        "yankees": [("Babe Ruth", "RF"), ("Derek Jeter", "SS"), ("Mariano Rivera", "P")],
+        "redsox": [("Ted Williams", "LF"), ("David Ortiz", "DH")],
+        "orioles": [("Cal Ripken Jr.", "SS"), ("Brooks Robinson", "3B")],
+        "rays": [],
+        "bluejays": [("Roberto Alomar", "2B"), ("Roy Halladay", "P")],
+        "guardians": [("Bob Feller", "P"), ("Jim Thome", "1B")],
+        "tigers": [("Ty Cobb", "CF"), ("Al Kaline", "RF")],
+        "twins": [("Harmon Killebrew", "1B"), ("Kirby Puckett", "CF")],
+        "royals": [("George Brett", "3B"), ("Frank White", "2B")],
+        "whitesox": [("Frank Thomas", "1B"), ("Carlton Fisk", "C")],
+        "astros": [("Jeff Bagwell", "1B"), ("Craig Biggio", "2B")],
+        "angels": [("Vladimir Guerrero", "RF"), ("Nolan Ryan", "P")],
+        "athletics": [("Rickey Henderson", "LF"), ("Reggie Jackson", "RF")],
+        "mariners": [("Ken Griffey Jr.", "CF"), ("Edgar Martínez", "DH")],
+        "rangers": [("Iván Rodríguez", "C"), ("Adrián Beltré", "3B")],
+        "braves": [("Hank Aaron", "RF"), ("Chipper Jones", "3B")],
+        "marlins": [],
+        "mets": [("Tom Seaver", "P"), ("Mike Piazza", "C")],
+        "phillies": [("Mike Schmidt", "3B"), ("Steve Carlton", "P")],
+        "nationals": [],
+        "cubs": [("Ernie Banks", "SS"), ("Ryne Sandberg", "2B")],
+        "reds": [("Johnny Bench", "C"), ("Joe Morgan", "2B")],
+        "brewers": [("Robin Yount", "SS"), ("Paul Molitor", "3B")],
+        "pirates": [("Roberto Clemente", "RF"), ("Willie Stargell", "1B")],
+        "cardinals": [("Stan Musial", "OF"), ("Bob Gibson", "P")],
+        "dbacks": [("Randy Johnson", "P")],
+        "rockies": [("Todd Helton", "1B"), ("Larry Walker", "RF")],
+        "dodgers": [("Sandy Koufax", "P"), ("Jackie Robinson", "2B")],
+        "padres": [("Tony Gwynn", "RF"), ("Trevor Hoffman", "P")],
+        "giants": [("Willie Mays", "CF"), ("Juan Marichal", "P")],
+    },
+    "NCAAF": {
+        "alabama": [("Derrick Henry", "RB"), ("DeVonta Smith", "WR"), ("Mark Ingram II", "RB")],
+        "georgia": [("Herschel Walker", "RB"), ("Frank Sinkwich", "HB")],
+        "lsu": [("Joe Burrow", "QB"), ("Billy Cannon", "HB")],
+        "florida": [("Tim Tebow", "QB"), ("Danny Wuerffel", "QB"), ("Steve Spurrier", "QB")],
+        "tennessee": [("Peyton Manning", "QB"), ("Reggie White", "DE")],
+        "auburn": [("Bo Jackson", "RB"), ("Cam Newton", "QB")],
+        "texas": [("Earl Campbell", "RB"), ("Vince Young", "QB"), ("Ricky Williams", "RB")],
+        "oklahoma": [("Baker Mayfield", "QB"), ("Kyler Murray", "QB"), ("Adrian Peterson", "RB")],
+        "texasam": [("Johnny Manziel", "QB"), ("Von Miller", "LB")],
+        "olemiss": [("Eli Manning", "QB"), ("Archie Manning", "QB")],
+        "ohiostate": [("Archie Griffin", "RB"), ("Troy Smith", "QB"), ("Eddie George", "RB")],
+        "michigan": [("Tom Brady", "QB"), ("Charles Woodson", "CB"), ("Desmond Howard", "WR")],
+        "pennstate": [("Saquon Barkley", "RB"), ("LaVar Arrington", "LB")],
+        "usc": [("Reggie Bush", "RB"), ("Matt Leinart", "QB"), ("Carson Palmer", "QB")],
+        "oregon": [("Marcus Mariota", "QB"), ("LaMichael James", "RB")],
+        "nebraska": [("Tommie Frazier", "QB"), ("Ndamukong Suh", "DT")],
+        "wisconsin": [("Ron Dayne", "RB"), ("J.J. Watt", "DE")],
+        "notredame": [("Tim Brown", "WR"), ("Joe Montana", "QB")],
+        "clemson": [("Trevor Lawrence", "QB"), ("Deshaun Watson", "QB")],
+        "floridastate": [("Jameis Winston", "QB"), ("Charlie Ward", "QB"), ("Deion Sanders", "CB")],
+        "miami": [("Michael Irvin", "WR"), ("Ray Lewis", "LB"), ("Ed Reed", "S")],
+        "northcarolina": [("Lawrence Taylor", "LB"), ("Drake Maye", "QB")],
+        "virginiatech": [("Michael Vick", "QB"), ("Bruce Smith", "DE")],
+        "tcu": [("LaDainian Tomlinson", "RB"), ("Andy Dalton", "QB")],
+        "oklahomastate": [("Barry Sanders", "RB"), ("Thurman Thomas", "RB")],
+        "kansas": [("Gale Sayers", "RB"), ("John Hadl", "QB")],
+        "byu": [("Steve Young", "QB"), ("Ty Detmer", "QB")],
+        "boisestate": [("Kellen Moore", "QB"), ("Ashton Jeanty", "RB")],
+    },
 }
 NERD_HOF_DETAILS = {
     "Michael Jordan": "6× NBA Champion mit den Chicago Bulls (1991–93, 1996–98) – zwei Three-Peats! 5× MVP, 14× All-Star, 10× Scoring-Champion. Gilt als der beste Basketballer aller Zeiten – 'His Airness'.",
@@ -7945,6 +8100,51 @@ NERD_HOF_DETAILS = {
     "Ray Bourque": "1× Stanley-Cup-Champion mit Colorado (2001) – im letzten Spiel seiner Karriere! 5× Norris Trophy. 22 Saisons, davon 21 in Boston – der Verteidiger mit den meisten Punkten aller Zeiten (1.579).",
     "Maurice Richard": "8× Stanley-Cup-Champion mit Montreal (1944–60). Erster Spieler mit 50 Toren in einer Saison (1944/45). 'The Rocket' – 1955 löste seine Sperre den 'Richard Riot' in Montreal aus.",
     "Jean Béliveau": "10× Stanley-Cup-Champion mit Montreal (1956–60, 1965, 1966, 1968, 1969, 1971). 2× MVP. 'Le Gros Bill' – Kapitän der Canadiens-Dynastie der 50er.",
+    "Babe Ruth": "714 Home Runs, 7× World-Series-Champion. Vom Pitcher zum größten Slugger aller Zeiten – 'The Bambino' machte Baseball zum Volkssport.",
+    "Derek Jeter": "5× World-Series-Champion mit den Yankees (1996, 1998–2000, 2009). 3.465 Hits, 20 Saisons nur für New York – 'The Captain'.",
+    "Mariano Rivera": "Einziger Spieler, der einstimmig (100 %) in die Hall of Fame gewählt wurde! 652 Saves – MLB-Rekord. Der beste Closer aller Zeiten.",
+    "Ted Williams": "Letzter Spieler mit .400 Batting Average in einer Saison (1941, .406). 2× MVP, 521 Home Runs – 'The Splendid Splinter'.",
+    "David Ortiz": "3× World-Series-Champion mit Boston (2004, 2007, 2013). 'Big Papi' – der Clutch-Hitter, der 2004 den Fluch brach.",
+    "Cal Ripken Jr.": "2.632 Spiele in Folge – der 'Iron Man'! Niemand spielte je so lange ohne Pause. 2× MVP, 1983 Champion.",
+    "Roberto Alomar": "2× World-Series-Champion mit Toronto (1992, 1993). 10× Gold Glove – einer der besten Second Basemen aller Zeiten.",
+    "Bob Feller": "266 Siege, 2.581 Strikeouts – und das trotz 4 Jahren Militärdienst im Zweiten Weltkrieg! 'Rapid Robert'.",
+    "Ty Cobb": "Höchster Batting Average aller Zeiten (.366)! 4.189 Hits. 'The Georgia Peach' – genial und gefürchtet.",
+    "Harmon Killebrew": "573 Home Runs, 1969 MVP. 'Killer' – einer der gefürchtetsten Power-Hitter der 60er.",
+    "George Brett": "3.154 Hits, 1980 Batting Average .390! 1985 Champion. Spielte 21 Saisons nur für Kansas City.",
+    "Frank Thomas": "2× MVP in Folge (1993, 1994). 521 Home Runs – 'The Big Hurt'.",
+    "Jeff Bagwell": "1994 MVP, 449 Home Runs. Das Gesicht der Astros-Ära in den 90ern.",
+    "Rickey Henderson": "MLB-Rekord: 1.406 Stolen Bases und 2.295 Runs! 1990 MVP. Der beste Leadoff-Hitter aller Zeiten.",
+    "Ken Griffey Jr.": "630 Home Runs, 10× Gold Glove. 'The Kid' – der eleganteste Center Fielder seiner Generation.",
+    "Hank Aaron": "755 Home Runs – jahrzehntelang MLB-Rekord! 1957 Champion, 1957 MVP. 'Hammerin' Hank'.",
+    "Tom Seaver": "311 Siege, 3× Cy Young Award, 1969 Champion mit den 'Miracle Mets'. 'Tom Terrific'.",
+    "Mike Schmidt": "3× MVP, 548 Home Runs, 10× Gold Glove. Der beste Third Baseman aller Zeiten.",
+    "Johnny Bench": "2× MVP, 10× Gold Glove, 2× Champion (1975, 1976). Der beste Catcher aller Zeiten.",
+    "Ernie Banks": "2× MVP in Folge (1958, 1959). 'Mr. Cub' – 512 Home Runs, obwohl die Cubs nie den Titel holten.",
+    "Roberto Clemente": "3.000 Hits, 1971 Champion + World-Series-MVP. Starb 1972 bei einem Hilfsflug nach Nicaragua – die 21 ist in Pittsburgh gesperrt.",
+    "Stan Musial": "3.630 Hits, 3× MVP, 3× Champion. 'Stan the Man' – 22 Saisons nur für St. Louis.",
+    "Randy Johnson": "303 Siege, 5× Cy Young Award, 4.875 Strikeouts. 'The Big Unit' – 2,08 m groß und fast unschlagbar. 2001 Champion mit Arizona.",
+    "Sandy Koufax": "3× Cy Young Award, 3× Champion (1959, 1963, 1965). In 4 Jahren (1963–66) fast unschlagbar – dann Karriereende mit 30 wegen Arthrose.",
+    "Jackie Robinson": "1947 brach er die Farbgrenze im Baseball – der wichtigste Moment der MLB-Geschichte! 1947 Rookie of the Year, 1949 MVP. Die 42 ist in der ganzen Liga gesperrt.",
+    "Tony Gwynn": "8× Batting-Champion, .338 Karriere-Average! 3.141 Hits, 20 Saisons nur für San Diego – 'Mr. Padre'.",
+    "Willie Mays": "660 Home Runs, 2× MVP, 1954 Champion. 'The Say Hey Kid' – 'The Catch' 1954 ist der berühmteste Fang der Baseball-Geschichte.",
+    "Todd Helton": "2.519 Hits, .316 Karriere-Average, 2000 Batting-Champion. 17 Saisons nur für Colorado – 2024 in die Hall of Fame gewählt.",
+    "Roy Halladay": "2× Cy Young Award, 203 Siege. 2010: Perfect Game UND No-Hitter in den Playoffs – beides in einem Jahr! 'Doc'.",
+    "Adrián Beltré": "3.166 Hits, 477 Home Runs, 5× Gold Glove. 2024 in die Hall of Fame gewählt.",
+    "Derrick Henry": "2015 Heisman Trophy! 2.219 Rushing Yards in einer Saison. Danach NFL-Star – 'King Henry'.",
+    "DeVonta Smith": "2020 Heisman Trophy – als erster Wide Receiver seit 1991! Danach NFL-Star bei den Eagles.",
+    "Herschel Walker": "1982 Heisman Trophy! 5.259 Rushing Yards in 3 Jahren – einer der besten College-Running-Backs aller Zeiten.",
+    "Joe Burrow": "2019: Die beste College-Saison aller Zeiten! 60 Touchdowns, Heisman Trophy, National Champion – und danach Nr.-1-Pick im NFL Draft.",
+    "Tim Tebow": "2007 Heisman Trophy! 2× National Champion (2006, 2008). Einer der beliebtesten College-Spieler aller Zeiten.",
+    "Peyton Manning": "Kein Heisman (Platz 2 1997 – bis heute umstritten!), aber 4 Jahre Starter und 11.201 Passing Yards. Danach einer der besten NFL-Quarterbacks aller Zeiten.",
+    "Bo Jackson": "1985 Heisman Trophy! Der einzige Athlet, der in NFL UND MLB All-Star war – 'Bo Knows!'",
+    "Archie Griffin": "Der EINZIGE Spieler mit 2 Heisman Trophys (1974, 1975)! 5.589 Rushing Yards – Legende in Columbus.",
+    "Tom Brady": "Bei Michigan lange nur Ersatz – erst 1998/99 Starter. Danach 7× Super-Bowl-Champion – der größte NFL-Quarterback aller Zeiten!",
+    "Charles Woodson": "1997 Heisman Trophy – als DEFENSIVSPIELER! Der einzige primär defensive Spieler, der je die Heisman gewann.",
+    "Reggie Bush": "2005 Heisman Trophy (später aberkannt, 2024 zurückgegeben). Einer der spektakulärsten College-Spieler aller Zeiten.",
+    "Barry Sanders": "1988: 2.628 Rushing Yards in 11 Spielen – bis heute Rekord! Heisman Trophy 1988.",
+    "Steve Young": "Bei BYU Nachfolger einer Quarterback-Dynastie – danach 3× Super-Bowl-Champion mit den 49ers.",
+    "Tim Brown": "1987 Heisman Trophy! Erster Wide Receiver, der die Heisman gewann. Danach NFL-Star bei den Raiders.",
+    "Kellen Moore": "50 Siege als Starter – College-Rekord! Nie verloren in der Regular Season (50–3).",
 }
 
 NFL_RULES_TEXT = """📖 NFL – Die Regeln (kurz & knackig)
@@ -8246,9 +8446,11 @@ async def nerd_cmd(update, ctx):
             [InlineKeyboardButton("🏈 NFL", callback_data="nerd_league:NFL")],
             [InlineKeyboardButton("🏀 NBA", callback_data="nerd_league:NBA")],
             [InlineKeyboardButton("🏒 NHL", callback_data="nerd_league:NHL")],
+            [InlineKeyboardButton("⚾ MLB", callback_data="nerd_league:MLB")],
+            [InlineKeyboardButton("🎓 NCAAF", callback_data="nerd_league:NCAAF")],
             [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
         ])
-        await _nerd_show(update, ctx, "🧠 Nerd-Modus\nDein Lexikon für US-Sport – Regeln, Teams & Legenden!\n\n🏈 NFL – Regeln, alle 32 Teams + Hall of Famers\n🏀 NBA – Regeln, alle 30 Teams + Hall of Fame\n🏒 NHL – Regeln, alle 32 Teams + Hockey Hall of Fame\n\nMLB & NCAAF kommen in der nächsten Version!", _kb)
+        await _nerd_show(update, ctx, "🧠 Nerd-Modus\nDein Lexikon für US-Sport – Regeln, Teams & Legenden!\n\n🏈 NFL – Regeln, alle 32 Teams + Hall of Famers\n🏀 NBA – Regeln, alle 30 Teams + Hall of Fame\n🏒 NHL – Regeln, alle 32 Teams + Hockey Hall of Fame\n⚾ MLB – Regeln, alle 30 Teams + Baseball Hall of Fame\n🎓 NCAAF – Regeln, 28 Top-Teams + Legenden", _kb)
     except Exception:
         try:
             target = update.message or update.callback_query.message
@@ -8297,7 +8499,7 @@ async def nerd_team_cmd(update, ctx, key):
         if not _t:
             target = update.message or update.callback_query.message
             await target.reply_text("😅 Team nicht gefunden!", reply_markup=small_kb()); return
-        lines = [f"🏈 {_t['name']}", f"📍 {_t['city']} | 🏟️ {_t['stadion']}", f"📅 Gegründet: {_t['gegr']}", f"🏆 {_t['titel']}", f"🎨 Farben: {_t['farben']}", f"📂 Division: {_t['div']}", "", "📖 Geschichte:", _t["geschichte"]]
+        lines = [f"🏈 {_t['name']}", f"📍 {_t['city']} | 🏟️ {_t['stadion']}", f"📅 Gegründet: {_t['gegr']}", f"🏆 {_t['titel']}", f"🎨 Farben: {_t['farben']}", f"📂 Division/Conference: {_t['div']}", "", "📖 Geschichte:", _t["geschichte"]]
         _kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("⭐ Hall of Famers", callback_data=f"nerd_hof:{key}")],
             [InlineKeyboardButton("🏈 Alle Teams", callback_data="nerd_teams")],
@@ -8444,7 +8646,7 @@ async def nerd_league_team_cmd(update, ctx, league, key):
         if not _m or not _t:
             target = update.message or update.callback_query.message
             await target.reply_text("😅 Team nicht gefunden!", reply_markup=small_kb()); return
-        lines = [f"{_m['emoji']} {_t['name']}", f"📍 {_t['city']} | 🏟️ {_t['stadion']}", f"📅 Gegründet: {_t['gegr']}", f"🏆 {_t['titel']}", f"🎨 Farben: {_t['farben']}", f"📂 Division: {_t['div']}", "", "📖 Geschichte:", _t["geschichte"]]
+        lines = [f"{_m['emoji']} {_t['name']}", f"📍 {_t['city']} | 🏟️ {_t['stadion']}", f"📅 Gegründet: {_t['gegr']}", f"🏆 {_t['titel']}", f"🎨 Farben: {_t['farben']}", f"📂 Division/Conference: {_t['div']}", "", "📖 Geschichte:", _t["geschichte"]]
         _kb = InlineKeyboardMarkup([
             [InlineKeyboardButton(f"⭐ {_m['hof']}", callback_data=f"nerd_hof:{league}:{key}")],
             [InlineKeyboardButton(f"{_m['emoji']} Alle Teams", callback_data=f"nerd_teams:{league}")],
@@ -8473,7 +8675,7 @@ async def nerd_league_hof_cmd(update, ctx, league, key):
             [InlineKeyboardButton("⬅️ Zurück", callback_data=f"nerd_team:{league}:{key}")],
         ])
         if not _names:
-            await _nerd_show(update, ctx, f"⭐ {_m['hof']} – {_t['name']}\n\nNoch kein Hall of Famer für dieses Team – die Franchise ist noch jung oder wartet noch auf ihren ersten!\n\nSobald ein Ex-Spieler aufgenommen wird, steht er hier!", _kb)
+            await _nerd_show(update, ctx, f"⭐ {_m['hof']} – {_t['name']}\n\nNoch keine Legende für dieses Team – die Mannschaft ist noch jung oder wartet noch auf ihre erste!\n\nSobald ein Ex-Spieler aufgenommen wird, steht er hier!", _kb)
             return
         ctx.user_data["nerd_hof_list"] = {"league": league, "team": key, "names": [n for n, p in _names]}
         lines = [f"⭐ {_m['hof']} – {_t['name']}", "Tippe die Zahl für die Story!", ""]
