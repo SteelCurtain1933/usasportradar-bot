@@ -1,4 +1,5 @@
-# USA Sport Radar - V257 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# USA Sport Radar - V258 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# V258: Live-Hub komplett im Ticker-Stil! Favoriten-Live + Favoriten-Finals + Meine Live-Spiele (live/fertig) = Kuerzel + Stand + Spielzeit, Sender -> Detail-Ansicht! Anstehende Einzel-Spiele bleiben game_line (Anpfiff-Zeit)!
 # V257: Lade-Ticker ohne Stoppuhr! Statt "laedt schon Xs" rotieren beruhigende Saetze (kurzer Moment -> gleich da -> fast geschafft -> dauert heute laenger)! Keine falsche Restzeit, die kennt der Bot nicht!
 # V256: Lade-Dauer-Ticker! Lade-Nachricht zeigt nach 10s live die Dauer (alle 15s aktualisiert, ab 60s als Min:Sek)! + ESPN-Bilanz-Fallback 6h gecached (war die lange Meine-Woche-Ladezeit)!
 # V255: NCAAF-Status ehrlich! CFBD-Ausfall -> Bilanz-Fallback aus ESPN-Scoreboard! Ohne Daten KEIN "noch im Rennen!" mehr, sondern "Stand gerade nicht verfuegbar"!
@@ -3739,7 +3740,8 @@ async def live_mine_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 continue
             status = ev.get("status",{}).get("type",{}).get("state","")
             if status=="in":
-                lines.append(f"{LEAGUES[league]['emoji']} {game_line(ev, league, show_broadcast=True)}")
+                _tl258 = _live_ticker_line(ev, league)  # V258: Ticker-Stil wie Alle Live-Spiele! Sender -> Detail-Ansicht!
+                lines.append(f"{LEAGUES[league]['emoji']} {_tl258 if _tl258 else game_line(ev, league, show_broadcast=False)}")
                 # Wenn SO live läuft, jeden Versuch mit ✅ / ❌ zeigen
                 for sl in shootout_lines(ev, league):
                     lines.append(sl)
@@ -3747,7 +3749,8 @@ async def live_mine_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 if sc: lines.append(sc)
                 live_found=True
             elif status=="post":
-                finals.append(f"{LEAGUES[league]['emoji']} {game_line(ev, league, show_broadcast=True)}")
+                _tl258f = _live_ticker_line(ev, league)  # V258: Ticker-Stil auch bei den Finals!
+                finals.append(f"{LEAGUES[league]['emoji']} {_tl258f if _tl258f else game_line(ev, league, show_broadcast=False)}")
                 for sl in shootout_lines(ev, league):
                     finals.append(sl)
                 scf = last_scorer(ev, league)
@@ -5119,7 +5122,13 @@ async def my_live_games_cmd(update, ctx):
                         _to_delete209.append(eid); _skip209 = True
                 except: pass
             if not _skip209:
-                _nm_clean = game_line(_fresh209, lg)
+                # V258: Ticker-Stil! Live + fertig = Kuerzel + Stand + Spielzeit! Anstehend = game_line (da steht die Anpfiff-Zeit drin)!
+                _st258 = _fresh209.get("status",{}).get("type",{}).get("state","") if _fresh209 is not None else ""
+                if _st258 in ("in","post"):
+                    _tl258m = _live_ticker_line(_fresh209, lg)
+                    _nm_clean = _tl258m if _tl258m else game_line(_fresh209, lg)
+                else:
+                    _nm_clean = game_line(_fresh209, lg)
         else:
             if _any_data209:
                 # Spiel in den letzten 8 Tagen nirgends gefunden -> uralt/ungueltig! Raus!
