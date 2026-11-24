@@ -1,4 +1,6 @@
-# USA Sport Radar - V255 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# USA Sport Radar - V257 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# V257: Lade-Ticker ohne Stoppuhr! Statt "laedt schon Xs" rotieren beruhigende Saetze (kurzer Moment -> gleich da -> fast geschafft -> dauert heute laenger)! Keine falsche Restzeit, die kennt der Bot nicht!
+# V256: Lade-Dauer-Ticker! Lade-Nachricht zeigt nach 10s live die Dauer (alle 15s aktualisiert, ab 60s als Min:Sek)! + ESPN-Bilanz-Fallback 6h gecached (war die lange Meine-Woche-Ladezeit)!
 # V255: NCAAF-Status ehrlich! CFBD-Ausfall -> Bilanz-Fallback aus ESPN-Scoreboard! Ohne Daten KEIN "noch im Rennen!" mehr, sondern "Stand gerade nicht verfuegbar"!
 # V254: Meine Woche anpassbar! Einstellungen -> Meine Woche anpassen: News / Naechstes Spiel / Letztes Ergebnis (neu, Standard AUS) / CFP-Fusszeile an-aus!
 # V253: Meine Woche + naechstes Spiel pro Favorit (Gegner, US-Zeit zuerst, DE-Zeit in Klammern)! Nur wenn es eins in den naechsten 14 Tagen gibt!
@@ -1817,8 +1819,16 @@ def _cfbd_overall_for(team_full, cfbd=None):
         return None
     except: return None
 
+_ESPN_REC_CACHE={}
 def _espn_record_fallback(league, team_full):
     # V255: Wenn CFBD ausfaellt (Key/Limit/down), Bilanz aus ESPN-Scoreboard lesen! Competitor-Records stehen in jedem Event (wie in Alle Spiele)! Kein Raten!
+    # V256: 6h-Cache! Sonst laeuft der Fallback bei JEDEM Oeffnen neu (das war die lange Meine-Woche-Ladezeit)!
+    try:
+        import time as _t256b
+        _key256=(str(league).lower(), (team_full or "").lower().strip())
+        _hit256=_ESPN_REC_CACHE.get(_key256)
+        if _hit256 and _t256b.time()-_hit256[0]<21600: return _hit256[1]
+    except: _key256=None
     try:
         from datetime import date as _d255
         _today = _d255.today()
@@ -1838,7 +1848,12 @@ def _espn_record_fallback(league, team_full):
                             if (_r.get("type", "") or "") == "total" and "-" in _s:
                                 try:
                                     _w, _l = _s.split("-")[:2]
-                                    return (int(_w), int(_l))
+                                    _res256=(int(_w), int(_l))
+                                    try:
+                                        import time as _t256c
+                                        if _key256: _ESPN_REC_CACHE[_key256]=(_t256c.time(), _res256)
+                                    except: pass
+                                    return _res256
                                 except: pass
     except: return None
     return None
@@ -4265,13 +4280,41 @@ def _is_fav_team(disp, favs, league=None):
             if _ok: return True
         return False
     except: return False
+_LOAD_TASKS={}
 async def _loading_start(target, text="⏳ Ich hole die Daten... einen Moment"):
     # V179: Kurze Lade-Nachricht, wird nachher wieder geloescht!
-    try: return await target.reply_text(text)
+    try: msg=await target.reply_text(text)
     except: return None
+    # V256/V257: Lade-Ticker! Nach 10s erscheint ein beruhigender Satz ("Dauert nur noch einen kurzen Moment..."), alle 15s rotiert er weiter! Max 5 Min, dann stoppt der Ticker von allein!
+    try:
+        import asyncio as _aio256, time as _t256
+        _start256=_t256.time()
+        async def _ticker256():
+            try:
+                await _aio256.sleep(10)
+                while True:
+                    _el=int(_t256.time()-_start256)
+                    if _el>300: break
+                    # V257: KEINE Stoppuhr! Beruhigende Saetze statt verstrichener Zeit (Restzeit kennt der Bot nicht -> nix erfinden)!
+                    _phrases257=["⏳ Dauert nur noch einen kurzen Moment…", "⏳ Gleich da — die Daten werden noch zusammengestellt…", "⏳ Noch einen Moment, fast geschafft…", "⏳ Dauert heute etwas länger als sonst — bleib dran…"]
+                    _ph=_phrases257[min(_el//15, len(_phrases257)-1)]
+                    try: await msg.edit_text(f"{text}\n{_ph}")
+                    except: break
+                    await _aio256.sleep(15)
+            except: pass
+        _LOAD_TASKS[(msg.chat_id, msg.message_id)]=_aio256.create_task(_ticker256())
+    except: pass
+    return msg
 async def _loading_done(ctx, user_id, msg):
     try:
-        if msg: await ctx.bot.delete_message(chat_id=user_id, message_id=msg.message_id)
+        if msg:
+            # V256: Ticker stoppen, BEVOR die Lade-Nachricht geloescht wird!
+            for _k in [(user_id, msg.message_id), (msg.chat_id, msg.message_id)]:
+                _t=_LOAD_TASKS.pop(_k, None)
+                if _t:
+                    try: _t.cancel()
+                    except: pass
+            await ctx.bot.delete_message(chat_id=user_id, message_id=msg.message_id)
     except: pass
 
 _CFP_CACHE={"t":0,"data":([],"")}
