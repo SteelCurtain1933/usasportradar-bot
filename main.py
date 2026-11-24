@@ -1,4 +1,5 @@
-# USA Sport Radar - V265 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# USA Sport Radar - V266 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# V266: Online-Nachricht gefixt! 1) Uhrzeit: datetime.now() (UTC, 1 Std. hinter Berlin) -> datetime.now(BERLIN)! 2) Loesch-Knopf "Nachricht loeschen" an der Online-Nachricht (online_del loescht sie)! 3) BOT_VERSION V262 -> V266!
 # V265: Nerd-Modus + Favoriten! Team-Seite: "Als Favorit setzen" / "Favorit entfernen" (Umschalten) + "Dein Favorit!"-Zeile. Team-Listen: Favoriten mit Stern markiert (7. Stern Texas Longhorns)! NFL + NBA/NHL/MLB/NCAAF!
 # V264: NCAAF ehrlich gemacht! NCAAF hat in echt ueber 130 FBS-Teams - wir zeigen nur die 28 groessten! "Alle 28" -> "die 28 groessten" + Hinweis in der Team-Liste. NFL/NBA/NHL/MLB bleiben "alle Teams" (da haben wir wirklich alle)!
 # V263: Nerd-Modus Phase 2 KOMPLETT! MLB (30 Teams + Baseball Hall of Fame) + NCAAF (28 Top-Teams + Legenden) dazu! Nerd-Modus hat jetzt alle 5 Ligen: NFL, NBA, NHL, MLB, NCAAF!
@@ -41,7 +42,7 @@ for _n in ["apscheduler", "apscheduler.executors.default", "apscheduler.schedule
 # TOKEN: Auf Render kommt der Token aus der geheimen Variable BOT_TOKEN (auf der Render-Website eintragen).
 # In dieser Datei steht KEIN echter Token - so ist sie sicher fuer GitHub.
 TOKEN = os.getenv("BOT_TOKEN") or "DEIN_TOKEN_HIER_EINTRAGEN"
-BOT_VERSION = "V262"
+BOT_VERSION = "V266"
 OWNER_CHAT_ID = os.getenv("OWNER_CHAT_ID", "").strip()  # V262: NUR diese ID kriegt die Start-Nachricht - sonst niemand!
 BERLIN = ZoneInfo("Europe/Berlin")
 FAV_FILE = "favorites.json"
@@ -9049,6 +9050,12 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("nerd_league:"): await nerd_league_cmd(update, ctx, data.split(":", 1)[1])
     elif data.startswith("nerd_rules:"): await nerd_league_rules_cmd(update, ctx, data.split(":", 1)[1])
     elif data.startswith("nerd_teams:"): await nerd_league_teams_cmd(update, ctx, data.split(":", 1)[1])
+    elif data == "online_del":
+        # V266: Online-Nachricht loeschen (nur Owner kriegt sie je)!
+        try: await q.message.delete()
+        except: pass
+        try: await q.answer("🗑️ Gelöscht!")
+        except: pass
     elif data.startswith("nerd_fav:"):
         _parts265 = data.split(":", 2)
         if len(_parts265) == 3: await nerd_fav_toggle_cmd(update, ctx, _parts265[1], _parts265[2])
@@ -9241,8 +9248,8 @@ async def _startup_notify(app):
     try:
         _oid = (OWNER_CHAT_ID or "").strip()
         if not _oid: return  # Keine ID eingetragen -> einfach normal starten, kein Fehler, kein Spam!
-        _now = datetime.now().strftime("%d.%m. %H:%M")
-        await app.bot.send_message(chat_id=int(_oid), text=f"🟢 Bot ist wieder online!\nVersion {BOT_VERSION} • {_now}\n\nBereit! Tippe /start fürs Hauptmenü.")
+        _now = datetime.now(BERLIN).strftime("%d.%m. %H:%M")
+        await app.bot.send_message(chat_id=int(_oid), text=f"🟢 Bot ist wieder online!\nVersion {BOT_VERSION} • {_now}\n\nBereit! Tippe /start fürs Hauptmenü.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🗑️ Nachricht löschen", callback_data="online_del")]]))
     except Exception as e:
         print("Startup-Notify:", e)
 
