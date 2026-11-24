@@ -1,4 +1,5 @@
-# USA Sport Radar - V264 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# USA Sport Radar - V265 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# V265: Nerd-Modus + Favoriten! Team-Seite: "Als Favorit setzen" / "Favorit entfernen" (Umschalten) + "Dein Favorit!"-Zeile. Team-Listen: Favoriten mit Stern markiert (7. Stern Texas Longhorns)! NFL + NBA/NHL/MLB/NCAAF!
 # V264: NCAAF ehrlich gemacht! NCAAF hat in echt ueber 130 FBS-Teams - wir zeigen nur die 28 groessten! "Alle 28" -> "die 28 groessten" + Hinweis in der Team-Liste. NFL/NBA/NHL/MLB bleiben "alle Teams" (da haben wir wirklich alle)!
 # V263: Nerd-Modus Phase 2 KOMPLETT! MLB (30 Teams + Baseball Hall of Fame) + NCAAF (28 Top-Teams + Legenden) dazu! Nerd-Modus hat jetzt alle 5 Ligen: NFL, NBA, NHL, MLB, NCAAF!
 # V262: Start-Nachricht NUR an den Owner! /myid zeigt die Chat-ID (kommt auf Render als OWNER_CHAT_ID rein). Beim Start schickt der Bot dem Owner "Bot ist wieder online!" - ohne ID passiert einfach nix, kein Fehler!
@@ -8474,6 +8475,7 @@ async def nerd_rules_cmd(update, ctx):
 async def nerd_teams_cmd(update, ctx):
     try:
         _nerd_clear_lists(ctx)
+        _uid265 = update.effective_user.id if update.effective_user else 0
         _keys = list(NFL_TEAMS_NERD.keys())
         ctx.user_data["nerd_teams_list"] = _keys
         lines = ["🏈 NFL Teams – alle 32!", "Tippe die Zahl für dein Team!", ""]
@@ -8483,7 +8485,7 @@ async def nerd_teams_cmd(update, ctx):
             if _t["div"] != _last_div:
                 _last_div = _t["div"]
                 lines.append(f"{_last_div}:")
-            lines.append(f"{_i}. {_t['name']}")
+            lines.append(f"{_i}. {('⭐ ' if _nerd_is_fav(_t['name'], 'NFL', _uid265) else '')}{_t['name']}")
         _kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("⬅️ Zurück", callback_data="nerd_league:NFL")],
         ])
@@ -8494,14 +8496,59 @@ async def nerd_teams_cmd(update, ctx):
             await target.reply_text("😅 Team-Liste konnte grad nicht geladen werden!", reply_markup=small_kb())
         except: pass
 
+def _nerd_is_fav(name, league, uid):
+    # V265: Favorit-Check im Nerd-Modus (exakter School-Match wie im Rest vom Bot)!
+    try:
+        return _is_fav_team(name, favs_for(uid), league)
+    except:
+        return False
+
+async def nerd_fav_toggle_cmd(update, ctx, league, key):
+    # V265: Favorit im Nerd-Modus umschalten + Team-Seite frisch aufbauen!
+    try:
+        if league == "NFL":
+            _t265 = NFL_TEAMS_NERD.get(key) or {}
+        else:
+            _t265 = (NERD_TEAMS.get(league) or {}).get(key) or {}
+        _name265 = _t265.get("name", "")
+        if not _name265:
+            target = update.message or update.callback_query.message
+            await target.reply_text("😅 Team nicht gefunden!", reply_markup=small_kb()); return
+        _uid265 = str(update.effective_user.id) if update.effective_user else "0"
+        _favs265 = load_favs(); _favs265.setdefault(_uid265, [])
+        if _nerd_is_fav(_name265, league, int(_uid265) if _uid265.isdigit() else 0):
+            _favs265[_uid265] = [f for f in _favs265[_uid265] if not _is_fav_team(_name265, [f], league)]
+            save_favs(_favs265)
+            try: await update.callback_query.answer("🗑️ Favorit entfernt!")
+            except: pass
+        else:
+            _new265 = f"{_name265} ({league})"
+            if _new265 not in _favs265[_uid265]: _favs265[_uid265].append(_new265)
+            save_favs(_favs265)
+            try: await update.callback_query.answer("✅ Favorit gesetzt!")
+            except: pass
+        if league == "NFL":
+            await nerd_team_cmd(update, ctx, key)
+        else:
+            await nerd_league_team_cmd(update, ctx, league, key)
+    except Exception:
+        try:
+            target = update.message or update.callback_query.message
+            await target.reply_text("😅 Favorit konnte grad nicht geändert werden!", reply_markup=small_kb())
+        except: pass
+
 async def nerd_team_cmd(update, ctx, key):
     try:
         _t = NFL_TEAMS_NERD.get(key)
         if not _t:
             target = update.message or update.callback_query.message
             await target.reply_text("😅 Team nicht gefunden!", reply_markup=small_kb()); return
+        _uid265 = update.effective_user.id if update.effective_user else 0
+        _is_fav265 = _nerd_is_fav(_t['name'], "NFL", _uid265)
         lines = [f"🏈 {_t['name']}", f"📍 {_t['city']} | 🏟️ {_t['stadion']}", f"📅 Gegründet: {_t['gegr']}", f"🏆 {_t['titel']}", f"🎨 Farben: {_t['farben']}", f"📂 Division/Conference: {_t['div']}", "", "📖 Geschichte:", _t["geschichte"]]
+        if _is_fav265: lines += ["", "⭐ Dein Favorit!"]
         _kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton(("⭐ Favorit entfernen" if _is_fav265 else "⭐ Als Favorit setzen"), callback_data=f"nerd_fav:NFL:{key}")],
             [InlineKeyboardButton("⭐ Hall of Famers", callback_data=f"nerd_hof:{key}")],
             [InlineKeyboardButton("🏈 Alle Teams", callback_data="nerd_teams")],
             [InlineKeyboardButton("⬅️ Zurück", callback_data="nerd_teams")],
@@ -8620,6 +8667,7 @@ async def nerd_league_teams_cmd(update, ctx, league):
         if not _m or not _teams:
             target = update.message or update.callback_query.message
             await target.reply_text("😅 Team-Liste nicht gefunden!", reply_markup=small_kb()); return
+        _uid265 = update.effective_user.id if update.effective_user else 0
         _keys = list(_teams.keys())
         ctx.user_data["nerd_teams_list"] = {"league": league, "keys": _keys}  # V259: Dict-Format (NFL = alte Liste)!
         if league == "NCAAF":
@@ -8632,7 +8680,7 @@ async def nerd_league_teams_cmd(update, ctx, league):
             if _t["div"] != _last_div:
                 _last_div = _t["div"]
                 lines.append(f"{_last_div}:")
-            lines.append(f"{_i}. {_t['name']}")
+            lines.append(f"{_i}. {('⭐ ' if _nerd_is_fav(_t['name'], league, _uid265) else '')}{_t['name']}")
         _kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("⬅️ Zurück", callback_data=f"nerd_league:{league}")],
         ])
@@ -8651,8 +8699,12 @@ async def nerd_league_team_cmd(update, ctx, league, key):
         if not _m or not _t:
             target = update.message or update.callback_query.message
             await target.reply_text("😅 Team nicht gefunden!", reply_markup=small_kb()); return
+        _uid265 = update.effective_user.id if update.effective_user else 0
+        _is_fav265 = _nerd_is_fav(_t['name'], league, _uid265)
         lines = [f"{_m['emoji']} {_t['name']}", f"📍 {_t['city']} | 🏟️ {_t['stadion']}", f"📅 Gegründet: {_t['gegr']}", f"🏆 {_t['titel']}", f"🎨 Farben: {_t['farben']}", f"📂 Division/Conference: {_t['div']}", "", "📖 Geschichte:", _t["geschichte"]]
+        if _is_fav265: lines += ["", "⭐ Dein Favorit!"]
         _kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton(("⭐ Favorit entfernen" if _is_fav265 else "⭐ Als Favorit setzen"), callback_data=f"nerd_fav:{league}:{key}")],
             [InlineKeyboardButton(f"⭐ {_m['hof']}", callback_data=f"nerd_hof:{league}:{key}")],
             [InlineKeyboardButton(f"{_m['emoji']} Alle Teams", callback_data=f"nerd_teams:{league}")],
             [InlineKeyboardButton("⬅️ Zurück", callback_data=f"nerd_teams:{league}")],
@@ -8997,6 +9049,9 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("nerd_league:"): await nerd_league_cmd(update, ctx, data.split(":", 1)[1])
     elif data.startswith("nerd_rules:"): await nerd_league_rules_cmd(update, ctx, data.split(":", 1)[1])
     elif data.startswith("nerd_teams:"): await nerd_league_teams_cmd(update, ctx, data.split(":", 1)[1])
+    elif data.startswith("nerd_fav:"):
+        _parts265 = data.split(":", 2)
+        if len(_parts265) == 3: await nerd_fav_toggle_cmd(update, ctx, _parts265[1], _parts265[2])
     elif data.startswith("nerd_team:"):
         _parts259 = data.split(":")
         if len(_parts259) == 3: await nerd_league_team_cmd(update, ctx, _parts259[1], _parts259[2])
