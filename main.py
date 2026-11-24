@@ -1,4 +1,5 @@
-# USA Sport Radar - V259 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# USA Sport Radar - V260 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# V260: Nerd-Modus FIX! Hub = nur Liga-Knoepfe (NFL/NBA/NHL, jede Liga eigener Hub)! Zurueck = ECHT eine Ebene hoch im Nerd-Fenster (statt Fenster zu)! Globaler back-Handler (Fenster loeschen) wird im Nerd-Modus nicht mehr getroffen!
 # V259: Nerd-Modus Phase 2, Teil 1! NBA + NHL: Regeln, alle Teams, Hall of Famers + Detail-Seiten! Generische Liga-Funktionen (nerd_league:*), NFL bleibt unveraendert! MLB + NCAAF kommen in V260!
 # V258: Live-Hub komplett im Ticker-Stil! Favoriten-Live + Favoriten-Finals + Meine Live-Spiele (live/fertig) = Kuerzel + Stand + Spielzeit, Sender -> Detail-Ansicht! Anstehende Einzel-Spiele bleiben game_line (Anpfiff-Zeit)!
 # V257: Lade-Ticker ohne Stoppuhr! Statt "laedt schon Xs" rotieren beruhigende Saetze (kurzer Moment -> gleich da -> fast geschafft -> dauert heute laenger)! Keine falsche Restzeit, die kennt der Bot nicht!
@@ -8229,13 +8230,12 @@ async def _nerd_show(update, ctx, text, kb):
 async def nerd_cmd(update, ctx):
     try:
         _kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📖 NFL Regeln", callback_data="nerd_rules")],
-            [InlineKeyboardButton("🏈 NFL Teams", callback_data="nerd_teams")],
+            [InlineKeyboardButton("🏈 NFL", callback_data="nerd_league:NFL")],
             [InlineKeyboardButton("🏀 NBA", callback_data="nerd_league:NBA")],
             [InlineKeyboardButton("🏒 NHL", callback_data="nerd_league:NHL")],
             [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
         ])
-        await _nerd_show(update, ctx, "🧠 Nerd-Modus\nDein Lexikon für US-Sport – Regeln, Teams & Legenden!\n\n📖 NFL Regeln – so funktioniert Football\n🏈 NFL Teams – alle 32 Teams + Hall of Famers\n🏀 NBA – Regeln, alle 30 Teams + Hall of Fame\n🏒 NHL – Regeln, alle 32 Teams + Hockey Hall of Fame\n\nMLB & NCAAF kommen in der nächsten Version!", _kb)
+        await _nerd_show(update, ctx, "🧠 Nerd-Modus\nDein Lexikon für US-Sport – Regeln, Teams & Legenden!\n\n🏈 NFL – Regeln, alle 32 Teams + Hall of Famers\n🏀 NBA – Regeln, alle 30 Teams + Hall of Fame\n🏒 NHL – Regeln, alle 32 Teams + Hockey Hall of Fame\n\nMLB & NCAAF kommen in der nächsten Version!", _kb)
     except Exception:
         try:
             target = update.message or update.callback_query.message
@@ -8246,7 +8246,7 @@ async def nerd_rules_cmd(update, ctx):
     try:
         _kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("🏈 NFL Teams", callback_data="nerd_teams")],
-            [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+            [InlineKeyboardButton("⬅️ Zurück", callback_data="nerd_league:NFL")],
         ])
         await _nerd_show(update, ctx, NFL_RULES_TEXT, _kb)
     except Exception:
@@ -8270,7 +8270,7 @@ async def nerd_teams_cmd(update, ctx):
             lines.append(f"{_i}. {_t['name']}")
         _kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("🧠 Nerd-Modus", callback_data="nerd")],
-            [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+            [InlineKeyboardButton("⬅️ Zurück", callback_data="nerd_league:NFL")],
         ])
         await _nerd_show(update, ctx, "\n".join(lines), _kb)
     except Exception:
@@ -8289,7 +8289,7 @@ async def nerd_team_cmd(update, ctx, key):
         _kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("⭐ Hall of Famers", callback_data=f"nerd_hof:{key}")],
             [InlineKeyboardButton("🏈 Alle Teams", callback_data="nerd_teams")],
-            [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+            [InlineKeyboardButton("⬅️ Zurück", callback_data="nerd_teams")],
         ])
         await _nerd_show(update, ctx, "\n".join(lines), _kb)
     except Exception:
@@ -8313,7 +8313,7 @@ async def nerd_hof_cmd(update, ctx, key):
         _kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("🏈 Team-Seite", callback_data=f"nerd_team:{key}")],
             [InlineKeyboardButton("🏈 Alle Teams", callback_data="nerd_teams")],
-            [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+            [InlineKeyboardButton("⬅️ Zurück", callback_data=f"nerd_team:{key}")],
         ])
         await _nerd_show(update, ctx, "\n".join(lines), _kb)
     except Exception:
@@ -8338,7 +8338,7 @@ async def nerd_hof_detail_cmd(update, ctx, key, idx):
         _kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("⭐ Alle Hall of Famers", callback_data=f"nerd_hof:{key}")],
             [InlineKeyboardButton("🏈 Team-Seite", callback_data=f"nerd_team:{key}")],
-            [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+            [InlineKeyboardButton("⬅️ Zurück", callback_data=f"nerd_hof:{key}")],
         ])
         await _nerd_show(update, ctx, _txt, _kb)
     except Exception:
@@ -8352,6 +8352,16 @@ async def nerd_hof_detail_cmd(update, ctx, key, idx):
 async def nerd_league_cmd(update, ctx, league):
     # V259: Liga-Hub! Regeln + Teams + zurück zum Nerd-Modus!
     try:
+        if league == "NFL":
+            # V260: NFL hat jetzt auch einen eigenen Liga-Hub (wie NBA/NHL) - Hub ist einheitlich!
+            _kb_nfl = InlineKeyboardMarkup([
+                [InlineKeyboardButton("📖 NFL Regeln", callback_data="nerd_rules")],
+                [InlineKeyboardButton("🏈 NFL Teams", callback_data="nerd_teams")],
+                [InlineKeyboardButton("🧠 Nerd-Modus", callback_data="nerd")],
+                [InlineKeyboardButton("⬅️ Zurück", callback_data="nerd")],
+            ])
+            await _nerd_show(update, ctx, "🏈 NFL\nDein Lexikon für NFL – Regeln, Teams & Legenden!\n\n📖 NFL Regeln – so funktioniert Football\n🏈 NFL Teams – alle 32 Teams + Hall of Famers\n\nTippe auf einen Knopf – los geht's!", _kb_nfl)
+            return
         _m = NERD_LEAGUES.get(league)
         if not _m:
             target = update.message or update.callback_query.message
@@ -8360,7 +8370,7 @@ async def nerd_league_cmd(update, ctx, league):
             [InlineKeyboardButton(f"📖 {_m['label']} Regeln", callback_data=f"nerd_rules:{league}")],
             [InlineKeyboardButton(f"{_m['emoji']} {_m['teams']}", callback_data=f"nerd_teams:{league}")],
             [InlineKeyboardButton("🧠 Nerd-Modus", callback_data="nerd")],
-            [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+            [InlineKeyboardButton("⬅️ Zurück", callback_data="nerd")],
         ])
         await _nerd_show(update, ctx, f"{_m['emoji']} {_m['label']}\nDein Lexikon für {_m['label']} – Regeln, Teams & Legenden!\n\n📖 {_m['label']} Regeln – so funktioniert {_m['label']}\n{_m['emoji']} {_m['teams']} – alle Teams + {_m['hof']}\n\nTippe auf einen Knopf – los geht's!", _kb)
     except Exception:
@@ -8379,7 +8389,7 @@ async def nerd_league_rules_cmd(update, ctx, league):
         _kb = InlineKeyboardMarkup([
             [InlineKeyboardButton(f"{_m['emoji']} {_m['teams']}", callback_data=f"nerd_teams:{league}")],
             [InlineKeyboardButton("🧠 Nerd-Modus", callback_data="nerd")],
-            [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+            [InlineKeyboardButton("⬅️ Zurück", callback_data=f"nerd_league:{league}")],
         ])
         await _nerd_show(update, ctx, NERD_RULES.get(league, "😅 Regeln noch nicht da!"), _kb)
     except Exception:
@@ -8409,7 +8419,7 @@ async def nerd_league_teams_cmd(update, ctx, league):
             lines.append(f"{_i}. {_t['name']}")
         _kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("🧠 Nerd-Modus", callback_data="nerd")],
-            [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+            [InlineKeyboardButton("⬅️ Zurück", callback_data=f"nerd_league:{league}")],
         ])
         await _nerd_show(update, ctx, "\n".join(lines), _kb)
     except Exception:
@@ -8430,7 +8440,7 @@ async def nerd_league_team_cmd(update, ctx, league, key):
         _kb = InlineKeyboardMarkup([
             [InlineKeyboardButton(f"⭐ {_m['hof']}", callback_data=f"nerd_hof:{league}:{key}")],
             [InlineKeyboardButton(f"{_m['emoji']} Alle Teams", callback_data=f"nerd_teams:{league}")],
-            [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+            [InlineKeyboardButton("⬅️ Zurück", callback_data=f"nerd_teams:{league}")],
         ])
         await _nerd_show(update, ctx, "\n".join(lines), _kb)
     except Exception:
@@ -8452,7 +8462,7 @@ async def nerd_league_hof_cmd(update, ctx, league, key):
         _kb = InlineKeyboardMarkup([
             [InlineKeyboardButton(f"{_m['emoji']} Team-Seite", callback_data=f"nerd_team:{league}:{key}")],
             [InlineKeyboardButton(f"{_m['emoji']} Alle Teams", callback_data=f"nerd_teams:{league}")],
-            [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+            [InlineKeyboardButton("⬅️ Zurück", callback_data=f"nerd_team:{league}:{key}")],
         ])
         if not _names:
             await _nerd_show(update, ctx, f"⭐ {_m['hof']} – {_t['name']}\n\nNoch kein Hall of Famer für dieses Team – die Franchise ist noch jung oder wartet noch auf ihren ersten!\n\nSobald ein Ex-Spieler aufgenommen wird, steht er hier!", _kb)
@@ -8486,7 +8496,7 @@ async def nerd_league_hof_detail_cmd(update, ctx, league, key, idx):
         _kb = InlineKeyboardMarkup([
             [InlineKeyboardButton(f"⭐ Alle {_m['hof'] if _m else 'Hall of Famers'}", callback_data=f"nerd_hof:{league}:{key}")],
             [InlineKeyboardButton(f"{_m['emoji'] if _m else '🏆'} Team-Seite", callback_data=f"nerd_team:{league}:{key}")],
-            [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
+            [InlineKeyboardButton("⬅️ Zurück", callback_data=f"nerd_hof:{league}:{key}")],
         ])
         await _nerd_show(update, ctx, _txt, _kb)
     except Exception:
