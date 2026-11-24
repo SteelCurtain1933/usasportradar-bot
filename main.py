@@ -1,4 +1,5 @@
-# USA Sport Radar - V254 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# USA Sport Radar - V255 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# V255: NCAAF-Status ehrlich! CFBD-Ausfall -> Bilanz-Fallback aus ESPN-Scoreboard! Ohne Daten KEIN "noch im Rennen!" mehr, sondern "Stand gerade nicht verfuegbar"!
 # V254: Meine Woche anpassbar! Einstellungen -> Meine Woche anpassen: News / Naechstes Spiel / Letztes Ergebnis (neu, Standard AUS) / CFP-Fusszeile an-aus!
 # V253: Meine Woche + naechstes Spiel pro Favorit (Gegner, US-Zeit zuerst, DE-Zeit in Klammern)! Nur wenn es eins in den naechsten 14 Tagen gibt!
 # V252: Ergebnisse im Scoreboard-Stil - Kuerzel statt Kurznamen, Gast @ Heim, wie in Alle Spiele! (Alle Ergebnisse + Nur meine Favoriten)!
@@ -1815,6 +1816,32 @@ def _cfbd_overall_for(team_full, cfbd=None):
                 if k==_c: return v
         return None
     except: return None
+
+def _espn_record_fallback(league, team_full):
+    # V255: Wenn CFBD ausfaellt (Key/Limit/down), Bilanz aus ESPN-Scoreboard lesen! Competitor-Records stehen in jedem Event (wie in Alle Spiele)! Kein Raten!
+    try:
+        from datetime import date as _d255
+        _today = _d255.today()
+        for _off in range(0, 8):
+            _ds = (_today - timedelta(days=_off)).strftime("%Y%m%d")
+            for _ev in espn_scoreboard(league, dates=_ds) or []:
+                _teams, _ = event_teams(_ev)
+                _names = [x[0] for x in _teams]
+                if team_full.lower() not in " ".join(_names).lower(): continue
+                _comp = (_ev.get("competitions", [{}])[0] or {})
+                for _c in (_comp.get("competitors", []) or []):
+                    _tm = (_c.get("team", {}) or {})
+                    _dn = (_tm.get("displayName", "") or "")
+                    if team_full.lower() in _dn.lower() or _dn.lower() in team_full.lower():
+                        for _r in (_c.get("records") or []):
+                            _s = (_r.get("summary", "") or "").strip()
+                            if (_r.get("type", "") or "") == "total" and "-" in _s:
+                                try:
+                                    _w, _l = _s.split("-")[:2]
+                                    return (int(_w), int(_l))
+                                except: pass
+    except: return None
+    return None
 
 def _espn_standings_uncached(league):
     # V65: NHL zuerst über offizielle NHL-API!
@@ -7034,11 +7061,13 @@ async def myweek_cmd(update, ctx, force=False):
             for _cd,_ri in _rank.items():
                 if _is_fav_team(_cd, [_f], "NCAAF"): _r=_ri; break
             _ov=_cfbd_overall_for(_name, _cfbd)
+            if _ov is None: _ov=_espn_record_fallback("NCAAF", _name)  # V255: CFBD-Ausfall -> Bilanz aus ESPN-Scoreboard!
             _rec=f" {_ov[0]}-{_ov[1]}" if _ov else ""
             if _r and _r<=12: lines.append(f"{_em} {_short}{_rec} - CFP #{_r} - noch drin! ✅")
             elif _r: lines.append(f"{_em} {_short}{_rec} - CFP #{_r} - noch im Rennen!")
             elif _ov and _ov[1]>=3: lines.append(f"{_em} {_short}{_rec} - raus 😔")
-            else: lines.append(f"{_em} {_short}{_rec} - noch im Rennen!")
+            elif _ov: lines.append(f"{_em} {_short}{_rec} - noch im Rennen!")
+            else: lines.append(f"{_em} {_short} - Stand gerade nicht verfügbar")  # V255: KEIN Raten! Ohne Bilanz + ohne CFP-Rang kein Status!
         else:
             # V201: Pro Liga Ranking aus Tabelle! _standings_row_for = (Division, Platz in Division, W, L, T, Rows)!
             _row=None
