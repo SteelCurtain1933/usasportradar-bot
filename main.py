@@ -1,4 +1,6 @@
-# USA Sport Radar - V274 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# USA Sport Radar - V275 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# V276: Injury-Report SCHOEN ueberall! game_info_detail + Verletzungen-meine-Teams im gleichen Stil wie Spiel-Informationen! + Leerzeile vor Verletzungen!
+# V275: Injury-Report SCHOEN! Ein Spieler pro Zeile (kein Text-Batzen mit Bullet-Punkten mehr)! Status nur noch als Emoji (das doppelte "— Out" am Ende fliegt raus)! Team als Kopfzeile mit Kurznamen (Rams statt Los Angeles Rams)! Sortiert: Out zuerst, dann Doubtful, dann Questionable!
 # V274: Injury-Report in den Spiel-Informationen (kommende Spiele)! Pro Team: Out/Doubtful/Questionable mit Emoji (NFL=Sleeper, Rest=ESPN, NCAAF=kein offizieller Report -> nix anzeigen)! Ehrlich: keine Daten = Team wird ausgelassen, keine Meldungen = "Keine Meldungen"! Max 4 pro Team + "+X weitere", damit das Fenster kompakt bleibt! Gilt fuer Heute/Morgen, Next Games UND Spielplan-Zahl (gleicher Detail-View)!
 # V273: Auch die GETIPPTE Nachricht des Users loeschen! Sobald der Spielplan da ist, fliegt z.B. das "Steelers" raus! Korrektur zu V271: Im privaten Chat darf der Bot auch User-Nachrichten loeschen (nur in Gruppen braucht er extra Loesch-Recht)! Gilt auch fuer Kandidaten-Weg: "Texas" + getippte Zahl werden beide geloescht!
 # V272: Spielplan-Zurueck loescht jetzt die Nachricht! Vorher: Zurueck = Nachricht wurde nur in den Next-Games-Hub verwandelt (blieb stehen), erst ein 2. Zurueck loeschte. Jetzt: Zurueck = Nachricht weg (wie Zurueck ueberall sonst)! Schliessen (X) loeschte schon immer! Hub bleibt uebers Hauptmenue erreichbar!
@@ -3139,15 +3141,23 @@ async def game_info_detail_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, e
     if _venue: lines.append(f"📍 {_venue}")
     lines.append(f"{game_line(_ev,_lg,show_broadcast=True)}")
     lines.append("🌦️ Wetter: Keine Daten")
-    lines.append("\n**Wer fehlt?**")
+    lines.append("\n🏥 Verletzungen:")
+    _ord276 = {"Out": 0, "IR": 0, "PUP": 1, "Doubtful": 2, "Questionable": 3}
     for _tm in [_away[0],_home[0]]:
         _inj,_has=_team_injuries_with_status(_lg,_tm)
-        if _lg=="NCAAF": lines.append(f"{_tm}: Keine Verletzungsliste (kein offizieller Report)")
-        elif not _league_in_season(_lg): lines.append(f"{_tm}: Saison vorbei!")
-        elif not _has: lines.append(f"{_tm}: Keine Daten gefunden!")
-        elif not _inj: lines.append(f"{_tm}: Keine Verletzten! 🎉")
+        _short276 = _tm.split()[-1] if _tm else _tm
+        lines.append(f"🏈 {_short276}")
+        if _lg=="NCAAF": lines.append("  Keine Verletzungsliste (kein offizieller Report)")
+        elif not _league_in_season(_lg): lines.append("  Saison vorbei!")
+        elif not _has: lines.append("  Keine Daten gefunden!")
+        elif not _inj: lines.append("  ✅ Keine Meldungen")
         else:
-            for _x in _inj[:4]: lines.append(f"{_tm}: {_x}")
+            for _x in sorted(_inj, key=lambda x: _ord276.get(x.split(" — ")[-1].strip() if " — " in x else "", 9))[:4]:
+                _st276 = _x.split(" — ")[-1].strip() if " — " in _x else ""
+                _em276 = "❌" if _st276 in ("Out","IR","PUP") else "🟡" if _st276=="Doubtful" else "❓" if _st276=="Questionable" else "🏥"
+                _txt276 = _x.rsplit(" — ",1)[0] if " — " in _x else _x
+                lines.append(f"  {_em276} {_txt276}")
+            if len(_inj)>4: lines.append(f"  … +{len(_inj)-4} weitere")
     lines.append("\n**Form (letzte Spiele):**")
     lines.append(f"{_away[0]}: {_team_form(_lg,_away[0])}")
     lines.append(f"{_home[0]}: {_team_form(_lg,_home[0])}")
@@ -7305,23 +7315,27 @@ async def next_live_pick_cmd(update, ctx, league, eid, num_mid=None, expanded235
                         # V236: Jede Info eigene Zeile! Kickoff / Ort / Sender je eigene Zeile - 2 Zeilen mehr, aber endlich uebersichtlich!
                         _det230 = "\n".join(_parts230)
                     except: _det230 = ""
-                    # V274: Injury-Report nur fuer KOMMENDE Spiele! NCAAF: kein offizieller Report -> nix! Keine Daten = Team auslassen (nicht luegen)!
+                    # V275: Injury-Report SCHOEN! Ein Spieler pro Zeile, Status nur als Emoji, Team als Kopfzeile mit Kurznamen! Sortiert: Out zuerst!
                     try:
                         if _st230 == "pre" and league != "NCAAF" and _teams:
                             _inj_lines274 = []
+                            _ord275 = {"Out": 0, "IR": 0, "PUP": 1, "Doubtful": 2, "Questionable": 3}
                             for _tn274, _, _ in _teams:
                                 _il274, _has274 = _team_injuries_with_status(league, _tn274)
                                 if not _has274: continue
+                                _short275 = _tn274.split()[-1] if _tn274 else _tn274
+                                _inj_lines274.append(f"🏈 {_short275}")
                                 if not _il274:
-                                    _inj_lines274.append(f"{_tn274}: ✅ Keine Meldungen")
+                                    _inj_lines274.append("  ✅ Keine Meldungen")
                                 else:
-                                    _shown274 = []
-                                    for _e274 in _il274[:4]:
+                                    _sorted275 = sorted(_il274, key=lambda x: _ord275.get(x.split(" — ")[-1].strip() if " — " in x else "", 9))
+                                    for _e274 in _sorted275[:4]:
                                         _st274 = _e274.split(" — ")[-1].strip() if " — " in _e274 else ""
                                         _em274 = "❌" if _st274 in ("Out", "IR", "PUP") else "⚠️" if _st274 == "Doubtful" else "❓" if _st274 == "Questionable" else "🏥"
-                                        _shown274.append(f"{_em274} {_e274}")
-                                    _extra274 = f" (+{len(_il274)-4} weitere)" if len(_il274) > 4 else ""
-                                    _inj_lines274.append(f"{_tn274}: " + " • ".join(_shown274) + _extra274)
+                                        _txt275 = _e274.rsplit(" — ", 1)[0] if " — " in _e274 else _e274
+                                        _inj_lines274.append(f"  {_em274} {_txt275}")
+                                    if len(_sorted275) > 4:
+                                        _inj_lines274.append(f"  … +{len(_sorted275)-4} weitere")
                             if _inj_lines274:
                                 _inj274 = "🏥 Verletzungen:\n" + "\n".join(_inj_lines274)
                     except: _inj274 = ""
@@ -7368,7 +7382,7 @@ async def next_live_pick_cmd(update, ctx, league, eid, num_mid=None, expanded235
             [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
         ])
         _hint235 = "🔔 Tippe auf 'Benachrichtigungen einstellen', um zu wählen, was ich dir schicke!\nNach dem Spiel wird es automatisch wieder aus!"
-    _win210 = await _cb_edit(update, f"📋 Spiel-Informationen\n\n{_name}" + (f"\n{_det230}" if _det230 else "") + (f"\n{_wet235}" if _wet235 else "") + (f"\n🌦️ Wetter: konnte nicht laden (Debug: {_wetdbg238})" if _wetdbg238 else "") + (f"\n{_inj274}" if _inj274 else "") + f"\n\n{_hint235}", kb)
+    _win210 = await _cb_edit(update, f"📋 Spiel-Informationen\n\n{_name}" + (f"\n{_det230}" if _det230 else "") + (f"\n{_wet235}" if _wet235 else "") + (f"\n🌦️ Wetter: konnte nicht laden (Debug: {_wetdbg238})" if _wetdbg238 else "") + (f"\n\n{_inj274}" if _inj274 else "") + f"\n\n{_hint235}", kb)
     # V210: Fenster -> Zahl mappen! Damit 'Fenster schliessen' die getippte Zahl mitloescht!
     try:
         if num_mid and _win210 is not None and getattr(_win210, "message_id", None):
