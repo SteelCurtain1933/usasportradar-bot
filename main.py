@@ -1,4 +1,5 @@
-# USA Sport Radar - V268 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# USA Sport Radar - V269 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# V269: Score-Bug im Spielplan! Schedule-Endpunkt liefert Score als Dict {value: 28.0, displayValue: 28}, Scoreboard als String "28" -> Bot zeigte das rohe Dict + W/L-Rechnung stuerzte ab -> W/L fehlte! Jetzt: Score normalisieren (displayValue bevorzugt) -> "28:9 W" statt Dict-Kauderwelsch!
 # V268: Spielplan-Fixes! 1) Status-Bug: Schedule-Endpunkt hat Status in competitions[0].status, NICHT oben im Event -> fertige Spiele zeigten als kommend! Jetzt competitions zuerst lesen! 2) Preseason: zusaetzlich seasontype=1 (Kleinschreibung, Core-API) probieren! 3) Flex-Spiele mit 00:00-Platzhalter -> "Zeit TBD" + Hinweis, dass Datum sich noch aendern kann! 4) Blaetter-Buttons: IMMER 2 kleine Buttons in einer Reihe (Vorherige / Naechste), am Rand = Toast-Hinweis statt verwirrendem Einzel-Knopf!
 # V267: Teamsuche + Spielplan in Next Games! Knopf "Team suchen" -> Name tippen (gleiche Suche wie Favoriten: Vollname/Spitzname/Stadt/Teil) -> Spielplan: vergangene Spiele mit Ergebnis + W/L, kommende mit Kickoff (US-Zeit zuerst, DE in Klammern), Preseason mit drin, 10 Spiele pro Seite mit Pfeilen blaettern! ESPN Team-Schedule-Endpunkt (1 Call), Preseason extra dazu-gemerged!
 # V266: Online-Nachricht gefixt! 1) Uhrzeit: datetime.now() (UTC, 1 Std. hinter Berlin) -> datetime.now(BERLIN)! 2) Loesch-Knopf "Nachricht loeschen" an der Online-Nachricht (online_del loescht sie)! 3) BOT_VERSION V262 -> V266!
@@ -2631,6 +2632,20 @@ def _sched_sport_key267(league):
     key = {"NFL": "nfl", "NCAAF": "college-football", "NBA": "nba", "NHL": "nhl", "MLB": "mlb"}.get(league, "nfl")
     return sport, key
 
+def _sched_score269(v):
+    # V269: Schedule-Score ist ein Dict, Scoreboard-Score ein String -> beides zu "28" normalisieren!
+    try:
+        if isinstance(v, dict):
+            _d = v.get("displayValue")
+            if _d is not None and str(_d) != "": return str(_d)
+            _val = v.get("value")
+            if _val is None: return None
+            try: return str(int(float(_val)))
+            except: return str(_val)
+        if v is None: return None
+        return str(v)
+    except: return None
+
 def _sched_fetch267(league, tid):
     # V267: Ganzer Saison-Spielplan in 1-2 Calls (Team-Schedule-Endpunkt)! Preseason extra dazu-gemerged + dedup per Event-ID!
     sport, key = _sched_sport_key267(league)
@@ -2654,7 +2669,7 @@ def _sched_fetch267(league, tid):
             _my = None; _opp = None
             for _c in (((_ev.get("competitions", [{}]) or [{}])[0]).get("competitors", []) or []):
                 _tm = _c.get("team", {}) or {}
-                _entry = {"name": _tm.get("displayName", "") or "", "ha": _c.get("homeAway", "") or "", "score": _c.get("score")}
+                _entry = {"name": _tm.get("displayName", "") or "", "ha": _c.get("homeAway", "") or "", "score": _sched_score269(_c.get("score"))}
                 if str(_tm.get("id", "") or "") == str(tid): _my = _entry
                 else: _opp = _entry
             if not _my or not _opp: continue
