@@ -1,4 +1,5 @@
 # USA Sport Radar - V275 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# V277: Injury-Report: Doubtful = 🟡 ueberall (statt ⚠️), Leerzeile zwischen den Teams!
 # V276: Injury-Report SCHOEN ueberall! game_info_detail + Verletzungen-meine-Teams im gleichen Stil wie Spiel-Informationen! + Leerzeile vor Verletzungen!
 # V275: Injury-Report SCHOEN! Ein Spieler pro Zeile (kein Text-Batzen mit Bullet-Punkten mehr)! Status nur noch als Emoji (das doppelte "— Out" am Ende fliegt raus)! Team als Kopfzeile mit Kurznamen (Rams statt Los Angeles Rams)! Sortiert: Out zuerst, dann Doubtful, dann Questionable!
 # V274: Injury-Report in den Spiel-Informationen (kommende Spiele)! Pro Team: Out/Doubtful/Questionable mit Emoji (NFL=Sleeper, Rest=ESPN, NCAAF=kein offizieller Report -> nix anzeigen)! Ehrlich: keine Daten = Team wird ausgelassen, keine Meldungen = "Keine Meldungen"! Max 4 pro Team + "+X weitere", damit das Fenster kompakt bleibt! Gilt fuer Heute/Morgen, Next Games UND Spielplan-Zahl (gleicher Detail-View)!
@@ -7323,6 +7324,7 @@ async def next_live_pick_cmd(update, ctx, league, eid, num_mid=None, expanded235
                             for _tn274, _, _ in _teams:
                                 _il274, _has274 = _team_injuries_with_status(league, _tn274)
                                 if not _has274: continue
+                                if _inj_lines274: _inj_lines274.append("")  # V277: Leerzeile zwischen Teams!
                                 _short275 = _tn274.split()[-1] if _tn274 else _tn274
                                 _inj_lines274.append(f"🏈 {_short275}")
                                 if not _il274:
@@ -7331,7 +7333,7 @@ async def next_live_pick_cmd(update, ctx, league, eid, num_mid=None, expanded235
                                     _sorted275 = sorted(_il274, key=lambda x: _ord275.get(x.split(" — ")[-1].strip() if " — " in x else "", 9))
                                     for _e274 in _sorted275[:4]:
                                         _st274 = _e274.split(" — ")[-1].strip() if " — " in _e274 else ""
-                                        _em274 = "❌" if _st274 in ("Out", "IR", "PUP") else "⚠️" if _st274 == "Doubtful" else "❓" if _st274 == "Questionable" else "🏥"
+                                        _em274 = "❌" if _st274 in ("Out", "IR", "PUP") else "🟡" if _st274 == "Doubtful" else "❓" if _st274 == "Questionable" else "🏥"
                                         _txt275 = _e274.rsplit(" — ", 1)[0] if " — " in _e274 else _e274
                                         _inj_lines274.append(f"  {_em274} {_txt275}")
                                     if len(_sorted275) > 4:
