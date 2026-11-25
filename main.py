@@ -1,4 +1,5 @@
-# USA Sport Radar - V266 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# USA Sport Radar - V267 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# V267: Teamsuche + Spielplan in Next Games! Knopf "Team suchen" -> Name tippen (gleiche Suche wie Favoriten: Vollname/Spitzname/Stadt/Teil) -> Spielplan: vergangene Spiele mit Ergebnis + W/L, kommende mit Kickoff (US-Zeit zuerst, DE in Klammern), Preseason mit drin, 10 Spiele pro Seite mit Pfeilen blaettern! ESPN Team-Schedule-Endpunkt (1 Call), Preseason extra dazu-gemerged!
 # V266: Online-Nachricht gefixt! 1) Uhrzeit: datetime.now() (UTC, 1 Std. hinter Berlin) -> datetime.now(BERLIN)! 2) Loesch-Knopf "Nachricht loeschen" an der Online-Nachricht (online_del loescht sie)! 3) BOT_VERSION V262 -> V266!
 # V265: Nerd-Modus + Favoriten! Team-Seite: "Als Favorit setzen" / "Favorit entfernen" (Umschalten) + "Dein Favorit!"-Zeile. Team-Listen: Favoriten mit Stern markiert (7. Stern Texas Longhorns)! NFL + NBA/NHL/MLB/NCAAF!
 # V264: NCAAF ehrlich gemacht! NCAAF hat in echt ueber 130 FBS-Teams - wir zeigen nur die 28 groessten! "Alle 28" -> "die 28 groessten" + Hinweis in der Team-Liste. NFL/NBA/NHL/MLB bleiben "alle Teams" (da haben wir wirklich alle)!
@@ -2620,16 +2621,182 @@ async def tables_mine_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     _m201 = await target.reply_text("\n".join(lines), reply_markup=kb)
     try: _chain_add(update.effective_user.id if update.effective_user else 0, _m201.message_id)
     except: pass
+# ===== V267: Teamsuche + Spielplan in Next Games =====
+_SCHED_PAGE_SIZE267 = 10
+_SCHED_WD267 = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
+
+def _sched_sport_key267(league):
+    sport = {"NFL": "football", "NCAAF": "football", "NBA": "basketball", "NHL": "hockey", "MLB": "baseball"}.get(league, "football")
+    key = {"NFL": "nfl", "NCAAF": "college-football", "NBA": "nba", "NHL": "nhl", "MLB": "mlb"}.get(league, "nfl")
+    return sport, key
+
+def _sched_fetch267(league, tid):
+    # V267: Ganzer Saison-Spielplan in 1-2 Calls (Team-Schedule-Endpunkt)! Preseason extra dazu-gemerged + dedup per Event-ID!
+    sport, key = _sched_sport_key267(league)
+    _sy = _season_year(league)
+    _seen = set(); _out = []
+    for _params in ({"season": _sy}, {"season": _sy, "seasonType": 1}):
+        try:
+            _r = requests.get(f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{key}/teams/{tid}/schedule", params=_params, timeout=12)
+            _evs = ((_r.json() or {}).get("events", []) or [])
+        except Exception:
+            _evs = []
+        for _ev in _evs:
+            _eid = str(_ev.get("id", "") or "")
+            if not _eid or _eid in _seen: continue
+            _seen.add(_eid)
+            _iso = _ev.get("date", "") or ""
+            _st = ((_ev.get("status", {}) or {}).get("type", {}) or {}).get("state", "") or ""
+            _styp = _ev.get("seasonType") or {}
+            _pre = (_styp.get("id") == 1) or ("preseason" in str(_styp.get("name", "") or "").lower()) or ("preseason" in str(_ev.get("name", "") or "").lower())
+            _my = None; _opp = None
+            for _c in (((_ev.get("competitions", [{}]) or [{}])[0]).get("competitors", []) or []):
+                _tm = _c.get("team", {}) or {}
+                _entry = {"name": _tm.get("displayName", "") or "", "ha": _c.get("homeAway", "") or "", "score": _c.get("score")}
+                if str(_tm.get("id", "") or "") == str(tid): _my = _entry
+                else: _opp = _entry
+            if not _my or not _opp: continue
+            _wl = ""
+            try:
+                if _st == "post" and _my.get("score") is not None and _opp.get("score") is not None:
+                    _ms = int(str(_my["score"])); _os = int(str(_opp["score"]))
+                    _wl = "W" if _ms > _os else ("L" if _ms < _os else "T")
+            except: _wl = ""
+            _out.append({"iso": _iso, "state": _st, "pre": _pre, "opp": _opp["name"], "home": (_my["ha"] == "home"), "my": _my.get("score"), "os": _opp.get("score"), "wl": _wl, "eid": _eid})
+    _out.sort(key=lambda e: e.get("iso", ""))
+    return _out
+
+def _sched_render267(sched):
+    # V267: Eine Spielplan-Seite bauen (10 Spiele) + Blaetter-Buttons!
+    _evs = sched.get("events", []) or []
+    _page = sched.get("page", 0)
+    _pages = max(1, (len(_evs) + _SCHED_PAGE_SIZE267 - 1) // _SCHED_PAGE_SIZE267) if _evs else 1
+    _page = max(0, min(_page, _pages - 1))
+    sched["page"] = _page
+    _em = LEAGUES.get(sched.get("league", ""), {}).get("emoji", "🏈")
+    lines = [f"⏭️ Spielplan – {_em} {sched.get('team', '')}", f"Seite {_page + 1} von {_pages} • Tippe ⬅️ / ➡️ zum Blättern!", ""]
+    _chunk = _evs[_page * _SCHED_PAGE_SIZE267:(_page + 1) * _SCHED_PAGE_SIZE267]
+    if not _chunk:
+        lines.append("Kein Spielplan gefunden.")
+    for _e in _chunk:
+        _ds, _dt = fmt_dt(_e.get("iso", ""))
+        _wd = _SCHED_WD267[_dt.weekday()] if _dt else ""
+        _vs = "vs" if _e.get("home") else "@"
+        _pre = " · Preseason" if _e.get("pre") else ""
+        if _e.get("state") == "post":
+            lines.append(f"• {_wd} {_ds[:5]} – {_vs} {_e.get('opp', '')} – {_e.get('my', '?')}:{_e.get('os', '?')} {_e.get('wl', '')}{_pre}")
+        elif _e.get("state") == "in":
+            lines.append(f"• {_wd} {_ds[:5]} – {_vs} {_e.get('opp', '')} – 🔴 LIVE {_e.get('my', '?')}:{_e.get('os', '?')}{_pre}")
+        else:
+            _ko = ""
+            try:
+                from zoneinfo import ZoneInfo as _ZI267
+                _tz267 = _ZI267("America/New_York")
+                _us267 = _dt.astimezone(_tz267)
+                _ko = f"{_us267.strftime('%H:%M')} {(_us267.strftime('%Z') or 'ET')} ({_dt.strftime('%H:%M')} Uhr)"
+            except: _ko = f"{_ds[6:]} Uhr"
+            lines.append(f"• {_wd} {_ds[:5]} • {_ko} – {_vs} {_e.get('opp', '')}{_pre}")
+    _rows = []
+    _nav = []
+    if _page > 0: _nav.append(InlineKeyboardButton("⬅️", callback_data="sched_prev"))
+    if _page < _pages - 1: _nav.append(InlineKeyboardButton("➡️", callback_data="sched_next"))
+    if _nav: _rows.append(_nav)
+    _rows.append([InlineKeyboardButton("⬅️ Zurück", callback_data="next")])
+    return "\n".join(lines), InlineKeyboardMarkup(_rows)
+
+async def sched_open_cmd(update, ctx, league, team_full):
+    # V267: Spielplan laden + erste Seite zeigen!
+    try:
+        target = update.message or update.callback_query.message
+        _uid = update.effective_user.id if update.effective_user else 0
+        _load = None
+        try: _load = await _loading_start(target, "⏳ Ich hole den Spielplan... einen Moment")
+        except: pass
+        _tid = _espn_team_id_for(league, team_full)
+        _evs = _sched_fetch267(league, _tid) if _tid else []
+        try: await _loading_done(ctx, _uid, _load)
+        except: pass
+        if not _evs:
+            await target.reply_text(f"⏭️ Spielplan – {team_full}\n\nKein Spielplan gefunden.\nVielleicht ist gerade Offseason?", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Zurück", callback_data="next")]]))
+            return
+        ctx.user_data["sched"] = {"league": league, "team": team_full, "events": _evs, "page": 0}
+        _txt, _kb = _sched_render267(ctx.user_data["sched"])
+        _m = await target.reply_text(_txt, reply_markup=_with_close(_kb))
+        try: _chain_add(_uid, _m.message_id)
+        except: pass
+    except Exception:
+        try:
+            target = update.message or update.callback_query.message
+            await target.reply_text("😅 Spielplan konnte grad nicht geladen werden!", reply_markup=small_kb())
+        except: pass
+
+async def sched_search_cmd(update, ctx):
+    # V267: Teamsuche wie bei Favoriten (Vollname -> Spitzname -> Stadt -> Teil-Suche), aber Ziel = Spielplan!
+    try:
+        ctx.user_data["awaiting_team_search"] = False
+        name = update.message.text.strip()
+        low = name.lower().strip()
+        for lg, lst in TEAMS.items():
+            for full in lst:
+                if low == full.lower():
+                    await sched_open_cmd(update, ctx, lg, full); return
+        if low in NICKNAME_MAP:
+            cands = NICKNAME_MAP[low]
+            if len(cands) == 1:
+                _c = cands[0]; await sched_open_cmd(update, ctx, _c.rsplit(" (", 1)[1].rstrip(")") if " (" in _c else "", _c.rsplit(" (", 1)[0]); return
+            ctx.user_data["sched_candidates"] = cands
+            kb = InlineKeyboardMarkup([[InlineKeyboardButton(f"{i+1}. {m}", callback_data=f"sched_pick:{i}")] for i, m in enumerate(cands[:12])])
+            await update.message.reply_text("Welches Team meinst du? Tippe auf ein Team:", reply_markup=kb)
+            return
+        city_cands = _find_by_city_or_state(low)
+        if len(city_cands) > 1:
+            ctx.user_data["sched_candidates"] = city_cands
+            kb = InlineKeyboardMarkup([[InlineKeyboardButton(f"{i+1}. {m}", callback_data=f"sched_pick:{i}")] for i, m in enumerate(city_cands[:12])])
+            await update.message.reply_text("Welches Team meinst du? Tippe auf ein Team:", reply_markup=kb)
+            return
+        elif len(city_cands) == 1:
+            _c = city_cands[0]; await sched_open_cmd(update, ctx, _c.rsplit(" (", 1)[1].rstrip(")") if " (" in _c else "", _c.rsplit(" (", 1)[0]); return
+        partial = []
+        for lg, lst in TEAMS.items():
+            for full in lst:
+                if low in full.lower(): partial.append(f"{full} ({lg})")
+        if len(partial) > 1:
+            ctx.user_data["sched_candidates"] = partial
+            kb = InlineKeyboardMarkup([[InlineKeyboardButton(f"{i+1}. {m}", callback_data=f"sched_pick:{i}")] for i, m in enumerate(partial[:12])])
+            await update.message.reply_text("Welches Team meinst du? Tippe auf ein Team:", reply_markup=kb)
+            return
+        elif len(partial) == 1:
+            _c = partial[0]; await sched_open_cmd(update, ctx, _c.rsplit(" (", 1)[1].rstrip(")") if " (" in _c else "", _c.rsplit(" (", 1)[0]); return
+        await update.message.reply_text(f"Hmm, '{name}' nicht gefunden. Probier mal den vollen Teamnamen, z.B. 'Pittsburgh Steelers'.", reply_markup=small_kb())
+    except Exception:
+        try: await update.message.reply_text("😅 Teamsuche konnte grad nicht geladen werden!", reply_markup=small_kb())
+        except: pass
+
+async def sched_page_cmd(update, ctx, direction):
+    # V267: Blaettern! Pfeil links = eine Seite zurueck, Pfeil rechts = eine Seite weiter!
+    try:
+        _sched = ctx.user_data.get("sched") or {}
+        if not _sched.get("events"): return
+        _evs = _sched.get("events", []) or []
+        _pages = max(1, (len(_evs) + _SCHED_PAGE_SIZE267 - 1) // _SCHED_PAGE_SIZE267)
+        _p = _sched.get("page", 0) + (1 if direction > 0 else -1)
+        _sched["page"] = max(0, min(_p, _pages - 1))
+        _txt, _kb = _sched_render267(_sched)
+        await _cb_edit(update, _txt, _kb)
+    except Exception:
+        pass
+
 async def next_hub_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     target = update.message or update.callback_query.message
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("📅 Heute", callback_data="next_today")],  # V210: Liga wird danach gewaehlt!
         [InlineKeyboardButton("📅 Morgen", callback_data="next_tomorrow")],
         [InlineKeyboardButton("⭐ Nur meine Favoriten", callback_data="next_mine")],
+        [InlineKeyboardButton("🔍 Team suchen", callback_data="next_search")],
         [InlineKeyboardButton("❓ Hilfe", callback_data="help")],  # V227: "Live für ein Spiel"-Button RAUS! Geht jetzt über Heute/Morgen + Zahl!
         [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
     ])
-    await _cb_edit(update, "⏭️ Next Games\n\nWas willst du sehen?\n📅 Heute / Morgen = alle Spiele, auch ohne Favoriten!\n⭐ Nur meine Favoriten = wann spielen DEINE Teams als Nächstes?\n✍️ In Heute/Morgen: Zahl vom Spiel schreiben = Details + Benachrichtigungen!", kb)  # V227: Zahlen-Weg!
+    await _cb_edit(update, "⏭️ Next Games\n\nWas willst du sehen?\n📅 Heute / Morgen = alle Spiele, auch ohne Favoriten!\n⭐ Nur meine Favoriten = wann spielen DEINE Teams als Nächstes?\n🔍 Team suchen = Spielplan für ein Team: vergangene Spiele mit Ergebnis + W/L, kommende Spiele, mit ⬅️ ➡️ blättern!\n✍️ In Heute/Morgen: Zahl vom Spiel schreiben = Details + Benachrichtigungen!", kb)  # V227: Zahlen-Weg!
 async def next_mine_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     target = update.message or update.callback_query.message
     user = update.effective_user or (update.callback_query.from_user if update.callback_query else None)
@@ -5979,6 +6146,18 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if _nh242.get("league"):
                 await nerd_league_hof_detail_cmd(update, ctx, _nh242.get("league", ""), _nh242.get("team", ""), _nhn242-1); return
             await nerd_hof_detail_cmd(update, ctx, _nh242.get("team", ""), _nhn242-1); return
+    # V267: Teamsuche fuer Spielplan! Zahl = Kandidat aus der Liste, Text = Teamname!
+    if ctx.user_data.get("awaiting_team_search") and txt.isdigit() and ctx.user_data.get("sched_candidates"):
+        _sc267 = ctx.user_data.get("sched_candidates") or []
+        _n267 = int(txt)
+        if 1 <= _n267 <= len(_sc267):
+            ctx.user_data["awaiting_team_search"] = False
+            _c267 = _sc267[_n267 - 1]
+            _lg267 = _c267.rsplit(" (", 1)[1].rstrip(")") if " (" in _c267 else ""
+            _nm267 = _c267.rsplit(" (", 1)[0]
+            await sched_open_cmd(update, ctx, _lg267, _nm267); return
+    if ctx.user_data.get("awaiting_team_search") and not txt.isdigit():
+        await sched_search_cmd(update, ctx); return
     if not ctx.user_data.get("awaiting_fav"): return
     ctx.user_data["awaiting_fav"]=False
     name = update.message.text.strip()
@@ -6069,7 +6248,7 @@ HELP_CATS = {
 HELP_SHORT = {
     "top10": "❓ Hilfe - Top 10\n\nTippe eine Zahl 1-10 in den Chat für Rating + Warum!\nRating steht nur im Detail, nicht in der Übersicht!\n\n📅 Top 10 zeigt nur Spiele dieser Woche (heute bis Sonntag)! Spiele von nächster Woche sind NICHT dabei!",
     "tables": "❓ Hilfe - Tabellen\n\nW-L-OTL = Siege - Niederlagen - Overtime-Niederlagen.\nBei NHL: Sieg = 2 Punkte, Overtime-Niederlage = 1 Punkt!\n\n💡 Zahl tippen = Team-Fenster! (z.B. 1 für Platz 1)",
-    "next": "❓ Hilfe - Next Games\n\nHeute / Morgen = alle Spiele!\nNur Favoriten = nur deine Teams!\n✍️ In Heute/Morgen: Zahl vom Spiel schreiben = Details + Benachrichtigungen!",
+    "next": "❓ Hilfe - Next Games\n\nHeute / Morgen = alle Spiele!\nNur Favoriten = nur deine Teams!\n🔍 Team suchen = Spielplan für ein Team: vergangene Spiele mit Ergebnis + W/L, kommende Spiele, mit ⬅️ ➡️ blättern!\n✍️ In Heute/Morgen: Zahl vom Spiel schreiben = Details + Benachrichtigungen!",
     "live": "❓ Hilfe - Live\n\nLäuft gerade! Scorer rollt rein, wenn einer punktet!\nNach Spielende: Fenster schließen reicht!",
     "results": "❓ Hilfe - Ergebnisse\n\nWelche Liga? Dann siehst du, wie die letzten Spiele ausgingen!",
     "settings": "❓ Hilfe - Einstellungen\n\nHier: Favoriten + Benachrichtigungen + Fenster!\nReminder + Live-Scores sind unter Benachrichtigungen!\nAuto-Schließen ist unter Fenster!",
@@ -9220,6 +9399,28 @@ async def on_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif data=="fav_clear_no":
         # V167: Selbes Fenster editieren, keine neue Nachricht, keine Liste!
         await _cb_edit(update, "✅ Puh, Glück gehabt! Alle Favoriten behalten!", small_kb())
+    elif data == "next_search":
+        # V267: Teamsuche starten! Andere Zahlen-Listen aus (sonst frisst eine alte Liste die getippte Zahl)!
+        for _k267 in ("nerd_teams_list", "nerd_hof_list", "tables_team_list", "next_games_list", "results_list", "top10_list", "live_finals_list", "my_live_list", "next_live_list", "fav_candidates"):
+            try: ctx.user_data[_k267] = None
+            except: pass
+        ctx.user_data["awaiting_fav"] = False; ctx.user_data["awaiting_fav_pick"] = False
+        ctx.user_data["awaiting_team_search"] = True
+        await _cb_edit(update, "🔍 Team suchen\n\nWelches Team?\nSchreib den Namen – z.B. Broncos, Yankees oder Texas!", InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Zurück", callback_data="next")]]))
+    elif data.startswith("sched_pick:"):
+        # V267: Team aus der Kandidaten-Liste gewaehlt -> Spielplan auf!
+        try:
+            _idx267 = int(data.split(":")[1]); _cands267 = ctx.user_data.get("sched_candidates", []) or []
+            if _idx267 < len(_cands267):
+                _c267 = _cands267[_idx267]
+                _lg267 = _c267.rsplit(" (", 1)[1].rstrip(")") if " (" in _c267 else ""
+                _nm267 = _c267.rsplit(" (", 1)[0]
+                await sched_open_cmd(update, ctx, _lg267, _nm267)
+        except: pass
+    elif data == "sched_prev":
+        await sched_page_cmd(update, ctx, -1)
+    elif data == "sched_next":
+        await sched_page_cmd(update, ctx, 1)
     elif data.startswith("fav_pick:"):
         idx=int(data.split(":")[1]); cands=ctx.user_data.get("fav_candidates",[])
         if idx < len(cands):
