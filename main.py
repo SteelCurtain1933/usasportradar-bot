@@ -1,4 +1,5 @@
-# USA Sport Radar - V269 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# USA Sport Radar - V270 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# V270: Spielplan SCHOENER! Kuerzel statt volle Namen (vs CLE statt vs Cleveland Browns) -> jede Zeile passt auf EINE Zeile! W/L + Emoji (27:6 W ✅ / 18:38 L ❌)! Trennlinie "Kommende Spiele" zwischen gespielt + kommend! Bilanz oben (nur Regular Season)! Kuerzere Zeiten (15:00 EST (21:00), ohne "Uhr")! "PS" statt "Preseason"!
 # V269: Score-Bug im Spielplan! Schedule-Endpunkt liefert Score als Dict {value: 28.0, displayValue: 28}, Scoreboard als String "28" -> Bot zeigte das rohe Dict + W/L-Rechnung stuerzte ab -> W/L fehlte! Jetzt: Score normalisieren (displayValue bevorzugt) -> "28:9 W" statt Dict-Kauderwelsch!
 # V268: Spielplan-Fixes! 1) Status-Bug: Schedule-Endpunkt hat Status in competitions[0].status, NICHT oben im Event -> fertige Spiele zeigten als kommend! Jetzt competitions zuerst lesen! 2) Preseason: zusaetzlich seasontype=1 (Kleinschreibung, Core-API) probieren! 3) Flex-Spiele mit 00:00-Platzhalter -> "Zeit TBD" + Hinweis, dass Datum sich noch aendern kann! 4) Blaetter-Buttons: IMMER 2 kleine Buttons in einer Reihe (Vorherige / Naechste), am Rand = Toast-Hinweis statt verwirrendem Einzel-Knopf!
 # V267: Teamsuche + Spielplan in Next Games! Knopf "Team suchen" -> Name tippen (gleiche Suche wie Favoriten: Vollname/Spitzname/Stadt/Teil) -> Spielplan: vergangene Spiele mit Ergebnis + W/L, kommende mit Kickoff (US-Zeit zuerst, DE in Klammern), Preseason mit drin, 10 Spiele pro Seite mit Pfeilen blaettern! ESPN Team-Schedule-Endpunkt (1 Call), Preseason extra dazu-gemerged!
@@ -2669,7 +2670,7 @@ def _sched_fetch267(league, tid):
             _my = None; _opp = None
             for _c in (((_ev.get("competitions", [{}]) or [{}])[0]).get("competitors", []) or []):
                 _tm = _c.get("team", {}) or {}
-                _entry = {"name": _tm.get("displayName", "") or "", "ha": _c.get("homeAway", "") or "", "score": _sched_score269(_c.get("score"))}
+                _entry = {"name": _tm.get("displayName", "") or "", "abbr": _tm.get("abbreviation", "") or "", "ha": _c.get("homeAway", "") or "", "score": _sched_score269(_c.get("score"))}
                 if str(_tm.get("id", "") or "") == str(tid): _my = _entry
                 else: _opp = _entry
             if not _my or not _opp: continue
@@ -2679,7 +2680,7 @@ def _sched_fetch267(league, tid):
                     _ms = int(str(_my["score"])); _os = int(str(_opp["score"]))
                     _wl = "W" if _ms > _os else ("L" if _ms < _os else "T")
             except: _wl = ""
-            _out.append({"iso": _iso, "state": _st, "pre": _pre, "opp": _opp["name"], "home": (_my["ha"] == "home"), "my": _my.get("score"), "os": _opp.get("score"), "wl": _wl, "eid": _eid})
+            _out.append({"iso": _iso, "state": _st, "pre": _pre, "opp": _opp["name"], "abbr": _opp.get("abbr") or _opp["name"], "home": (_my["ha"] == "home"), "my": _my.get("score"), "os": _opp.get("score"), "wl": _wl, "eid": _eid})
     _out.sort(key=lambda e: e.get("iso", ""))
     return _out
 
@@ -2691,20 +2692,30 @@ def _sched_render267(sched):
     _page = max(0, min(_page, _pages - 1))
     sched["page"] = _page
     _em = LEAGUES.get(sched.get("league", ""), {}).get("emoji", "🏈")
-    lines = [f"⏭️ Spielplan – {_em} {sched.get('team', '')}", f"Seite {_page + 1} von {_pages} • Mit den Knöpfen unten blättern!", ""]
+    _w270 = sum(1 for _x in _evs if _x.get("state") == "post" and not _x.get("pre") and _x.get("wl") == "W")
+    _l270 = sum(1 for _x in _evs if _x.get("state") == "post" and not _x.get("pre") and _x.get("wl") == "L")
+    lines = [f"⏭️ Spielplan – {_em} {sched.get('team', '')}", f"Seite {_page + 1} von {_pages}"]
+    if _w270 + _l270 > 0: lines.append(f"📊 Bilanz: {_w270}-{_l270}")
+    lines.append("")
     _tbd268 = False
     _chunk = _evs[_page * _SCHED_PAGE_SIZE267:(_page + 1) * _SCHED_PAGE_SIZE267]
     if not _chunk:
         lines.append("Kein Spielplan gefunden.")
+    _div270 = any(_x.get("state") in ("post", "in") for _x in _chunk) and any(_x.get("state") == "pre" for _x in _chunk)
+    _div_done270 = False
     for _e in _chunk:
         _ds, _dt = fmt_dt(_e.get("iso", ""))
         _wd = _SCHED_WD267[_dt.weekday()] if _dt else ""
         _vs = "vs" if _e.get("home") else "@"
-        _pre = " · Preseason" if _e.get("pre") else ""
+        _ab270 = _e.get("abbr") or _e.get("opp", "")
+        _pre = " · PS" if _e.get("pre") else ""
+        if _div270 and not _div_done270 and _e.get("state") == "pre":
+            lines.append("── Kommende Spiele ──"); _div_done270 = True
         if _e.get("state") == "post":
-            lines.append(f"• {_wd} {_ds[:5]} – {_vs} {_e.get('opp', '')} – {_e.get('my', '?')}:{_e.get('os', '?')} {_e.get('wl', '')}{_pre}")
+            _emo270 = "✅" if _e.get("wl") == "W" else ("❌" if _e.get("wl") == "L" else "")
+            lines.append(f"{_wd} {_ds[:5]}  {_vs} {_ab270}  {_e.get('my', '?')}:{_e.get('os', '?')} {_e.get('wl', '')} {_emo270}{_pre}".rstrip())
         elif _e.get("state") == "in":
-            lines.append(f"• {_wd} {_ds[:5]} – {_vs} {_e.get('opp', '')} – 🔴 LIVE {_e.get('my', '?')}:{_e.get('os', '?')}{_pre}")
+            lines.append(f"{_wd} {_ds[:5]}  {_vs} {_ab270}  🔴 LIVE {_e.get('my', '?')}:{_e.get('os', '?')}{_pre}")
         else:
             _ko = ""
             try:
@@ -2714,9 +2725,9 @@ def _sched_render267(sched):
                 if _us267.hour == 0 and _us267.minute == 0:
                     _ko = "Zeit TBD"; _tbd268 = True
                 else:
-                    _ko = f"{_us267.strftime('%H:%M')} {(_us267.strftime('%Z') or 'ET')} ({_dt.strftime('%H:%M')} Uhr)"
-            except: _ko = f"{_ds[6:]} Uhr"
-            lines.append(f"• {_wd} {_ds[:5]} • {_ko} – {_vs} {_e.get('opp', '')}{_pre}")
+                    _ko = f"{_us267.strftime('%H:%M')} {(_us267.strftime('%Z') or 'ET')} ({_dt.strftime('%H:%M')})"
+            except: _ko = f"{_ds[6:]}"
+            lines.append(f"{_wd} {_ds[:5]}  {_vs} {_ab270}  {_ko}{_pre}")
     if _tbd268:
         lines += ["", "⏰ Zeit TBD = noch nicht endgültig terminiert (Flex-Schedule) – Datum kann sich noch ändern!"]
     _rows = []
