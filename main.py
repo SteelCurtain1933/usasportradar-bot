@@ -1,4 +1,5 @@
 # USA Sport Radar - V275 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# V281: Spiel-Infos schoener! Wetter-Emoji passend zum Wetter (☀️🌧️❄️⛈️ statt immer 🌦️)! Kickoff = ⏰, Stadion = 🏟️!
 # V280: Team-Emojis! Verletzungen + Spiel-Infos zeigen jetzt 🐏 Rams / 🧀 Packers statt immer nur 🏈! Fallback: Liga-Ball wenn kein Emoji bekannt!
 # V279: Hilfe: **-Sterne raus! Telegram zeigt ohne parse_mode sonst **Text** als Text (Screenshot)! Hilfe jetzt ohne Markdown, nur Emoji + Klartext!
 # V278: Hilfe: Verletzungs-Legende (❌🟡❓) endlich nachlesbar! In News-Kategorie + Kurz-Hilfe!
@@ -7201,6 +7202,18 @@ async def next_live_list_cmd(update, ctx, league):
 _WETTER235 = {0:"Klar", 1:"Überwiegend klar", 2:"Wechselhaft", 3:"Bedeckt", 45:"Nebel", 48:"Nebel mit Reif", 51:"Leichter Nieselregen", 53:"Nieselregen", 55:"Starker Nieselregen", 56:"Gefrierender Nieselregen", 57:"Gefrierender Nieselregen", 61:"Leichter Regen", 63:"Regen", 65:"Starker Regen", 66:"Gefrierender Regen", 67:"Gefrierender Regen", 71:"Leichter Schnee", 73:"Schnee", 75:"Starker Schnee", 77:"Schneekörner", 80:"Leichte Regenschauer", 81:"Regenschauer", 82:"Starke Regenschauer", 85:"Schneeschauer", 86:"Schneeschauer", 95:"Gewitter", 96:"Gewitter mit Hagel", 99:"Gewitter mit starkem Hagel"}
 _WETTER_DEBUG238 = ""  # V238: Debug-Grund, warum Wetter nicht klappt (nur bis der Bug gefunden ist, dann fliegt die Zeile wieder raus)!
 _WTTR239 = {"clear": "Klar", "sunny": "Sonnig", "partly cloudy": "Wechselhaft", "cloudy": "Bedeckt", "overcast": "Bedeckt", "mist": "Nebel", "fog": "Nebel", "light rain": "Leichter Regen", "moderate rain": "Regen", "heavy rain": "Starker Regen", "light snow": "Leichter Schnee", "moderate snow": "Schnee", "heavy snow": "Starker Schnee", "thunderstorm": "Gewitter", "thundery outbreaks possible": "Gewitter möglich", "patchy rain possible": "Regen möglich", "patchy snow possible": "Schnee möglich", "light drizzle": "Leichter Nieselregen", "drizzle": "Nieselregen", "freezing fog": "Nebel mit Reif", "blizzard": "Schneesturm", "blowing snow": "Schneetreiben"}  # V239: wttr.in sagt Wetter auf Englisch -> hier auf Deutsch!
+def _wetter_emoji281(cond):
+    try:
+        _c = (cond or "").lower()
+        if any(k in _c for k in ("gewitter", "hagel")): return "⛈️"
+        if "schnee" in _c or "schneek" in _c or "schneeschauer" in _c: return "❄️"
+        if "regen" in _c or "nieseln" in _c or "schauer" in _c: return "🌧️"
+        if "nebel" in _c or "reif" in _c: return "🌫️"
+        if "bedeckt" in _c or "bewölkt" in _c or "bewoelkt" in _c or "überwiegend" in _c or "wechselhaft" in _c: return "☁️"
+        if "klar" in _c or "sonnig" in _c: return "☀️"
+        return "🌦️"
+    except Exception:
+        return "🌦️"
 def _game_weather235(city, dt_kickoff, state):
     # V239: ZWEITE Quelle als Fallback (wttr.in)! Open-Meteo liefert "Forecast leer" (Geo geht, Forecast kommt ohne Daten zurueck) - statt weiter zu raten, einfach zweite Quelle nehmen! + Explizite Stadion-Zeitzone statt auto!
     global _WETTER_DEBUG238
@@ -7264,7 +7277,7 @@ def _game_weather235(city, dt_kickoff, state):
         if temp is not None and code is not None:
             fahr = round(float(temp) * 9/5 + 32)
             cond = _WETTER235.get(int(code), "Wechselhaft")
-            return f"🌦️ Wetter: {cond}, {fahr}°F ({round(float(temp))}°C)", tz
+            return f"{_wetter_emoji281(cond)} Wetter: {cond}, {fahr}°F ({round(float(temp))}°C)", tz
         # --- Quelle 2: wttr.in (V239: falls Open-Meteo leer ist!) ---
         _wt_reason = ""
         try:
@@ -7274,7 +7287,7 @@ def _game_weather235(city, dt_kickoff, state):
             _desc = ((_cc.get("weatherDesc") or [{}])[0] or {}).get("value") or ""
             if _tf is not None and _tc is not None:
                 _cond239 = _WTTR239.get(_desc.strip().lower(), _desc or "Wechselhaft")
-                return f"🌦️ Wetter: {_cond239}, {round(float(_tf))}°F ({round(float(_tc))}°C)", tz
+                return f"{_wetter_emoji281(_cond239)} Wetter: {_cond239}, {round(float(_tf))}°F ({round(float(_tc))}°C)", tz
             _wt_reason = "wttr leer"
         except Exception as _e239b:
             _wt_reason = f"wttr-Fehler: {str(_e239b)[:50]}"
@@ -7340,10 +7353,10 @@ async def next_live_pick_cmd(update, ctx, league, eid, num_mid=None, expanded235
                                 _ko235 = _dt230.astimezone(_tz235b)
                                 _abbr235 = _ko235.strftime("%Z") or "ET"
                                 _day235 = f"{_day230} " if _day230 != "heute" else ""
-                                _parts230.append(f"🏈 Kickoff {_day235}{_ko235.strftime('%H:%M')} {_abbr235} ({_dt230.strftime('%H:%M')} Uhr)")
+                                _parts230.append(f"⏰ Kickoff {_day235}{_ko235.strftime('%H:%M')} {_abbr235} ({_dt230.strftime('%H:%M')} Uhr)")
                             except:
-                                _parts230.append(f"🏈 Kickoff {_day230} {_dt230.strftime('%H:%M')} Uhr")
-                        if _ven230_s: _parts230.append(f"📍 {_ven230_s}" + (f", {_city230}" if _city230 else ""))
+                                _parts230.append(f"⏰ Kickoff {_day230} {_dt230.strftime('%H:%M')} Uhr")
+                        if _ven230_s: _parts230.append(f"🏟️ {_ven230_s}" + (f", {_city230}" if _city230 else ""))
                         if _bc230: _parts230.append(f"📺 {_bc230}")
                         # V236: Jede Info eigene Zeile! Kickoff / Ort / Sender je eigene Zeile - 2 Zeilen mehr, aber endlich uebersichtlich!
                         _det230 = "\n".join(_parts230)
