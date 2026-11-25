@@ -1,4 +1,5 @@
-# USA Sport Radar - V267 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# USA Sport Radar - V268 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# V268: Spielplan-Fixes! 1) Status-Bug: Schedule-Endpunkt hat Status in competitions[0].status, NICHT oben im Event -> fertige Spiele zeigten als kommend! Jetzt competitions zuerst lesen! 2) Preseason: zusaetzlich seasontype=1 (Kleinschreibung, Core-API) probieren! 3) Flex-Spiele mit 00:00-Platzhalter -> "Zeit TBD" + Hinweis, dass Datum sich noch aendern kann! 4) Blaetter-Buttons: IMMER 2 kleine Buttons in einer Reihe (Vorherige / Naechste), am Rand = Toast-Hinweis statt verwirrendem Einzel-Knopf!
 # V267: Teamsuche + Spielplan in Next Games! Knopf "Team suchen" -> Name tippen (gleiche Suche wie Favoriten: Vollname/Spitzname/Stadt/Teil) -> Spielplan: vergangene Spiele mit Ergebnis + W/L, kommende mit Kickoff (US-Zeit zuerst, DE in Klammern), Preseason mit drin, 10 Spiele pro Seite mit Pfeilen blaettern! ESPN Team-Schedule-Endpunkt (1 Call), Preseason extra dazu-gemerged!
 # V266: Online-Nachricht gefixt! 1) Uhrzeit: datetime.now() (UTC, 1 Std. hinter Berlin) -> datetime.now(BERLIN)! 2) Loesch-Knopf "Nachricht loeschen" an der Online-Nachricht (online_del loescht sie)! 3) BOT_VERSION V262 -> V266!
 # V265: Nerd-Modus + Favoriten! Team-Seite: "Als Favorit setzen" / "Favorit entfernen" (Umschalten) + "Dein Favorit!"-Zeile. Team-Listen: Favoriten mit Stern markiert (7. Stern Texas Longhorns)! NFL + NBA/NHL/MLB/NCAAF!
@@ -2635,7 +2636,7 @@ def _sched_fetch267(league, tid):
     sport, key = _sched_sport_key267(league)
     _sy = _season_year(league)
     _seen = set(); _out = []
-    for _params in ({"season": _sy}, {"season": _sy, "seasonType": 1}):
+    for _params in ({"season": _sy}, {"season": _sy, "seasonType": 1}, {"season": _sy, "seasontype": 1}):
         try:
             _r = requests.get(f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{key}/teams/{tid}/schedule", params=_params, timeout=12)
             _evs = ((_r.json() or {}).get("events", []) or [])
@@ -2646,7 +2647,8 @@ def _sched_fetch267(league, tid):
             if not _eid or _eid in _seen: continue
             _seen.add(_eid)
             _iso = _ev.get("date", "") or ""
-            _st = ((_ev.get("status", {}) or {}).get("type", {}) or {}).get("state", "") or ""
+            _comp0268 = (_ev.get("competitions", [{}]) or [{}])[0] or {}
+            _st = (((_comp0268.get("status", {}) or {}).get("type", {}) or {}).get("state", "") or "") or (((_ev.get("status", {}) or {}).get("type", {}) or {}).get("state", "") or "")
             _styp = _ev.get("seasonType") or {}
             _pre = (_styp.get("id") == 1) or ("preseason" in str(_styp.get("name", "") or "").lower()) or ("preseason" in str(_ev.get("name", "") or "").lower())
             _my = None; _opp = None
@@ -2674,7 +2676,8 @@ def _sched_render267(sched):
     _page = max(0, min(_page, _pages - 1))
     sched["page"] = _page
     _em = LEAGUES.get(sched.get("league", ""), {}).get("emoji", "🏈")
-    lines = [f"⏭️ Spielplan – {_em} {sched.get('team', '')}", f"Seite {_page + 1} von {_pages} • Tippe ⬅️ / ➡️ zum Blättern!", ""]
+    lines = [f"⏭️ Spielplan – {_em} {sched.get('team', '')}", f"Seite {_page + 1} von {_pages} • Mit den Knöpfen unten blättern!", ""]
+    _tbd268 = False
     _chunk = _evs[_page * _SCHED_PAGE_SIZE267:(_page + 1) * _SCHED_PAGE_SIZE267]
     if not _chunk:
         lines.append("Kein Spielplan gefunden.")
@@ -2693,14 +2696,16 @@ def _sched_render267(sched):
                 from zoneinfo import ZoneInfo as _ZI267
                 _tz267 = _ZI267("America/New_York")
                 _us267 = _dt.astimezone(_tz267)
-                _ko = f"{_us267.strftime('%H:%M')} {(_us267.strftime('%Z') or 'ET')} ({_dt.strftime('%H:%M')} Uhr)"
+                if _us267.hour == 0 and _us267.minute == 0:
+                    _ko = "Zeit TBD"; _tbd268 = True
+                else:
+                    _ko = f"{_us267.strftime('%H:%M')} {(_us267.strftime('%Z') or 'ET')} ({_dt.strftime('%H:%M')} Uhr)"
             except: _ko = f"{_ds[6:]} Uhr"
             lines.append(f"• {_wd} {_ds[:5]} • {_ko} – {_vs} {_e.get('opp', '')}{_pre}")
+    if _tbd268:
+        lines += ["", "⏰ Zeit TBD = noch nicht endgültig terminiert (Flex-Schedule) – Datum kann sich noch ändern!"]
     _rows = []
-    _nav = []
-    if _page > 0: _nav.append(InlineKeyboardButton("⬅️", callback_data="sched_prev"))
-    if _page < _pages - 1: _nav.append(InlineKeyboardButton("➡️", callback_data="sched_next"))
-    if _nav: _rows.append(_nav)
+    _rows.append([InlineKeyboardButton("⬅️ Vorherige", callback_data="sched_prev"), InlineKeyboardButton("Nächste ➡️", callback_data="sched_next")])
     _rows.append([InlineKeyboardButton("⬅️ Zurück", callback_data="next")])
     return "\n".join(lines), InlineKeyboardMarkup(_rows)
 
@@ -2779,8 +2784,13 @@ async def sched_page_cmd(update, ctx, direction):
         if not _sched.get("events"): return
         _evs = _sched.get("events", []) or []
         _pages = max(1, (len(_evs) + _SCHED_PAGE_SIZE267 - 1) // _SCHED_PAGE_SIZE267)
-        _p = _sched.get("page", 0) + (1 if direction > 0 else -1)
+        _old268 = _sched.get("page", 0)
+        _p = _old268 + (1 if direction > 0 else -1)
         _sched["page"] = max(0, min(_p, _pages - 1))
+        if _sched["page"] == _old268:
+            try: await update.callback_query.answer("Schon auf der ersten Seite!" if direction < 0 else "Schon auf der letzten Seite!")
+            except: pass
+            return
         _txt, _kb = _sched_render267(_sched)
         await _cb_edit(update, _txt, _kb)
     except Exception:
