@@ -1,4 +1,5 @@
-# USA Sport Radar - V273 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# USA Sport Radar - V274 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# V274: Injury-Report in den Spiel-Informationen (kommende Spiele)! Pro Team: Out/Doubtful/Questionable mit Emoji (NFL=Sleeper, Rest=ESPN, NCAAF=kein offizieller Report -> nix anzeigen)! Ehrlich: keine Daten = Team wird ausgelassen, keine Meldungen = "Keine Meldungen"! Max 4 pro Team + "+X weitere", damit das Fenster kompakt bleibt! Gilt fuer Heute/Morgen, Next Games UND Spielplan-Zahl (gleicher Detail-View)!
 # V273: Auch die GETIPPTE Nachricht des Users loeschen! Sobald der Spielplan da ist, fliegt z.B. das "Steelers" raus! Korrektur zu V271: Im privaten Chat darf der Bot auch User-Nachrichten loeschen (nur in Gruppen braucht er extra Loesch-Recht)! Gilt auch fuer Kandidaten-Weg: "Texas" + getippte Zahl werden beide geloescht!
 # V272: Spielplan-Zurueck loescht jetzt die Nachricht! Vorher: Zurueck = Nachricht wurde nur in den Next-Games-Hub verwandelt (blieb stehen), erst ein 2. Zurueck loeschte. Jetzt: Zurueck = Nachricht weg (wie Zurueck ueberall sonst)! Schliessen (X) loeschte schon immer! Hub bleibt uebers Hauptmenue erreichbar!
 # V271: Spielplan mit ZAHLEN! Spiele auf der Seite nummeriert (1-10) -> Zahl tippen = kommend: Spiel-Informationen (wie Heute/Morgen), fertig: Final Stats (wie Ergebnisse, inkl. Experten-Stats + YouTube)! + Aufraeumen: Sobald der Spielplan da ist, loescht der Bot seine Vorschlags-Nachrichten (Kandidaten-Liste + "Welches Team?"-Abfrage)! Eigene User-Nachrichten kann der Bot per Telegram NICHT loeschen, nur seine eigenen!
@@ -7246,6 +7247,7 @@ async def next_live_pick_cmd(update, ctx, league, eid, num_mid=None, expanded235
     # Spiel-Name finden
     _name = f"Spiel {eid}"
     _det230 = ""  # V230: Echte Details (Stadion + Sender + Anpfiff)!
+    _inj274 = ""  # V274: Injury-Report!
     _wet235 = ""  # V235: Wetter-Zeile!
     _wetdbg238 = ""  # V238: Debug-Grund, falls Wetter nicht klappt!
     _tz235 = None  # V235: Stadion-Zeitzone fuer die Ami-Kickoff-Zeit!
@@ -7303,6 +7305,26 @@ async def next_live_pick_cmd(update, ctx, league, eid, num_mid=None, expanded235
                         # V236: Jede Info eigene Zeile! Kickoff / Ort / Sender je eigene Zeile - 2 Zeilen mehr, aber endlich uebersichtlich!
                         _det230 = "\n".join(_parts230)
                     except: _det230 = ""
+                    # V274: Injury-Report nur fuer KOMMENDE Spiele! NCAAF: kein offizieller Report -> nix! Keine Daten = Team auslassen (nicht luegen)!
+                    try:
+                        if _st230 == "pre" and league != "NCAAF" and _teams:
+                            _inj_lines274 = []
+                            for _tn274, _, _ in _teams:
+                                _il274, _has274 = _team_injuries_with_status(league, _tn274)
+                                if not _has274: continue
+                                if not _il274:
+                                    _inj_lines274.append(f"{_tn274}: ✅ Keine Meldungen")
+                                else:
+                                    _shown274 = []
+                                    for _e274 in _il274[:4]:
+                                        _st274 = _e274.split(" — ")[-1].strip() if " — " in _e274 else ""
+                                        _em274 = "❌" if _st274 in ("Out", "IR", "PUP") else "⚠️" if _st274 == "Doubtful" else "❓" if _st274 == "Questionable" else "🏥"
+                                        _shown274.append(f"{_em274} {_e274}")
+                                    _extra274 = f" (+{len(_il274)-4} weitere)" if len(_il274) > 4 else ""
+                                    _inj_lines274.append(f"{_tn274}: " + " • ".join(_shown274) + _extra274)
+                            if _inj_lines274:
+                                _inj274 = "🏥 Verletzungen:\n" + "\n".join(_inj_lines274)
+                    except: _inj274 = ""
                     break
     except: pass
     # V213: Spiel schon vorbei? -> Keine Schalter mehr! Nur "Spiel vorbei" + Entfernen!
@@ -7346,7 +7368,7 @@ async def next_live_pick_cmd(update, ctx, league, eid, num_mid=None, expanded235
             [InlineKeyboardButton("⬅️ Zurück", callback_data="back")],
         ])
         _hint235 = "🔔 Tippe auf 'Benachrichtigungen einstellen', um zu wählen, was ich dir schicke!\nNach dem Spiel wird es automatisch wieder aus!"
-    _win210 = await _cb_edit(update, f"📋 Spiel-Informationen\n\n{_name}" + (f"\n{_det230}" if _det230 else "") + (f"\n{_wet235}" if _wet235 else "") + (f"\n🌦️ Wetter: konnte nicht laden (Debug: {_wetdbg238})" if _wetdbg238 else "") + f"\n\n{_hint235}", kb)
+    _win210 = await _cb_edit(update, f"📋 Spiel-Informationen\n\n{_name}" + (f"\n{_det230}" if _det230 else "") + (f"\n{_wet235}" if _wet235 else "") + (f"\n🌦️ Wetter: konnte nicht laden (Debug: {_wetdbg238})" if _wetdbg238 else "") + (f"\n{_inj274}" if _inj274 else "") + f"\n\n{_hint235}", kb)
     # V210: Fenster -> Zahl mappen! Damit 'Fenster schliessen' die getippte Zahl mitloescht!
     try:
         if num_mid and _win210 is not None and getattr(_win210, "message_id", None):
