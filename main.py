@@ -1,4 +1,5 @@
 # USA Sport Radar - V275 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# V280: Team-Emojis! Verletzungen + Spiel-Infos zeigen jetzt 🐏 Rams / 🧀 Packers statt immer nur 🏈! Fallback: Liga-Ball wenn kein Emoji bekannt!
 # V279: Hilfe: **-Sterne raus! Telegram zeigt ohne parse_mode sonst **Text** als Text (Screenshot)! Hilfe jetzt ohne Markdown, nur Emoji + Klartext!
 # V278: Hilfe: Verletzungs-Legende (❌🟡❓) endlich nachlesbar! In News-Kategorie + Kurz-Hilfe!
 # V277: Injury-Report: Doubtful = 🟡 ueberall (statt ⚠️), Leerzeile zwischen den Teams!
@@ -542,6 +543,35 @@ def _team_injuries(league, team_full):
     except Exception:
         return []
 NFL_ABBR = {"Arizona Cardinals":"ARI","Atlanta Falcons":"ATL","Baltimore Ravens":"BAL","Buffalo Bills":"BUF","Carolina Panthers":"CAR","Chicago Bears":"CHI","Cincinnati Bengals":"CIN","Cleveland Browns":"CLE","Dallas Cowboys":"DAL","Denver Broncos":"DEN","Detroit Lions":"DET","Green Bay Packers":"GB","Houston Texans":"HOU","Indianapolis Colts":"IND","Jacksonville Jaguars":"JAX","Kansas City Chiefs":"KC","Las Vegas Raiders":"LV","Los Angeles Chargers":"LAC","Los Angeles Rams":"LAR","Miami Dolphins":"MIA","Minnesota Vikings":"MIN","New England Patriots":"NE","New Orleans Saints":"NO","New York Giants":"NYG","New York Jets":"NYJ","Philadelphia Eagles":"PHI","Pittsburgh Steelers":"PIT","San Francisco 49ers":"SF","Seattle Seahawks":"SEA","Tampa Bay Buccaneers":"TB","Tennessee Titans":"TEN","Washington Commanders":"WAS"}
+# V280: Team-Emojis - Kurzname -> Emoji! Volle Namen unten in Helper gemappt, damit "Los Angeles Rams" und "Rams" beides klappt!
+TEAM_EMOJI_SHORT = {
+ "Cardinals": "🐦", "Falcons": "🦅", "Ravens": "🐦‍⬛", "Bills": "🦬", "Panthers": "🐆", "Bears": "🐻", "Bengals": "🐯",
+ "Browns": "🐶", "Cowboys": "🤠", "Broncos": "🐴", "Lions": "🦁", "Packers": "🧀", "Texans": "🤠", "Colts": "🐴",
+ "Jaguars": "🐆", "Chiefs": "🏹", "Raiders": "☠️", "Chargers": "⚡", "Rams": "🐏", "Dolphins": "🐬", "Vikings": "⚔️",
+ "Patriots": "🇺🇸", "Saints": "⚜️", "Giants": "🗽", "Jets": "✈️", "Eagles": "🦅", "Steelers": "🏭", "49ers": "⛏️",
+ "Seahawks": "🦅", "Buccaneers": "🏴‍☠️", "Titans": "⚔️", "Commanders": "⭐",
+ "Hawks": "🦅", "Celtics": "☘️", "Nets": "🥅", "Hornets": "🐝", "Bulls": "🐂", "Cavaliers": "⚔️", "Mavericks": "🐴",
+ "Nuggets": "⛏️", "Pistons": "🔧", "Warriors": "⚔️", "Rockets": "🚀", "Pacers": "🏎️", "Clippers": "⛵", "Lakers": "💜",
+ "Grizzlies": "🐻", "Heat": "🔥", "Bucks": "🦌", "Timberwolves": "🐺", "Pelicans": "🐦", "Knicks": "🗽", "Thunder": "⚡",
+ "Magic": "🪄", "76ers": "🔔", "Suns": "☀️", "Trail Blazers": "🔥", "Kings": "👑", "Spurs": "⭐", "Raptors": "🦖", "Jazz": "🎷", "Wizards": "🧙",
+ "Ducks": "🦆", "Coyotes": "🐺", "Bruins": "🐻", "Sabres": "⚔️", "Flames": "🔥", "Blackhawks": "🪶", "Avalanche": "🏔️",
+ "Blue Jackets": "🐝", "Stars": "⭐", "Red Wings": "🪽", "Oilers": "🛢️", "Panthers": "🐆", "Wild": "🌲", "Predators": "🐆",
+ "Devils": "😈", "Islanders": "🏝️", "Rangers": "🗽", "Senators": "🏛️", "Flyers": "🪽", "Penguins": "🐧", "Sharks": "🦈",
+ "Kraken": "🐙", "Blues": "🎵", "Lightning": "⚡", "Maple Leafs": "🍁", "Canucks": "🐋", "Golden Knights": "⚔️", "Capitals": "🏛️", "Hurricanes": "🌀",
+ "Angels": "😇", "Astros": "🚀", "Athletics": "🐘", "Mariners": "⚓", "Rangers": "🤠", "Tigers": "🐯", "Guardians": "🛡️",
+ "Royals": "👑", "Twins": "👯", "White Sox": "🧦", "Red Sox": "🧦", "Yankees": "🗽", "Orioles": "🐦", "Blue Jays": "🐦", "Mets": "🍎", "Phillies": "🔔", "Braves": "🪓", "Marlins": "🐟", "Nationals": "🏛️", "Cubs": "🐻", "Reds": "🔴", "Brewers": "🍺", "Pirates": "🏴‍☠️", "Diamondbacks": "🐍", "Rockies": "🏔️", "Dodgers": "💙", "Padres": "⛪", "Giants": "🗽",
+}
+def _team_emoji280(team_full, league=""):
+    try:
+        _short = (team_full or "").split()[-1] if team_full else ""
+        # Zwei-Woerter-Kurzname: "Trail Blazers", "Blue Jackets", "Maple Leafs", "White Sox", "Red Sox", "Blue Jays", "Golden Knights"
+        for _k in ("Trail Blazers", "Blue Jackets", "Maple Leafs", "White Sox", "Red Sox", "Blue Jays", "Golden Knights", "Red Wings"):
+            if (team_full or "").endswith(_k): _short = _k; break
+        if _short in TEAM_EMOJI_SHORT: return TEAM_EMOJI_SHORT[_short]
+        _fallback = {"NFL": "🏈", "NBA": "🏀", "NHL": "🏒", "MLB": "⚾", "NCAAF": "🏈"}
+        return _fallback.get(league or "", "🏈")
+    except Exception:
+        return "🏈"
 _SLEEPER_CACHE = {"ts": 0, "data": None}
 def _sleeper_players():
     # V89: Sleeper NFL-Spielerliste, nur noch 15 Min cachen (war 60 Min)!
@@ -3149,7 +3179,7 @@ async def game_info_detail_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, e
     for _tm in [_away[0],_home[0]]:
         _inj,_has=_team_injuries_with_status(_lg,_tm)
         _short276 = _tm.split()[-1] if _tm else _tm
-        lines.append(f"🏈 {_short276}")
+        lines.append(f"{_team_emoji280(_tm, _lg)} {_short276}")
         if _lg=="NCAAF": lines.append("  Keine Verletzungsliste (kein offizieller Report)")
         elif not _league_in_season(_lg): lines.append("  Saison vorbei!")
         elif not _has: lines.append("  Keine Daten gefunden!")
@@ -7328,7 +7358,7 @@ async def next_live_pick_cmd(update, ctx, league, eid, num_mid=None, expanded235
                                 if not _has274: continue
                                 if _inj_lines274: _inj_lines274.append("")  # V277: Leerzeile zwischen Teams!
                                 _short275 = _tn274.split()[-1] if _tn274 else _tn274
-                                _inj_lines274.append(f"🏈 {_short275}")
+                                _inj_lines274.append(f"{_team_emoji280(_tn274, league)} {_short275}")
                                 if not _il274:
                                     _inj_lines274.append("  ✅ Keine Meldungen")
                                 else:
