@@ -1,4 +1,8 @@
 # USA Sport Radar - V275 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# V286: Steelers-Emoji fix (🔩 -> 🌉 Bruecke / City of Bridges - sieht jeder auch ohne Premium)!
+# V285: Steelers-Emoji fix (⚙️ -> 🔩 Schraube/Mutter = richtig Stahl)!
+# V284: Steelers-Emoji fix (🖤 doof -> ⚙️ Stahl / Steel City)!
+# V283: Steelers-Emoji fix (🏭 -> 🖤, Fabrik sah kacke aus!) + Naechstes Spiel zeigt Kurzname (Steelers @ Broncos statt volle Namen)!
 # V282: Leere Zustaende schoener! "Nix live" zeigt jetzt das naechste Spiel + Countdown! Statt nur "schau bei Next Games vorbei"!
 # V281: Spiel-Infos schoener! Wetter-Emoji passend zum Wetter (☀️🌧️❄️⛈️ statt immer 🌦️)! Kickoff = ⏰, Stadion = 🏟️!
 # V280: Team-Emojis! Verletzungen + Spiel-Infos zeigen jetzt 🐏 Rams / 🧀 Packers statt immer nur 🏈! Fallback: Liga-Ball wenn kein Emoji bekannt!
@@ -550,7 +554,7 @@ TEAM_EMOJI_SHORT = {
  "Cardinals": "🐦", "Falcons": "🦅", "Ravens": "🐦‍⬛", "Bills": "🦬", "Panthers": "🐆", "Bears": "🐻", "Bengals": "🐯",
  "Browns": "🐶", "Cowboys": "🤠", "Broncos": "🐴", "Lions": "🦁", "Packers": "🧀", "Texans": "🤠", "Colts": "🐴",
  "Jaguars": "🐆", "Chiefs": "🏹", "Raiders": "☠️", "Chargers": "⚡", "Rams": "🐏", "Dolphins": "🐬", "Vikings": "⚔️",
- "Patriots": "🇺🇸", "Saints": "⚜️", "Giants": "🗽", "Jets": "✈️", "Eagles": "🦅", "Steelers": "🏭", "49ers": "⛏️",
+ "Patriots": "🇺🇸", "Saints": "⚜️", "Giants": "🗽", "Jets": "✈️", "Eagles": "🦅", "Steelers": "🌉", "49ers": "⛏️",
  "Seahawks": "🦅", "Buccaneers": "🏴‍☠️", "Titans": "⚔️", "Commanders": "⭐",
  "Hawks": "🦅", "Celtics": "☘️", "Nets": "🥅", "Hornets": "🐝", "Bulls": "🐂", "Cavaliers": "⚔️", "Mavericks": "🐴",
  "Nuggets": "⛏️", "Pistons": "🔧", "Warriors": "⚔️", "Rockets": "🚀", "Pacers": "🏎️", "Clippers": "⛵", "Lakers": "💜",
@@ -4014,6 +4018,12 @@ def _next_game_hint282(fav_map=None):
         _away = _teams[0][0] if len(_teams)>0 else ""
         _home = _teams[1][0] if len(_teams)>1 else ""
         _ea = _team_emoji280(_away, _lg); _eh = _team_emoji280(_home, _lg)
+        _away = _away.split()[-1] if _away else _away
+        _home = _home.split()[-1] if _home else _home
+        # Zwei-Woerter: Trail Blazers etc.
+        for _k in ("Trail Blazers", "Blue Jackets", "Maple Leafs", "White Sox", "Red Sox", "Blue Jays", "Golden Knights", "Red Wings"):
+            if _teams[0][0].endswith(_k): _away = _k
+            if len(_teams)>1 and _teams[1][0].endswith(_k): _home = _k
         _cd = f"in {_h} Std. {_m} Min" if _h>0 else f"in {_m} Min"
         return f"\n⏭️ Nächstes Spiel {_cd}:\n{_ea} {_away} @ {_eh} {_home} — {_when} {_dt.strftime('%H:%M')} Uhr"
     except Exception:
