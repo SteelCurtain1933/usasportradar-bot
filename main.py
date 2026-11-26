@@ -1,4 +1,5 @@
 # USA Sport Radar - V275 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# V282: Leere Zustaende schoener! "Nix live" zeigt jetzt das naechste Spiel + Countdown! Statt nur "schau bei Next Games vorbei"!
 # V281: Spiel-Infos schoener! Wetter-Emoji passend zum Wetter (☀️🌧️❄️⛈️ statt immer 🌦️)! Kickoff = ⏰, Stadion = 🏟️!
 # V280: Team-Emojis! Verletzungen + Spiel-Infos zeigen jetzt 🐏 Rams / 🧀 Packers statt immer nur 🏈! Fallback: Liga-Ball wenn kein Emoji bekannt!
 # V279: Hilfe: **-Sterne raus! Telegram zeigt ohne parse_mode sonst **Text** als Text (Screenshot)! Hilfe jetzt ohne Markdown, nur Emoji + Klartext!
@@ -3983,6 +3984,40 @@ async def live_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ])
     await _cb_edit(update, "🔴 Live\n\nWas willst du sehen?\n🔴 Alle Live-Spiele = alles was GERADE läuft, auch ohne Favoriten!\n⭐ Nur meine Favoriten = nur deine Teams live + letzte Endergebnisse!\n🔴 Meine Live-Spiele = deine eingestellten Einzel-Spiele!", kb)
 
+def _next_game_hint282(fav_map=None):
+    # V282: Naechstes kommendes Spiel (gestern/heute/morgen via _scoreboard_dates) + Countdown!
+    try:
+        _now = datetime.now(BERLIN)
+        _best = None
+        for _lg in LEAGUES:
+            for _ev in _scoreboard_dates(_lg):
+                if (_ev.get("status",{}) or {}).get("type",{}).get("state","") != "pre": continue
+                _teams, _ = event_teams(_ev)
+                if fav_map:
+                    _tt = " ".join([x[0] for x in _teams]).lower()
+                    if not any((lgx is None or lgx==_lg) and fnx in _tt for lgx, fnx in fav_map): continue
+                _ds, _dt = fmt_dt(_ev.get("date",""))
+                if not _dt: continue
+                # fmt_dt liefert Berlin-Zeit? Falls naiv, als Berlin annehmen
+                try:
+                    if getattr(_dt, "tzinfo", None) is None: _dt = _dt.replace(tzinfo=BERLIN)
+                except: pass
+                if _dt < _now: continue
+                if _best is None or _dt < _best[0]: _best = (_dt, _lg, _ev, _teams)
+        if not _best: return ""
+        _dt, _lg, _ev, _teams = _best
+        _diff = _dt - _now
+        _mins = int(_diff.total_seconds() // 60)
+        _h, _m = divmod(_mins, 60)
+        _d = _dt.date(); _today = _now.date()
+        _when = "heute" if _d == _today else "morgen" if _d == _today + timedelta(days=1) else _dt.strftime("%d.%m.")
+        _away = _teams[0][0] if len(_teams)>0 else ""
+        _home = _teams[1][0] if len(_teams)>1 else ""
+        _ea = _team_emoji280(_away, _lg); _eh = _team_emoji280(_home, _lg)
+        _cd = f"in {_h} Std. {_m} Min" if _h>0 else f"in {_m} Min"
+        return f"\n⏭️ Nächstes Spiel {_cd}:\n{_ea} {_away} @ {_eh} {_home} — {_when} {_dt.strftime('%H:%M')} Uhr"
+    except Exception:
+        return ""
 async def live_all_cmd(update, ctx):
     # V244: Scoreboard-Ticker! Nur Kuerzel + Stand + Spielzeit! Kein LIVE-Label, kein Sender (Sender -> Detail-Ansicht)!
     target = update.message or update.callback_query.message
@@ -3994,8 +4029,10 @@ async def live_all_cmd(update, ctx):
             if ev.get("status",{}).get("type",{}).get("state","")!="in": continue
             _all.append((league, str(ev.get("id","")), ev))
     if not _all:
-        lines.append("Gerade ist kein Spiel live in den Ligen.")
-        lines.append("Schau mal bei ⏭️ Next Games, wann es weitergeht!")
+        lines.append("🔴 Nix live grad — alle machen grad Pause! 😴")
+        _nx282 = _next_game_hint282()
+        if _nx282: lines.append(_nx282)
+        else: lines.append("Schau mal bei ⏭️ Next Games, wann es weitergeht!")
     else:
         for _i, (_lg, _eid, _ev) in enumerate(_all, 1):
             _tl = _live_ticker_line(_ev, _lg)
@@ -4060,7 +4097,9 @@ async def live_mine_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try: ctx.user_data["live_finals_list"] = None
         except: pass
     elif not live_found:
-        lines.append("Gerade spielt kein Team von deinen Favoriten live.")
+        lines.append("🔴 Nix live grad — deine Favoriten machen Pause! 😴")
+        _nx282b = _next_game_hint282(fav_map)
+        if _nx282b: lines.append(_nx282b)
         if finals:
             # V154: Finals nummerieren + merken, damit Zahl -> Final Stats geht!
             try:
