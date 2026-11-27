@@ -1,4 +1,5 @@
 # USA Sport Radar - V275 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# V287: Nr.4 - Stand: Uhrzeit bei Verletzungen! Spiel-Detail + IR-Liste kriegen Stand: DD.MM. HH:MM (Verletzungen-meine-Teams hatte das schon)!
 # V286: Steelers-Emoji fix (🔩 -> 🌉 Bruecke / City of Bridges - sieht jeder auch ohne Premium)!
 # V285: Steelers-Emoji fix (⚙️ -> 🔩 Schraube/Mutter = richtig Stahl)!
 # V284: Steelers-Emoji fix (🖤 doof -> ⚙️ Stahl / Steel City)!
@@ -3094,7 +3095,9 @@ async def injuries_ir_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, league
     _g, _ir, _has = _sleeper_split(team_full) if league == "NFL" else ([], [], False)
     if not _has or not _ir:
         await target.reply_text(f"🏥 IR-Liste — {team_full}\n\nKeine IR-Spieler gefunden.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Zurück zu Verletzungen", callback_data="injuries_mine")]])); return
-    lines = [f"🏥 IR-Liste — {team_full} ({len(_ir)})\n"]
+    _now287 = datetime.now(BERLIN)
+    _s287 = _now287.strftime("%d.%m. %H:%M")
+    lines = [f"🏥 IR-Liste — {team_full} ({len(_ir)})\n📅 Stand: {_s287}"]
     for _x in _ir: lines.append(f"• {_x}")
     await target.reply_text("\n".join(lines), reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Zurück zu Verletzungen", callback_data="injuries_mine")]]))
 def _fav_next_games(user_id):
@@ -7433,7 +7436,9 @@ async def next_live_pick_cmd(update, ctx, league, eid, num_mid=None, expanded235
                                     if len(_sorted275) > 4:
                                         _inj_lines274.append(f"  … +{len(_sorted275)-4} weitere")
                             if _inj_lines274:
-                                _inj274 = "🏥 Verletzungen:\n" + "\n".join(_inj_lines274)
+                                _now287b = datetime.now(BERLIN)
+                                _s287b = _now287b.strftime("%d.%m. %H:%M")
+                                _inj274 = f"🏥 Verletzungen:\n📅 Stand: {_s287b}\n" + "\n".join(_inj_lines274)
                     except: _inj274 = ""
                     break
     except: pass
