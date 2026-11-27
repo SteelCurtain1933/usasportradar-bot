@@ -1,4 +1,5 @@
 # USA Sport Radar - V275 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# V289: NCAAF-Emojis! Navy ⚓, Texas 🐂, Alabama 🌊, Georgia 🐶 etc. - vorher nur 🏈-Fallback bei College!
 # V288: **-Bug in Verletzungen-meine-Teams fix (**Pittsburgh Steelers:** -> 🌉 Steelers:) - kein Markdown, nur Klartext wie V279!
 # V287: Nr.4 - Stand: Uhrzeit bei Verletzungen! Spiel-Detail + IR-Liste kriegen Stand: DD.MM. HH:MM (Verletzungen-meine-Teams hatte das schon)!
 # V286: Steelers-Emoji fix (🔩 -> 🌉 Bruecke / City of Bridges - sieht jeder auch ohne Premium)!
@@ -566,6 +567,7 @@ TEAM_EMOJI_SHORT = {
  "Blue Jackets": "🐝", "Stars": "⭐", "Red Wings": "🪽", "Oilers": "🛢️", "Panthers": "🐆", "Wild": "🌲", "Predators": "🐆",
  "Devils": "😈", "Islanders": "🏝️", "Rangers": "🗽", "Senators": "🏛️", "Flyers": "🪽", "Penguins": "🐧", "Sharks": "🦈",
  "Kraken": "🐙", "Blues": "🎵", "Lightning": "⚡", "Maple Leafs": "🍁", "Canucks": "🐋", "Golden Knights": "⚔️", "Capitals": "🏛️", "Hurricanes": "🌀",
+ "Longhorns": "🐂", "Midshipmen": "⚓", "Tide": "🌊", "Bulldogs": "🐶", "Gators": "🐊", "Volunteers": "🍊", "Sooners": "🐎", "Aggies": "🤠", "Rebels": "🦈", "Buckeyes": "🌰", "Wolverines": "🦡", "Trojans": "⚔️", "Cornhuskers": "🌽", "Badgers": "🦡", "Irish": "☘️", "Seminoles": "🪶", "Heels": "🐑", "Hokies": "🦃", "Frogs": "🐸", "Jayhawks": "🐦", "Knights": "⚔️", "Cougars": "🐆",
  "Angels": "😇", "Astros": "🚀", "Athletics": "🐘", "Mariners": "⚓", "Rangers": "🤠", "Tigers": "🐯", "Guardians": "🛡️",
  "Royals": "👑", "Twins": "👯", "White Sox": "🧦", "Red Sox": "🧦", "Yankees": "🗽", "Orioles": "🐦", "Blue Jays": "🐦", "Mets": "🍎", "Phillies": "🔔", "Braves": "🪓", "Marlins": "🐟", "Nationals": "🏛️", "Cubs": "🐻", "Reds": "🔴", "Brewers": "🍺", "Pirates": "🏴‍☠️", "Diamondbacks": "🐍", "Rockies": "🏔️", "Dodgers": "💙", "Padres": "⛪", "Giants": "🗽",
 }
