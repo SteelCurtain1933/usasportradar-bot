@@ -1,4 +1,5 @@
 # USA Sport Radar - V275 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# V288: **-Bug in Verletzungen-meine-Teams fix (**Pittsburgh Steelers:** -> 🌉 Steelers:) - kein Markdown, nur Klartext wie V279!
 # V287: Nr.4 - Stand: Uhrzeit bei Verletzungen! Spiel-Detail + IR-Liste kriegen Stand: DD.MM. HH:MM (Verletzungen-meine-Teams hatte das schon)!
 # V286: Steelers-Emoji fix (🔩 -> 🌉 Bruecke / City of Bridges - sieht jeder auch ohne Premium)!
 # V285: Steelers-Emoji fix (⚙️ -> 🔩 Schraube/Mutter = richtig Stahl)!
@@ -3070,7 +3071,7 @@ async def injuries_mine_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         _name = f.split(" (")[0].strip()
         _lg = f.split(" (")[-1].replace(")", "").strip() if " (" in f else None
         if _lg not in LEAGUES: continue
-        lines.append(f"\n**{LEAGUES[_lg]['emoji']} {_name}:**")
+        lines.append(f"\n{_team_emoji280(_name, _lg)} {_name}:")
         if _lg == "NCAAF":
             _has_ncaaf = True; lines.append("• Keine Verletzungsliste!"); continue
         if not _league_in_season(_lg):
