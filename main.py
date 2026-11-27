@@ -1,4 +1,5 @@
 # USA Sport Radar - V275 FINAL - FIX: Nach dem Schliessen eines Live-Spiels ging die naechste Zahl nicht mehr! Flag war One-Shot! Jetzt: Flag bleibt nach dem Tippen an, alle anderen Listen schalten ihn beim Oeffnen aus - so geht jede Zahl, bis eine andere Liste kommt! NFL-Regeln + alle 32 Team-Seiten + alle HOF-Listen + HOF-Detailseiten fuer Steelers + groesste Legenden! Alle Fakten kuratiert & geprueft (keine Live-API fuer Geschichte/HOF) - Detailseiten fuer Rest der Liga folgen in Phase 2!
+# V290: Nr.5 - Countdown in Naechste Spiele! Jede Zeile kriegt ⏳ in X Std. Y Min / in X Tg + **-Bug im Tages-Header fix!
 # V289: NCAAF-Emojis! Navy ⚓, Texas 🐂, Alabama 🌊, Georgia 🐶 etc. - vorher nur 🏈-Fallback bei College!
 # V288: **-Bug in Verletzungen-meine-Teams fix (**Pittsburgh Steelers:** -> 🌉 Steelers:) - kein Markdown, nur Klartext wie V279!
 # V287: Nr.4 - Stand: Uhrzeit bei Verletzungen! Spiel-Detail + IR-Liste kriegen Stand: DD.MM. HH:MM (Verletzungen-meine-Teams hatte das schon)!
@@ -3026,7 +3027,7 @@ async def next_mine_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         items = sorted(grouped[day_key], key=lambda x: x[0] or datetime.now(BERLIN))
         dt0 = items[0][0]
         wd = ["Mo","Di","Mi","Do","Fr","Sa","So"][dt0.weekday()] if dt0 else ""
-        lines.append(f"\n**{wd} {day_key.strftime('%d.%m.')}**")
+        lines.append(f"\n{wd} {day_key.strftime('%d.%m.')}")
         for dt, league, ev, disp in items:
             # V142: ⭐ MUSS vor DEINEM Team stehen, nicht immer vor Auswärtsteam!
             # Blues @ Penguins -> Penguins ist Favorit -> "Blues @ ⭐ Penguins" (vorher falsch: "⭐ Blues @ Penguins")!
@@ -3047,6 +3048,20 @@ async def next_mine_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     _line=f"⭐ {_line}"
             except Exception:
                 _line=f"⭐ {_line}"
+            # V290: Countdown!
+            try:
+                _now290 = datetime.now(BERLIN)
+                _dt290 = dt if dt and getattr(dt, "tzinfo", None) else (_now290 if not dt else dt.replace(tzinfo=_now290.tzinfo) if hasattr(dt, "replace") else _now290)
+                _delta290 = _dt290 - _now290
+                _sec290 = int(_delta290.total_seconds())
+                if _sec290 > 0:
+                    _d290 = _sec290 // 86400; _h290 = (_sec290 % 86400) // 3600; _m290 = (_sec290 % 3600) // 60
+                    if _d290 > 0: _cd290 = f"in {_d290} Tg {_h290} Std"
+                    elif _h290 > 0: _cd290 = f"in {_h290} Std {_m290} Min"
+                    else: _cd290 = f"in {_m290} Min"
+                    _line = f"{_line} • ⏳ {_cd290}"
+            except Exception:
+                pass
             lines.append(_line)
     if not shown:
         lines.append("Keine kommenden Spiele für deine Favoriten gefunden - auch keine Preseason / Spring Training Daten bei ESPN.")
